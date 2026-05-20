@@ -13,6 +13,8 @@ export interface GraphNode {
 export interface GraphEdge {
   to: NodeId;
   cost: number;
+  distanceMeters?: number;
+  durationSeconds?: number;
 }
 
 export type Graph = Map<NodeId, GraphEdge[]>;
@@ -27,15 +29,22 @@ export interface RouteStop {
 export interface AStarResult {
   path: NodeId[];
   cost: number;
+  visitedCount?: number;
 }
+
+export type OptimizationMethod = "astar-state" | "insertion-2opt-oropt";
+export type OptimizationCostSource = "local-estimate" | "mapbox-traffic";
 
 export interface OptimizedRouteResult {
   orderedStops: RouteStop[];
-  /** Sum of haversine leg distances along the final stop order (meters). */
+  /** Sum of estimated road leg distances along the final stop order (meters). */
   totalDistanceMeters: number;
+  totalTravelSeconds: number;
   estimatedDurationMinutes: number;
   routeCenter: [number, number];
   /** True when edge costs came from Mapbox Matrix (driving-traffic durations). */
   usedMapboxTraffic?: boolean;
+  optimizationMethod: OptimizationMethod;
+  costSource: OptimizationCostSource;
 }
 

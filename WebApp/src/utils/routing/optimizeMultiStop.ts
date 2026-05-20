@@ -1,4 +1,12 @@
-import { estimateDurationMinutes, haversineMeters, STOP_HANDLING_MINUTES } from "./geo";
+import { STOP_HANDLING_MINUTES } from "./geo";
+import { runAStarSearch } from "./astar";
+import {
+  applyTrafficOverlay,
+  buildLocalTravelCostMatrix,
+  getTravelCost,
+  isValidCoordinate,
+  type TravelCostMatrix,
+} from "./costModel";
 import type { GraphNode, NodeId, OptimizedRouteResult, RouteStop } from "./types";
 import { fetchDrivingDurationMatrix } from "../../services/mapboxMatrix";
 
@@ -6,6 +14,9 @@ interface OptimizeInput {
   depot: { id: string; coordinate: { lat: number; lng: number } };
   stops: RouteStop[];
 }
+
+const EXACT_ASTAR_STOP_LIMIT = 10;
+const IMPROVEMENT_PASS_LIMIT = 8;
 
 function computeCenter(stops: RouteStop[], depot: { lat: number; lng: number }): [number, number] {
   if (stops.length === 0) {
@@ -16,26 +27,31 @@ function computeCenter(stops: RouteStop[], depot: { lat: number; lng: number }):
   return [lat, lng];
 }
 
-function twoOptImprove(order: NodeId[], matrix: Map<string, number>): NodeId[] {
+function routeCost(order: NodeId[], matrix: TravelCostMatrix): number {
+  let seconds = 0;
+  for (let i = 0; i < order.length - 1; i++) {
+    seconds += getTravelCost(matrix, order[i], order[i + 1]).costSeconds;
+  }
+  return seconds;
+}
+
+function twoOptImprove(order: NodeId[], matrix: TravelCostMatrix): NodeId[] {
   if (order.length < 4) return order;
   const improved = [...order];
+  let bestCost = routeCost(improved, matrix);
   let changed = true;
+  let passes = 0;
 
-  const edgeCost = (from: NodeId, to: NodeId) => matrix.get(`${from}->${to}`) ?? Number.POSITIVE_INFINITY;
-
-  while (changed) {
+  while (changed && passes < IMPROVEMENT_PASS_LIMIT) {
     changed = false;
+    passes += 1;
     for (let i = 1; i < improved.length - 2; i++) {
       for (let k = i + 1; k < improved.length - 1; k++) {
-        const a = improved[i - 1];
-        const b = improved[i];
-        const c = improved[k];
-        const d = improved[k + 1];
-        const current = edgeCost(a, b) + edgeCost(c, d);
-        const swapped = edgeCost(a, c) + edgeCost(b, d);
-        if (swapped < current) {
-          const reversed = improved.slice(i, k + 1).reverse();
-          improved.splice(i, k - i + 1, ...reversed);
+        const candidate = [...improved.slice(0, i), ...improved.slice(i, k + 1).reverse(), ...improved.slice(k + 1)];
+        const candidateCost = routeCost(candidate, matrix);
+        if (candidateCost + 1 < bestCost) {
+          improved.splice(0, improved.length, ...candidate);
+          bestCost = candidateCost;
           changed = true;
         }
       }
@@ -45,102 +61,185 @@ function twoOptImprove(order: NodeId[], matrix: Map<string, number>): NodeId[] {
   return improved;
 }
 
-function buildHaversineCostMatrix(allNodes: GraphNode[]): Map<string, number> {
-  const matrix = new Map<string, number>();
-  for (const from of allNodes) {
-    for (const to of allNodes) {
-      if (from.id === to.id) continue;
-      matrix.set(`${from.id}->${to.id}`, haversineMeters(from.coordinate, to.coordinate));
+function orOptImprove(order: NodeId[], matrix: TravelCostMatrix): NodeId[] {
+  if (order.length < 5) return order;
+  const improved = [...order];
+  let bestCost = routeCost(improved, matrix);
+  let changed = true;
+  let passes = 0;
+
+  while (changed && passes < IMPROVEMENT_PASS_LIMIT) {
+    changed = false;
+    passes += 1;
+    for (let from = 1; from < improved.length - 1; from++) {
+      for (let to = 1; to < improved.length; to++) {
+        if (to === from || to === from + 1) continue;
+        const candidate = [...improved];
+        const [moved] = candidate.splice(from, 1);
+        const insertAt = to > from ? to - 1 : to;
+        candidate.splice(insertAt, 0, moved);
+        const candidateCost = routeCost(candidate, matrix);
+        if (candidateCost + 1 < bestCost) {
+          improved.splice(0, improved.length, ...candidate);
+          bestCost = candidateCost;
+          changed = true;
+        }
+      }
     }
   }
-  return matrix;
+
+  return improved;
 }
 
-function totalHaversineAlongOrder(order: NodeId[], nodeById: Map<NodeId, GraphNode>): number {
+function totalDistanceAlongOrder(order: NodeId[], matrix: TravelCostMatrix): number {
   let meters = 0;
   for (let i = 0; i < order.length - 1; i++) {
-    const a = nodeById.get(order[i]);
-    const b = nodeById.get(order[i + 1]);
-    if (!a || !b) continue;
-    meters += haversineMeters(a.coordinate, b.coordinate);
+    const distance = getTravelCost(matrix, order[i], order[i + 1]).distanceMeters;
+    if (Number.isFinite(distance)) meters += distance;
   }
   return meters;
 }
 
-function totalMatrixSecondsAlongOrder(order: NodeId[], matrix: Map<string, number>): number {
-  let sec = 0;
-  for (let i = 0; i < order.length - 1; i++) {
-    sec += matrix.get(`${order[i]}->${order[i + 1]}`) ?? 0;
+function buildCheapestInsertionOrder(depotId: NodeId, stopNodes: GraphNode[], matrix: TravelCostMatrix): NodeId[] | null {
+  const unvisited = new Set(stopNodes.map((node) => node.id));
+  const order: NodeId[] = [depotId, depotId];
+
+  while (unvisited.size > 0) {
+    let bestStop: NodeId | null = null;
+    let bestInsertIndex = 1;
+    let bestDelta = Number.POSITIVE_INFINITY;
+
+    for (const stopId of unvisited) {
+      for (let i = 0; i < order.length - 1; i++) {
+        const from = order[i];
+        const to = order[i + 1];
+        const delta =
+          getTravelCost(matrix, from, stopId).costSeconds +
+          getTravelCost(matrix, stopId, to).costSeconds -
+          getTravelCost(matrix, from, to).costSeconds;
+        if (delta < bestDelta) {
+          bestDelta = delta;
+          bestStop = stopId;
+          bestInsertIndex = i + 1;
+        }
+      }
+    }
+
+    if (!bestStop) return null;
+    order.splice(bestInsertIndex, 0, bestStop);
+    unvisited.delete(bestStop);
   }
-  return sec;
+
+  return order;
+}
+
+function buildAStarStateOrder(depotId: NodeId, stopNodes: GraphNode[], matrix: TravelCostMatrix): NodeId[] | null {
+  if (stopNodes.length > EXACT_ASTAR_STOP_LIMIT) return null;
+  const nodes = [{ id: depotId }, ...stopNodes];
+  const allVisitedMask = (1 << stopNodes.length) - 1;
+  const state = (currentIndex: number, visitedMask: number) => `${currentIndex}|${visitedMask}`;
+  const parseState = (value: string) => {
+    const [currentIndex, visitedMask] = value.split("|").map(Number);
+    return { currentIndex, visitedMask };
+  };
+
+  const result = runAStarSearch({
+    start: state(0, 0),
+    isGoal: (value) => {
+      const parsed = parseState(value);
+      return parsed.currentIndex === 0 && parsed.visitedMask === allVisitedMask;
+    },
+    getNeighbors: (value) => {
+      const { currentIndex, visitedMask } = parseState(value);
+      const currentId = nodes[currentIndex].id;
+
+      if (visitedMask === allVisitedMask) {
+        return currentIndex === 0
+          ? []
+          : [{ to: state(0, visitedMask), cost: getTravelCost(matrix, currentId, depotId).costSeconds }];
+      }
+
+      const neighbors: Array<{ to: string; cost: number }> = [];
+      for (let stopIndex = 0; stopIndex < stopNodes.length; stopIndex++) {
+        const bit = 1 << stopIndex;
+        if (visitedMask & bit) continue;
+        const nextNodeIndex = stopIndex + 1;
+        const nextId = nodes[nextNodeIndex].id;
+        neighbors.push({
+          to: state(nextNodeIndex, visitedMask | bit),
+          cost: getTravelCost(matrix, currentId, nextId).costSeconds,
+        });
+      }
+      return neighbors;
+    },
+    heuristic: (value) => {
+      const { currentIndex, visitedMask } = parseState(value);
+      const currentId = nodes[currentIndex].id;
+      if (visitedMask === allVisitedMask) {
+        return currentIndex === 0 ? 0 : getTravelCost(matrix, currentId, depotId).costSeconds;
+      }
+
+      let minFromCurrent = Number.POSITIVE_INFINITY;
+      let minReturnToDepot = Number.POSITIVE_INFINITY;
+      for (let stopIndex = 0; stopIndex < stopNodes.length; stopIndex++) {
+        const bit = 1 << stopIndex;
+        if (visitedMask & bit) continue;
+        const stopId = stopNodes[stopIndex].id;
+        minFromCurrent = Math.min(minFromCurrent, getTravelCost(matrix, currentId, stopId).costSeconds);
+        minReturnToDepot = Math.min(minReturnToDepot, getTravelCost(matrix, stopId, depotId).costSeconds);
+      }
+      return (Number.isFinite(minFromCurrent) ? minFromCurrent : 0) + (Number.isFinite(minReturnToDepot) ? minReturnToDepot : 0);
+    },
+    maxIterations: 75000,
+  });
+
+  if (!result) return null;
+  const orderedIds = result.path.map((value) => nodes[parseState(value).currentIndex].id);
+  return orderedIds.filter((id, index) => index === 0 || id !== orderedIds[index - 1]);
 }
 
 /**
- * Multi-stop ordering using greedy insertion + 2-opt.
- * Edge costs prefer Mapbox Matrix **driving-traffic** durations (seconds); otherwise haversine meters.
+ * Multi-stop ordering using local costs first, with optional Mapbox traffic overlay.
  */
 export async function optimizeMultiStopRouteAsync({ depot, stops }: OptimizeInput): Promise<OptimizedRouteResult | null> {
-  if (stops.length === 0) {
+  const validStops = stops.filter((stop) => isValidCoordinate(stop.coordinate));
+  if (!isValidCoordinate(depot.coordinate) || validStops.length === 0) {
     return null;
   }
 
-  const stopNodes: GraphNode[] = stops.map((stop) => ({
+  const stopNodes: GraphNode[] = validStops.map((stop) => ({
     id: stop.id,
     coordinate: stop.coordinate,
   }));
 
   const allNodes: GraphNode[] = [{ id: depot.id, coordinate: depot.coordinate }, ...stopNodes];
-  const nodeById = new Map(allNodes.map((n) => [n.id, n]));
-
   const mapboxMatrix = await fetchDrivingDurationMatrix(allNodes);
   const usedMapbox = Boolean(mapboxMatrix && mapboxMatrix.size > 0);
-  const matrix = usedMapbox ? mapboxMatrix! : buildHaversineCostMatrix(allNodes);
+  const matrix = applyTrafficOverlay(buildLocalTravelCostMatrix(allNodes), mapboxMatrix);
 
-  const unvisited = new Set(stopNodes.map((node) => node.id));
-  const visitOrder: NodeId[] = [depot.id];
-  let current = depot.id;
+  const astarOrder = buildAStarStateOrder(depot.id, stopNodes, matrix);
+  const initialOrder = astarOrder ?? buildCheapestInsertionOrder(depot.id, stopNodes, matrix);
+  if (!initialOrder) return null;
 
-  while (unvisited.size > 0) {
-    let bestNode: NodeId | null = null;
-    let bestCost = Number.POSITIVE_INFINITY;
-    for (const candidate of unvisited) {
-      const cost = matrix.get(`${current}->${candidate}`) ?? Number.POSITIVE_INFINITY;
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestNode = candidate;
-      }
-    }
-    if (!bestNode) return null;
-    visitOrder.push(bestNode);
-    unvisited.delete(bestNode);
-    current = bestNode;
-  }
-
-  visitOrder.push(depot.id);
-  const improvedOrder = twoOptImprove(visitOrder, matrix);
-
-  const totalDistanceMeters = totalHaversineAlongOrder(improvedOrder, nodeById);
-
-  let estimatedDurationMinutes: number;
-  if (usedMapbox) {
-    const travelSec = totalMatrixSecondsAlongOrder(improvedOrder, matrix);
-    const travelMin = travelSec / 60;
-    const stopCount = improvedOrder.filter((id) => id !== depot.id).length;
-    estimatedDurationMinutes = Math.max(1, Math.round(travelMin + stopCount * STOP_HANDLING_MINUTES));
-  } else {
-    estimatedDurationMinutes = estimateDurationMinutes(totalDistanceMeters, stops.length);
-  }
+  const improvedOrder = orOptImprove(twoOptImprove(initialOrder, matrix), matrix);
+  const totalDistanceMeters = totalDistanceAlongOrder(improvedOrder, matrix);
+  const totalTravelSeconds = routeCost(improvedOrder, matrix);
+  const stopCount = improvedOrder.filter((id) => id !== depot.id).length;
+  const estimatedDurationMinutes = Math.max(1, Math.round(totalTravelSeconds / 60 + stopCount * STOP_HANDLING_MINUTES));
 
   const orderedStops = improvedOrder
     .filter((nodeId) => nodeId !== depot.id)
-    .map((nodeId) => stops.find((stop) => stop.id === nodeId)!)
+    .map((nodeId) => validStops.find((stop) => stop.id === nodeId)!)
     .filter(Boolean);
 
   return {
     orderedStops,
     totalDistanceMeters,
+    totalTravelSeconds,
     estimatedDurationMinutes,
     routeCenter: computeCenter(orderedStops, depot.coordinate),
     usedMapboxTraffic: usedMapbox,
+    optimizationMethod: astarOrder ? "astar-state" : "insertion-2opt-oropt",
+    costSource: usedMapbox ? "mapbox-traffic" : "local-estimate",
   };
 }

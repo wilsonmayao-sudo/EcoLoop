@@ -4,13 +4,23 @@
  * @see https://docs.mapbox.com/api/navigation/matrix/
  */
 
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN as string | undefined;
+const MAPBOX_TOKEN = (import.meta as ImportMeta & { env?: { VITE_MAPBOX_ACCESS_TOKEN?: string } }).env?.VITE_MAPBOX_ACCESS_TOKEN;
 
 /** Mapbox Matrix allows up to 25 coordinates per request (standard tier). */
 export const MAPBOX_MATRIX_MAX_COORDS = 25;
+const MATRIX_CACHE_TTL_MS = 5 * 60 * 1000;
+const MATRIX_TIMEOUT_MS = 3500;
+
+const matrixCache = new Map<string, { expiresAt: number; matrix: Map<string, number> }>();
 
 export function isMapboxConfigured(): boolean {
   return Boolean(MAPBOX_TOKEN?.trim());
+}
+
+function matrixCacheKey(nodes: { id: string; coordinate: { lat: number; lng: number } }[]): string {
+  return nodes
+    .map((n) => `${n.id}:${Number(n.coordinate.lat).toFixed(5)},${Number(n.coordinate.lng).toFixed(5)}`)
+    .join("|");
 }
 
 /**
@@ -28,6 +38,12 @@ export async function fetchDrivingDurationMatrix(
     return null;
   }
 
+  const cacheKey = matrixCacheKey(nodes);
+  const cached = matrixCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return new Map(cached.matrix);
+  }
+
   const coordPath = nodes.map((n) => `${n.coordinate.lng},${n.coordinate.lat}`).join(";");
   const url = new URL(`https://api.mapbox.com/directions-matrix/v1/mapbox/driving-traffic/${coordPath}`);
   url.searchParams.set("access_token", MAPBOX_TOKEN.trim());
@@ -35,8 +51,11 @@ export async function fetchDrivingDurationMatrix(
   url.searchParams.set("sources", "all");
   url.searchParams.set("destinations", "all");
 
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), MATRIX_TIMEOUT_MS);
+
   try {
-    const res = await fetch(url.toString());
+    const res = await fetch(url.toString(), { signal: controller.signal });
     if (!res.ok) {
       const body = await res.text();
       console.warn("[mapbox] Matrix HTTP", res.status, body.slice(0, 200));
@@ -60,9 +79,12 @@ export async function fetchDrivingDurationMatrix(
       console.warn("[mapbox] Incomplete duration matrix; using haversine fallback.");
       return null;
     }
+    matrixCache.set(cacheKey, { expiresAt: Date.now() + MATRIX_CACHE_TTL_MS, matrix: new Map(matrix) });
     return matrix;
   } catch (e) {
     console.warn("[mapbox] Matrix fetch failed:", e);
     return null;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
   }
 }
