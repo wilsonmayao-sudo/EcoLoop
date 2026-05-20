@@ -35,8 +35,40 @@ const EXCLUDED_PROBLEM_TYPES = new Set([
   "truck breakdown",
 ]);
 
+const STAFF_REPORT_NOTIFICATION_ROLES = ["admin", "supervisor"];
+
 function normalizeStatus(value) {
   return String(value ?? "").toLowerCase().replace(/\s+/g, "_");
+}
+
+function reportDisplayNumber(report) {
+  return report?.report_number ?? report?.report_id ?? "New report";
+}
+
+function reportNotificationMessage(payload) {
+  const driverName = payload.reported_by || "A truck driver";
+  const category = payload.report_type || payload.type || "an issue";
+  const location = payload.location && payload.location !== "Not specified" ? ` at ${payload.location}` : "";
+  return `${driverName} submitted ${category}${location}. Open Reports & Issues to review.`;
+}
+
+async function notifyStaffOfNewReport(report, payload) {
+  const sourceId = report?.id ? String(report.id) : null;
+  const title = `New report: ${reportDisplayNumber(report)}`;
+  const message = reportNotificationMessage(payload);
+  const { error } = await supabase.from("notifications").insert(
+    STAFF_REPORT_NOTIFICATION_ROLES.map((role) => ({
+      role,
+      title,
+      message,
+      type: "warning",
+      category: "report",
+      source_table: "waste_reports",
+      source_id: sourceId,
+      read: false,
+    })),
+  );
+  if (error) throw error;
 }
 
 function formatDateTime(value) {
@@ -216,10 +248,17 @@ export default function ReportsScreen() {
       if (uploaded.error) throw uploaded.error;
       imageUrl = supabase.storage.from("report-images").getPublicUrl(path).data.publicUrl;
     }
-    const { error: insErr } = await supabase
+    const { data: insertedReport, error: insErr } = await supabase
       .from("waste_reports")
-      .insert({ ...mutation.payload, image_url: imageUrl });
+      .insert({ ...mutation.payload, image_url: imageUrl })
+      .select("id, report_id, report_number")
+      .single();
     if (insErr) throw insErr;
+    try {
+      await notifyStaffOfNewReport(insertedReport, mutation.payload);
+    } catch (notifyErr) {
+      console.warn("Report notification failed:", notifyErr?.message ?? notifyErr);
+    }
   }, [driver?.id]);
 
   useEffect(() => {
@@ -268,11 +307,20 @@ export default function ReportsScreen() {
       } else {
         let imageUrl = null;
         if (photoUri) imageUrl = await uploadImage();
-        const { error: insErr } = await supabase.from("waste_reports").insert({
-          ...payload,
-          image_url: imageUrl,
-        });
+        const { data: insertedReport, error: insErr } = await supabase
+          .from("waste_reports")
+          .insert({
+            ...payload,
+            image_url: imageUrl,
+          })
+          .select("id, report_id, report_number")
+          .single();
         if (insErr) throw insErr;
+        try {
+          await notifyStaffOfNewReport(insertedReport, payload);
+        } catch (notifyErr) {
+          console.warn("Report notification failed:", notifyErr?.message ?? notifyErr);
+        }
       }
       setShowCreate(false);
       setShowTypeOptions(false);

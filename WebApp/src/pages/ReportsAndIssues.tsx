@@ -29,6 +29,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
     updateReport,
     deleteReport,
     resolveReport,
+    createNotification,
   } = useLiveData();
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState<WasteReportRecord | null>(null);
@@ -74,17 +75,21 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
 
   const handleMarkAsResolved = async () => {
     if (!selectedReport) return;
+    if (selectedReport.status === "resolved") return;
     await resolveReport(selectedReport.id);
+    await notifyDriverReportStatus(selectedReport, "resolved");
     setSelectedReport({ ...selectedReport, status: "resolved", resolved_at: new Date().toISOString() });
     setToastMessage({ message: "Report marked as resolved.", type: "success" });
     setShowToast(true);
   };
 
   const handleStatusChange = async (report: WasteReportRecord, status: string) => {
+    if (report.status === status) return;
     await updateReport(report.id, {
       status,
       resolved_at: status === "resolved" ? new Date().toISOString() : null,
     });
+    await notifyDriverReportStatus(report, status);
   };
 
   const getStatusColor = (status: string) => {
@@ -110,6 +115,31 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
     if (report.route_id == null || report.route_id === "") return "Not linked to a route";
     const route = routeById.get(String(report.route_id));
     return route?.name ? `${route.name} (${report.route_id})` : `Route ID: ${report.route_id}`;
+  };
+
+  const notifyDriverReportStatus = async (report: WasteReportRecord, status: string) => {
+    const driver = drivers.find((item) => String(item.id) === String(report.driver_id));
+    if (!driver?.auth_user_id) return;
+
+    const statusLabel = displayValue(status);
+    const category = report.report_type?.trim() || report.type || "report";
+    const reportNumber = report.report_number || report.report_id || "your report";
+    const location = report.location ? ` at ${report.location}` : "";
+
+    try {
+      await createNotification({
+        user_auth_id: String(driver.auth_user_id),
+        title: `Report ${statusLabel}: ${reportNumber}`,
+        message: `Your ${category} report${location} is now ${statusLabel.toLowerCase()}.`,
+        type: status === "resolved" ? "success" : "info",
+        category: "report",
+        source_table: "waste_reports",
+        source_id: report.id,
+        read: false,
+      });
+    } catch (err: any) {
+      console.warn("Driver report notification failed:", err?.message ?? err);
+    }
   };
 
   return (
