@@ -46,6 +46,11 @@ function normalizeRouteStatus(value) {
     .replace(/\s+/g, "_");
 }
 
+async function updateDriverRouteStatus(driverId, status, timestamp) {
+  const { error } = await supabase.from("drivers").update({ status, last_seen_at: timestamp }).eq("id", driverId);
+  if (error) throw error;
+}
+
 export const PickupProvider = ({ children }) => {
   const { driver } = useAuth();
   const [pendingPickups, setPendingPickups] = useState([]);
@@ -89,7 +94,7 @@ export const PickupProvider = ({ children }) => {
 
     const { data: routeRows, error: routesErr } = await supabase
       .from("routes")
-      .select("id, name, status, started_at, completed_at, driver_id, created_at")
+      .select("id, name, status, started_at, completed_at, driver_id, vehicle_id, created_at")
       .eq("driver_id", driver.id)
       .order("created_at", { ascending: false });
 
@@ -246,13 +251,15 @@ export const PickupProvider = ({ children }) => {
   const acceptRoute = useCallback(
     async (routeId) => {
       if (!driver?.id) return;
+      const now = new Date().toISOString();
       const { error } = await supabase
         .from("routes")
-        .update({ status: "active", assignment_updated_at: new Date().toISOString() })
+        .update({ status: "active", assignment_updated_at: now })
         .eq("id", routeId)
         .eq("driver_id", driver.id)
         .in("status", ["pending", "planned"]);
       if (error) throw error;
+      await updateDriverRouteStatus(driver.id, "available", now);
       await loadFromSupabase();
     },
     [driver?.id, loadFromSupabase],
@@ -261,13 +268,15 @@ export const PickupProvider = ({ children }) => {
   const startRoute = useCallback(
     async (routeId) => {
       if (!driver?.id) return;
+      const now = new Date().toISOString();
       const { error } = await supabase
         .from("routes")
-        .update({ started_at: new Date().toISOString() })
+        .update({ started_at: now })
         .eq("id", routeId)
         .eq("driver_id", driver.id)
         .eq("status", "active");
       if (error) throw error;
+      await updateDriverRouteStatus(driver.id, "on_route", now);
       await loadFromSupabase();
     },
     [driver?.id, loadFromSupabase],
@@ -276,13 +285,15 @@ export const PickupProvider = ({ children }) => {
   const completeRoute = useCallback(
     async (routeId) => {
       if (!driver?.id) return;
+      const now = new Date().toISOString();
       const { error } = await supabase
         .from("routes")
-        .update({ status: "completed", completed_at: new Date().toISOString() })
+        .update({ status: "completed", completed_at: now })
         .eq("id", routeId)
         .eq("driver_id", driver.id)
         .eq("status", "active");
       if (error) throw error;
+      await updateDriverRouteStatus(driver.id, "available", now);
       await loadFromSupabase();
     },
     [driver?.id, loadFromSupabase],

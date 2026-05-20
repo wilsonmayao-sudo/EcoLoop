@@ -59,7 +59,7 @@ export function AuthProvider({ children }) {
     }
     const { data, error } = await supabase
       .from("drivers")
-      .select("id, name, status, auth_user_id, phone_number, address")
+      .select("id, name, status, auth_user_id, phone_number, address, assigned_vehicle_id")
       .eq("auth_user_id", userId)
       .maybeSingle();
     if (error) throw error;
