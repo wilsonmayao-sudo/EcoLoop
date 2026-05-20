@@ -12,7 +12,7 @@ export default function SurfaceCard({ children, style, padding = "lg", elevated 
         styles.base,
         {
           backgroundColor: colors.card,
-          borderRadius: tokens.radius.lg,
+          borderRadius: tokens.radius.xl,
           padding: pad,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: colors.borderSubtle,

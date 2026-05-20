@@ -22,7 +22,7 @@ export default function Header({ title, subtitle = "City of Naga", rightIcons, r
                 key={`${name}-${index}`}
                 style={[index > 0 && styles.iconSpacing, styles.iconTouch]}
                 onPress={onPress}
-                activeOpacity={0.7}
+                activeOpacity={0.76}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Ionicons name={name} size={20} color="#FFFFFF" style={active ? styles.activeIcon : styles.inactiveIcon} />
@@ -43,11 +43,11 @@ export default function Header({ title, subtitle = "City of Naga", rightIcons, r
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    paddingBottom: 8,
-    borderBottomLeftRadius: 14,
-    borderBottomRightRadius: 14,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -61,23 +61,29 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "700",
     letterSpacing: -0.2,
+    lineHeight: 22,
   },
   subtitle: {
-    color: "rgba(255, 255, 255, 0.78)",
+    color: "rgba(255, 255, 255, 0.82)",
     fontSize: 11,
-    marginTop: 2,
+    marginTop: 1,
     fontWeight: "500",
+    lineHeight: 15,
   },
   rightIcons: {
     flexDirection: "row",
     alignItems: "center",
   },
   iconSpacing: {
-    marginLeft: 2,
+    marginLeft: 4,
   },
   iconTouch: {
     position: "relative",
-    padding: 4,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
   },
   activeIcon: {
     opacity: 1,
@@ -87,8 +93,8 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: "absolute",
-    top: 0,
-    right: 0,
+    top: -1,
+    right: -1,
     minWidth: 18,
     height: 18,
     paddingHorizontal: 4,
