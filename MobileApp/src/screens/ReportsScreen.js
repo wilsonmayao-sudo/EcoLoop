@@ -456,96 +456,103 @@ export default function ReportsScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Problem Type</Text>
-            <TouchableOpacity style={[styles.input, styles.dropdown, { borderColor: colors.textSecondary + "33" }]} onPress={() => setShowTypeOptions((v) => !v)}>
-              <Text style={{ color: colors.textPrimary, flex: 1 }}>{newType || "Select type"}</Text>
-              <Ionicons name={showTypeOptions ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
-            </TouchableOpacity>
-            {showTypeOptions ? (
-              <View style={[styles.dropdownList, { borderColor: colors.textSecondary + "33", backgroundColor: colors.surface }]}>
-                {problemTypeOptions.map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      setNewType(cat);
-                      if (!isOtherProblemType(cat)) setNewCustomType("");
-                      setShowTypeOptions(false);
-                    }}
-                  >
-                    <Text style={{ color: colors.textPrimary }}>{cat}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : null}
-
-            {isCustomProblemType ? (
-              <View style={styles.customIssueBox}>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Custom problem</Text>
-                <TextInput
-                  style={[styles.input, styles.inputMultiline, styles.customIssueInput, { borderColor: colors.textSecondary + "33", color: colors.textPrimary }]}
-                  value={newCustomType}
-                  onChangeText={setNewCustomType}
-                  placeholder="Describe the problem type..."
-                  placeholderTextColor={colors.textSecondary + "88"}
-                  multiline
-                />
-                <Text style={[styles.helper, { color: colors.textSecondary }]}>This will appear as the report category for staff.</Text>
-              </View>
-            ) : null}
-
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Current location / GPS</Text>
-            <AppButton title="Use current location" variant="outline" onPress={() => void captureCurrentLocation()} />
-            <TextInput
-              style={[styles.input, { borderColor: colors.textSecondary + "33", color: colors.textPrimary }]}
-              value={newLocation}
-              onChangeText={setNewLocation}
-              placeholder="Location details"
-              placeholderTextColor={colors.textSecondary + "88"}
-            />
-            {newLat != null && newLng != null ? <Text style={[styles.helper, { color: colors.textSecondary }]}>GPS: {newLat.toFixed(6)}, {newLng.toFixed(6)}</Text> : null}
-
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Photo attachment</Text>
-            <View style={[styles.rowBetween, { alignItems: "stretch" }]}>
-              <AppButton
-                title={photoUri ? "Change photo" : "Upload photo"}
-                variant="outline"
-                onPress={() => void pickPhoto()}
-                fullWidth={false}
-                style={{ flex: 1, marginRight: photoUri ? tokens.space.sm : 0 }}
-              />
-              {photoUri ? (
-                <AppButton
-                  title="Remove"
-                  variant="outline"
-                  onPress={() => setPhotoUri("")}
-                  fullWidth={false}
-                  style={{ flex: 0, minWidth: 100, borderColor: colors.danger }}
-                  textStyle={{ color: colors.danger }}
-                />
+            <ScrollView
+              style={styles.modalBody}
+              contentContainerStyle={styles.modalBodyContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Problem Type</Text>
+              <TouchableOpacity style={[styles.input, styles.dropdown, { borderColor: colors.textSecondary + "33" }]} onPress={() => setShowTypeOptions((v) => !v)}>
+                <Text style={{ color: colors.textPrimary, flex: 1 }}>{newType || "Select type"}</Text>
+                <Ionicons name={showTypeOptions ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+              {showTypeOptions ? (
+                <View style={[styles.dropdownList, { borderColor: colors.textSecondary + "33", backgroundColor: colors.surface }]}>
+                  {problemTypeOptions.map((cat) => (
+                    <TouchableOpacity
+                      key={cat}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setNewType(cat);
+                        if (!isOtherProblemType(cat)) setNewCustomType("");
+                        setShowTypeOptions(false);
+                      }}
+                    >
+                      <Text style={{ color: colors.textPrimary }}>{cat}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               ) : null}
-            </View>
-            {photoUri ? <Image source={{ uri: photoUri }} style={styles.previewImage} /> : null}
 
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Reporting Details / Notes</Text>
-            <TextInput
-              style={[styles.input, styles.inputMultiline, { borderColor: colors.textSecondary + "33", color: colors.textPrimary }]}
-              value={newDescription}
-              onChangeText={setNewDescription}
-              placeholder="Describe issue and notes..."
-              placeholderTextColor={colors.textSecondary + "88"}
-              multiline
-            />
+              {isCustomProblemType ? (
+                <View style={styles.customIssueBox}>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>Custom problem</Text>
+                  <TextInput
+                    style={[styles.input, styles.inputMultiline, styles.customIssueInput, { borderColor: colors.textSecondary + "33", color: colors.textPrimary }]}
+                    value={newCustomType}
+                    onChangeText={setNewCustomType}
+                    placeholder="Describe the problem type..."
+                    placeholderTextColor={colors.textSecondary + "88"}
+                    multiline
+                  />
+                  <Text style={[styles.helper, { color: colors.textSecondary }]}>This will appear as the report category for staff.</Text>
+                </View>
+              ) : null}
 
-            <View style={[styles.rowBetween, { gap: tokens.space.sm, marginTop: tokens.space.md }]}>
-              <AppButton title="Cancel" variant="outline" onPress={resetCreateForm} fullWidth={false} style={{ flex: 1 }} />
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Current location / GPS</Text>
+              <AppButton title="Use current location" variant="outline" onPress={() => void captureCurrentLocation()} />
+              <TextInput
+                style={[styles.input, { borderColor: colors.textSecondary + "33", color: colors.textPrimary }]}
+                value={newLocation}
+                onChangeText={setNewLocation}
+                placeholder="Location details"
+                placeholderTextColor={colors.textSecondary + "88"}
+              />
+              {newLat != null && newLng != null ? <Text style={[styles.helper, { color: colors.textSecondary }]}>GPS: {newLat.toFixed(6)}, {newLng.toFixed(6)}</Text> : null}
+
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Photo attachment</Text>
+              <View style={[styles.rowBetween, { alignItems: "stretch" }]}>
+                <AppButton
+                  title={photoUri ? "Change photo" : "Upload photo"}
+                  variant="outline"
+                  onPress={() => void pickPhoto()}
+                  fullWidth={false}
+                  style={{ flex: 1, marginRight: photoUri ? tokens.space.sm : 0 }}
+                />
+                {photoUri ? (
+                  <AppButton
+                    title="Remove"
+                    variant="outline"
+                    onPress={() => setPhotoUri("")}
+                    fullWidth={false}
+                    style={{ flex: 0, minWidth: 100, borderColor: colors.danger }}
+                    textStyle={{ color: colors.danger }}
+                  />
+                ) : null}
+              </View>
+              {photoUri ? <Image source={{ uri: photoUri }} style={styles.previewImage} /> : null}
+
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Reporting Details / Notes</Text>
+              <TextInput
+                style={[styles.input, styles.inputMultiline, { borderColor: colors.textSecondary + "33", color: colors.textPrimary }]}
+                value={newDescription}
+                onChangeText={setNewDescription}
+                placeholder="Describe issue and notes..."
+                placeholderTextColor={colors.textSecondary + "88"}
+                multiline
+              />
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <AppButton title="Cancel" variant="outline" onPress={resetCreateForm} fullWidth={false} style={styles.modalActionButton} />
               <AppButton
                 title={loading ? "Submitting…" : "Submit report"}
                 onPress={() => void submit()}
                 disabled={loading}
                 loading={loading}
                 fullWidth={false}
-                style={{ flex: 1 }}
+                style={styles.modalActionButton}
               />
             </View>
           </View>
@@ -605,7 +612,11 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 14 },
   modalOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", padding: 16 },
-  modalCard: { borderRadius: 16, padding: 16, gap: 10, maxHeight: "92%" },
+  modalCard: { borderRadius: 16, padding: 16, maxHeight: "92%" },
+  modalBody: { marginTop: 10, flexShrink: 1 },
+  modalBodyContent: { gap: 10, paddingBottom: 4 },
+  modalActions: { flexDirection: "row", alignItems: "stretch", gap: 10, marginTop: 12 },
+  modalActionButton: { flex: 1, minWidth: 0 },
   label: { fontSize: 12, fontWeight: "700", marginTop: 4 },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, fontSize: 14 },
   inputMultiline: { minHeight: 90, textAlignVertical: "top" },
