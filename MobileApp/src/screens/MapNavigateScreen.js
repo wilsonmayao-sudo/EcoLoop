@@ -7,9 +7,17 @@ import NetInfo from "@react-native-community/netinfo";
 import { Ionicons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
 import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 import { usePickups } from "../context/PickupContext";
 import Constants from "expo-constants";
 import { bearingDegrees, compassRose, formatDistance, haversineMeters } from "../utils/geoNav";
+import {
+  LIVE_LOCATION_MIN_INTERVAL_MS,
+  normalizeGpsFix,
+  publishDriverLocation,
+  shouldPublishLiveLocation,
+  shouldRecordLocationHistory,
+} from "../services/liveLocation";
 import {
   SWMO_HIDEOUT,
   routeGeometryFingerprint,
@@ -36,10 +44,20 @@ function pickNonEmptyString(...candidates) {
   return "";
 }
 
+function routeStatusNorm(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
 export default function MapNavigateScreen() {
   const { colors, tokens } = useTheme();
-  const { pendingPickups, getTotalPickups, isLoading: pickupsLoading } = usePickups();
+  const { driver } = useAuth();
+  const { pendingPickups, driverRoutes, getTotalPickups, isLoading: pickupsLoading } = usePickups();
   const webViewRef = useRef(null);
+  const lastPublishedLocationRef = useRef(null);
+  const lastPublishedStatusKeyRef = useRef("");
+  const lastHistoryLocationRef = useRef(null);
   const insets = useSafeAreaInsets();
 
   const extra = Constants?.expoConfig?.extra ?? Constants?.manifest?.extra ?? {};
@@ -73,6 +91,21 @@ export default function MapNavigateScreen() {
   );
 
   const orderedPickups = pendingPickups;
+
+  const activeDriverRoute = useMemo(() => {
+    return (driverRoutes ?? [])
+      .filter((route) => routeStatusNorm(route.status) === "active")
+      .sort((a, b) => {
+        if (a.started_at && !b.started_at) return -1;
+        if (!a.started_at && b.started_at) return 1;
+        return new Date(b.started_at ?? b.created_at ?? 0).getTime() - new Date(a.started_at ?? a.created_at ?? 0).getTime();
+      })[0] ?? null;
+  }, [driverRoutes]);
+
+  const activeRouteId = activeDriverRoute?.id ?? orderedPickups[0]?.routeId ?? null;
+  const activeVehicleId = activeDriverRoute?.vehicle_id ?? driver?.assigned_vehicle_id ?? null;
+  const trackingStatus = activeDriverRoute?.started_at ? "navigating" : activeDriverRoute ? "active_route" : "available";
+  const trackingStatusKey = `${driver?.id ?? "no-driver"}:${activeVehicleId ?? "no-vehicle"}:${activeRouteId ?? "no-route"}:${trackingStatus}`;
 
   const routeOrigin = useMemo(() => {
     if (userLocation && Number.isFinite(userLocation.lat) && Number.isFinite(userLocation.lng)) {
@@ -149,19 +182,17 @@ export default function MapNavigateScreen() {
       }
       setLocationPermission(true);
       try {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setUserLocation({
-          lat: loc.coords.latitude,
-          lng: loc.coords.longitude,
-          ts: loc.timestamp,
-        });
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        const fix = normalizeGpsFix(loc);
+        if (fix) setUserLocation(fix);
       } catch {
         /* first fix optional */
       }
       sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, distanceInterval: 15, timeInterval: 4000 },
+        { accuracy: Location.Accuracy.High, distanceInterval: 8, timeInterval: LIVE_LOCATION_MIN_INTERVAL_MS },
         (loc) => {
-          setUserLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude, ts: loc.timestamp });
+          const fix = normalizeGpsFix(loc);
+          if (fix) setUserLocation(fix);
         },
       );
     })();
@@ -169,6 +200,46 @@ export default function MapNavigateScreen() {
       if (sub) sub.remove();
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (!driver?.id || !userLocation) return;
+
+      const includeHistory = shouldRecordLocationHistory(userLocation, lastHistoryLocationRef.current);
+      const shouldPublish = shouldPublishLiveLocation({
+        current: userLocation,
+        lastSent: lastPublishedLocationRef.current,
+        statusKey: trackingStatusKey,
+        lastStatusKey: lastPublishedStatusKeyRef.current,
+      });
+
+      if (!shouldPublish && !includeHistory) return;
+
+      try {
+        const net = await NetInfo.fetch();
+        if (!net.isConnected || cancelled) return;
+        await publishDriverLocation({
+          driverId: driver.id,
+          vehicleId: activeVehicleId,
+          routeId: activeRouteId,
+          location: userLocation,
+          includeHistory,
+        });
+        if (cancelled) return;
+        lastPublishedLocationRef.current = userLocation;
+        lastPublishedStatusKeyRef.current = trackingStatusKey;
+        if (includeHistory) lastHistoryLocationRef.current = userLocation;
+      } catch (error) {
+        console.warn("Live location update failed:", error?.message);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [activeRouteId, activeVehicleId, driver?.id, trackingStatusKey, userLocation]);
 
   useEffect(() => {
     setGuidanceIndex(0);

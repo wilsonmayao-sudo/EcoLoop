@@ -161,6 +161,19 @@ export const NotificationProvider = ({ children }) => {
     [enabled, load],
   );
 
+  const markAllRead = useCallback(async () => {
+    if (!enabled) return;
+    const unreadIds = items.filter((n) => !n.read).map((n) => n.id).filter(Boolean);
+    if (unreadIds.length === 0) return;
+
+    setItems((prev) => prev.map((n) => (unreadIds.includes(n.id) ? { ...n, read: true } : n)));
+    const { error: uErr } = await supabase.from("notifications").update({ read: true }).in("id", unreadIds);
+    if (uErr) {
+      await load();
+      throw uErr;
+    }
+  }, [enabled, items, load]);
+
   const value = useMemo(
     () => ({
       enabled,
@@ -171,8 +184,9 @@ export const NotificationProvider = ({ children }) => {
       error,
       reload: load,
       markRead,
+      markAllRead,
     }),
-    [enabled, toggle, displayItems, unreadCount, loading, error, load, markRead],
+    [enabled, toggle, displayItems, unreadCount, loading, error, load, markRead, markAllRead],
   );
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;

@@ -30,6 +30,7 @@ export interface DriverRecord {
   name: string;
   status: string;
   auth_user_id?: string | null;
+  assigned_vehicle_id?: string | number | null;
 }
 
 export interface RouteRecord {
@@ -80,6 +81,21 @@ export interface VehicleRecord {
   longitude?: number | null;
   last_seen_at?: string | null;
   updated_at?: string | null;
+}
+
+export interface VehicleLocationRecord {
+  id?: string | number | null;
+  vehicle_id?: string | number | null;
+  driver_id?: string | number | null;
+  route_id?: string | number | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  speed_kph?: number | string | null;
+  heading_deg?: number | string | null;
+  accuracy_m?: number | string | null;
+  updated_at?: string | null;
+  recorded_at?: string | null;
+  source?: "latest" | "gps_log";
 }
 
 export interface WasteReportRecord {
@@ -167,7 +183,6 @@ const LIVE_TABLES = [
   "route_stops",
   "deliveries",
   "vehicles",
-  "vehicle_locations",
   "maintenance_records",
   "waste_reports",
   "notifications",
@@ -223,6 +238,53 @@ function tableError(error: any, table: string) {
   return error ? `${table}: ${error.message ?? "Unable to load data"}` : null;
 }
 
+const LOCATION_ROW_RETENTION_MS = 60 * 60 * 1000;
+
+function locationTimestamp(value: Partial<VehicleLocationRecord>) {
+  return value.updated_at ?? value.recorded_at ?? null;
+}
+
+function locationTimestampMs(value: Partial<VehicleLocationRecord>) {
+  const ts = locationTimestamp(value);
+  return ts ? new Date(ts).getTime() : 0;
+}
+
+function locationRowKey(value: Partial<VehicleLocationRecord>) {
+  if (value.source === "latest" && value.vehicle_id != null) return `latest:${value.vehicle_id}`;
+  if (value.vehicle_id != null) return `vehicle-log:${value.vehicle_id}`;
+  if (value.driver_id != null) return `driver-log:${value.driver_id}`;
+  return `log:${value.id ?? `${value.latitude}:${value.longitude}:${locationTimestamp(value)}`}`;
+}
+
+function normalizeLocationRows(rows: Partial<VehicleLocationRecord>[], source: "latest" | "gps_log"): VehicleLocationRecord[] {
+  return rows
+    .map((row) => ({ ...row, source }) as VehicleLocationRecord)
+    .filter((row) => {
+      const lat = Number(row.latitude);
+      const lng = Number(row.longitude);
+      return Number.isFinite(lat) && Number.isFinite(lng) && !(Math.abs(lat) < 0.000001 && Math.abs(lng) < 0.000001);
+    });
+}
+
+function mergeVehicleLocationRows(prev: VehicleLocationRecord[], incoming: VehicleLocationRecord[]) {
+  const cutoff = Date.now() - LOCATION_ROW_RETENTION_MS;
+  const byKey = new Map<string, VehicleLocationRecord>();
+
+  [...prev, ...incoming].forEach((row) => {
+    const rowMs = locationTimestampMs(row);
+    if (rowMs && rowMs < cutoff) return;
+    const key = locationRowKey(row);
+    const existing = byKey.get(key);
+    if (!existing || locationTimestampMs(row) >= locationTimestampMs(existing)) {
+      byKey.set(key, row);
+    }
+  });
+
+  return Array.from(byKey.values())
+    .sort((a, b) => locationTimestampMs(b) - locationTimestampMs(a))
+    .slice(0, 300);
+}
+
 export function getRouteProgress(routeId: string, deliveries: DeliveryRecord[]) {
   const routeDeliveries = deliveries.filter((delivery) => String(delivery.route_id) === String(routeId));
   if (routeDeliveries.length === 0) return 0;
@@ -230,9 +292,16 @@ export function getRouteProgress(routeId: string, deliveries: DeliveryRecord[]) 
   return Math.round((completed / routeDeliveries.length) * 100);
 }
 
-export function mapLatLngToPoint(lat: number | null | undefined, lng: number | null | undefined, bins: BinRecord[]): MapPoint {
-  const coordinates = bins
-    .map((bin) => ({ lat: Number(bin.latitude), lng: Number(bin.longitude) }))
+export function mapLatLngToPoint(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+  bins: BinRecord[],
+  additionalCoordinates: Array<{ lat: number | string | null | undefined; lng: number | string | null | undefined }> = [],
+): MapPoint {
+  const coordinates = [
+    ...bins.map((bin) => ({ lat: Number(bin.latitude), lng: Number(bin.longitude) })),
+    ...additionalCoordinates.map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) })),
+  ]
     .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || coordinates.length === 0) {
     return { x: 50, y: 50 };
@@ -305,6 +374,7 @@ export function useLiveData() {
   const [routeStops, setRouteStops] = useState<RouteStopRecord[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
   const [vehicles, setVehicles] = useState<VehicleRecord[]>([]);
+  const [vehicleLocations, setVehicleLocations] = useState<VehicleLocationRecord[]>([]);
   const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
   const [reports, setReports] = useState<WasteReportRecord[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
@@ -326,6 +396,8 @@ export function useLiveData() {
       routeStopsResult,
       deliveriesResult,
       vehiclesResult,
+      latestLocationsResult,
+      gpsLogsResult,
       maintenanceResult,
       reportsResult,
       notificationsResult,
@@ -337,7 +409,7 @@ export function useLiveData() {
       binTypesResult,
     ] = await Promise.all([
       supabase.from("bins").select("id, code, location, type, status, capacity_percent, latitude, longitude, updated_at").order("id", { ascending: true }),
-      supabase.from("drivers").select("id, name, status, auth_user_id").order("name", { ascending: true }),
+      supabase.from("drivers").select("id, name, status, auth_user_id, assigned_vehicle_id").order("name", { ascending: true }),
       supabase
         .from("routes")
         .select(
@@ -347,6 +419,8 @@ export function useLiveData() {
       supabase.from("route_stops").select("route_id, bin_id, stop_order, bins(id, code, location, type, status, capacity_percent, latitude, longitude)").order("stop_order", { ascending: true }),
       supabase.from("deliveries").select("id, route_id, bin_id, driver_id, status, eta, completed_at, updated_at").order("updated_at", { ascending: false }),
       supabase.from("vehicles").select("id, code, label, status, driver_id, route_id, capacity_kg, fuel_percent, latitude, longitude, last_seen_at, updated_at").order("label", { ascending: true }),
+      supabase.from("vehicle_locations_latest").select("vehicle_id, driver_id, route_id, latitude, longitude, speed_kph, heading_deg, updated_at").order("updated_at", { ascending: false }),
+      supabase.from("vehicle_gps_logs").select("id, vehicle_id, driver_id, route_id, latitude, longitude, speed_kph, heading_deg, accuracy_m, recorded_at").order("recorded_at", { ascending: false }).limit(200),
       supabase.from("maintenance_records").select("id, vehicle_id, maintenance_type, scheduled_at, estimated_duration_minutes, notes, status, created_at").order("scheduled_at", { ascending: false }),
       supabase
         .from("waste_reports")
@@ -370,6 +444,8 @@ export function useLiveData() {
       tableError(routeStopsResult.error, "route_stops"),
       tableError(deliveriesResult.error, "deliveries"),
       tableError(vehiclesResult.error, "vehicles"),
+      tableError(latestLocationsResult.error, "vehicle_locations_latest"),
+      tableError(gpsLogsResult.error, "vehicle_gps_logs"),
       tableError(maintenanceResult.error, "maintenance_records"),
       tableError(reportsResult.error, "waste_reports"),
       tableError(notificationsResult.error, "notifications"),
@@ -390,6 +466,12 @@ export function useLiveData() {
     })) as RouteStopRecord[]);
     setDeliveries((deliveriesResult.data as DeliveryRecord[]) ?? []);
     setVehicles((vehiclesResult.data as VehicleRecord[]) ?? []);
+    setVehicleLocations(
+      mergeVehicleLocationRows(
+        normalizeLocationRows((latestLocationsResult.data as VehicleLocationRecord[]) ?? [], "latest"),
+        normalizeLocationRows((gpsLogsResult.data as VehicleLocationRecord[]) ?? [], "gps_log"),
+      ),
+    );
     setMaintenanceRecords((maintenanceResult.data as MaintenanceRecord[]) ?? []);
     setReports((reportsResult.data as WasteReportRecord[]) ?? []);
     setNotifications((notificationsResult.data as NotificationRecord[]) ?? []);
@@ -415,6 +497,36 @@ export function useLiveData() {
       supabase.removeChannel(channel);
     };
   }, [load, profile?.auth_user_id]);
+
+  useEffect(() => {
+    if (!profile) return undefined;
+
+    const mergePayload = (row: any, source: "latest" | "gps_log") => {
+      const normalized = normalizeLocationRows([row], source);
+      if (normalized.length > 0) {
+        setVehicleLocations((prev) => mergeVehicleLocationRows(prev, normalized));
+      }
+    };
+
+    const channel = supabase
+      .channel(`webapp-live-locations-${profile.auth_user_id}-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "vehicle_locations_latest" }, (payload: any) => {
+        if (payload.eventType === "DELETE") {
+          const key = locationRowKey({ ...payload.old, source: "latest" });
+          setVehicleLocations((prev) => prev.filter((row) => locationRowKey(row) !== key));
+          return;
+        }
+        mergePayload(payload.new, "latest");
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "vehicle_gps_logs" }, (payload: any) => {
+        mergePayload(payload.new, "gps_log");
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.auth_user_id]);
 
   const driverById = useMemo(() => new Map(drivers.map((driver) => [String(driver.id), driver])), [drivers]);
   const routeById = useMemo(() => new Map(routes.map((route) => [String(route.id), route])), [routes]);
@@ -561,6 +673,7 @@ export function useLiveData() {
     routeStops,
     deliveries,
     vehicles,
+    vehicleLocations,
     maintenanceRecords,
     reports,
     notifications,

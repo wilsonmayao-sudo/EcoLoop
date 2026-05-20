@@ -1,6 +1,6 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Platform, StyleSheet } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -31,7 +31,11 @@ const TabBarIcon = React.memo(({ route, focused, color, size }) => {
     iconName = focused ? "settings" : "settings-outline";
   }
 
-  return <Ionicons name={iconName} size={focused ? 24 : 23} color={color} />;
+  return (
+    <View style={[styles.tabIconWrap, focused && styles.tabIconWrapActive]}>
+      <Ionicons name={iconName} size={focused ? 24 : 23} color={color} />
+    </View>
+  );
 });
 
 export default function TabNavigator({ onLogout }) {
@@ -60,7 +64,7 @@ export default function TabNavigator({ onLogout }) {
             {
               height: tabBarHeight,
               paddingBottom: tabBarBottomPad,
-              paddingTop: tokens.space.sm,
+              paddingTop: tokens.space.xs + 2,
               backgroundColor: colors.card,
               borderTopColor: colors.borderSubtle,
             },
@@ -69,10 +73,10 @@ export default function TabNavigator({ onLogout }) {
             fontSize: 11,
             fontWeight: "700",
             letterSpacing: 0.2,
-            marginTop: 2,
+            marginTop: 1,
           },
           tabBarItemStyle: {
-            paddingTop: 2,
+            paddingTop: 1,
           },
           lazy: true,
         })}
@@ -89,6 +93,7 @@ export default function TabNavigator({ onLogout }) {
               fontWeight: "800",
               minWidth: 18,
               height: 18,
+              borderRadius: 9,
             },
           }}
         />
@@ -108,10 +113,20 @@ export default function TabNavigator({ onLogout }) {
 const styles = StyleSheet.create({
   tabBar: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    elevation: 8,
+    elevation: 10,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+  },
+  tabIconWrap: {
+    width: 38,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabIconWrapActive: {
+    backgroundColor: "rgba(56, 166, 92, 0.12)",
   },
 });

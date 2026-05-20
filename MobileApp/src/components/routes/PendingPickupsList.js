@@ -67,9 +67,9 @@ const PendingCard = React.memo(
     return (
       <SurfaceCard
         padding={0}
-        style={isNext ? { borderWidth: 2, borderColor: colors.mapNext } : undefined}
+        style={isNext ? { borderWidth: 1.5, borderColor: colors.mapNext + "99" } : undefined}
       >
-        <TouchableOpacity onPress={onToggle} activeOpacity={0.75}>
+        <TouchableOpacity onPress={onToggle} activeOpacity={0.82}>
           <View style={styles.pendingCardHeader}>
             <View style={styles.pendingCardContent}>
               <View style={styles.pendingCardTitleRow}>
@@ -88,19 +88,24 @@ const PendingCard = React.memo(
                 ) : null}
               </View>
             </View>
-            <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={20} color={colors.textSecondary} />
+            <View style={[styles.chevronWrap, { backgroundColor: colors.surface }]}>
+              <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={18} color={colors.textSecondary} />
+            </View>
           </View>
         </TouchableOpacity>
         {expanded && (
           <View style={styles.expandedContent}>
-            <View style={styles.locationInfo}>
+            <View style={[styles.expandedDivider, { backgroundColor: colors.borderSubtle }]} />
+            <View style={[styles.locationInfo, { backgroundColor: colors.surface }]}>
               <Text style={[styles.expandedTitle, { color: colors.textPrimary }]}>Location</Text>
-              <Text style={[styles.expandedSubtitle, { color: colors.textSecondary }]}>
-                <Text style={{ fontWeight: "700" }}>Street:</Text> {street}
-              </Text>
-              <Text style={[styles.expandedSubtitle, { color: colors.textSecondary }]}>
-                <Text style={{ fontWeight: "700" }}>Address:</Text> {address}
-              </Text>
+              <View style={styles.detailRow}>
+                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Street</Text>
+                <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{street}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Address</Text>
+                <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{address}</Text>
+              </View>
             </View>
             <AppButton title="Mark completed" icon="checkmark-circle-outline" onPress={onComplete} />
           </View>
@@ -113,19 +118,41 @@ const PendingCard = React.memo(
 const styles = StyleSheet.create({
   pendingCardHeader: {
     flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    alignItems: "flex-start",
+    paddingHorizontal: 18,
+    paddingVertical: 18,
   },
-  pendingCardContent: { flex: 1, marginRight: 8 },
-  pendingCardTitle: { fontSize: 16, fontWeight: "800", marginBottom: 8 },
+  pendingCardContent: { flex: 1, marginRight: 12 },
+  pendingCardTitle: { fontSize: 17, fontWeight: "800", marginBottom: 10, lineHeight: 22, letterSpacing: -0.2 },
   pendingCardTags: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
-  pendingCardTitleRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-  expandedContent: { paddingHorizontal: 16, paddingBottom: 16 },
-  expandedTitle: { fontSize: 14, fontWeight: "800", marginBottom: 6 },
-  expandedSubtitle: { fontSize: 14, marginBottom: 6, lineHeight: 20 },
-  locationInfo: { marginBottom: 4 },
-  emptyState: { alignItems: "center", justifyContent: "center", paddingVertical: 28, paddingHorizontal: 12 },
+  pendingCardTitleRow: { gap: 10 },
+  chevronWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  expandedContent: { paddingHorizontal: 18, paddingBottom: 18 },
+  expandedDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginBottom: 14,
+  },
+  expandedTitle: { fontSize: 14, fontWeight: "800", marginBottom: 10 },
+  detailRow: {
+    marginBottom: 10,
+  },
+  detailLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
+    marginBottom: 3,
+  },
+  detailValue: { fontSize: 14, lineHeight: 20, fontWeight: "500" },
+  locationInfo: { marginBottom: 14, borderRadius: 14, padding: 14 },
+  emptyState: { alignItems: "center", justifyContent: "center", paddingVertical: 30, paddingHorizontal: 16 },
   emptyIconWrap: {
     width: 64,
     height: 64,
@@ -134,5 +161,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   emptyStateTitle: { fontSize: 17, fontWeight: "800", marginTop: 14, marginBottom: 8 },
-  emptyStateSubtitle: { fontSize: 14, textAlign: "center", lineHeight: 20, fontWeight: "500" },
+  emptyStateSubtitle: { fontSize: 14, textAlign: "center", lineHeight: 21, fontWeight: "500" },
 });

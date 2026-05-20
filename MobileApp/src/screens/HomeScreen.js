@@ -117,7 +117,7 @@ function DriverRouteControls() {
 
 export default function HomeScreen() {
   const { colors, tokens } = useTheme();
-  const { enabled: notificationsEnabled, toggle: toggleNotifications, unreadCount } = useNotifications();
+  const { enabled: notificationsEnabled, unreadCount } = useNotifications();
   const navigation = useNavigation();
   const { pendingPickups, completePickup, getTotalPickups, getRemainingPickups, getCompletedPickups, isLoading: pickupsLoading } = usePickups();
   const [justCompletedAll, setJustCompletedAll] = useState(false);
@@ -164,7 +164,7 @@ export default function HomeScreen() {
         rightIcons={[
           {
             name: notificationsEnabled ? "notifications" : "notifications-outline",
-            onPress: toggleNotifications,
+            onPress: () => navigation.getParent()?.navigate("Notifications"),
             active: notificationsEnabled,
             badge:
               notificationsEnabled && unreadCount > 0
@@ -184,9 +184,11 @@ export default function HomeScreen() {
         <View style={styles.spacing} />
         <DriverRouteControls />
         <View style={styles.spacing} />
-        <Text style={[styles.sectionTitle, { color: colors.textPrimary, marginBottom: tokens.space.xs }]}>Pending stops</Text>
-        <Text style={[styles.sectionHint, { color: colors.textSecondary }]}>After you accept an active route, stops appear here.</Text>
-        <View style={{ height: tokens.space.md }} />
+        <View style={styles.sectionHeaderBlock}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Pending stops</Text>
+          <Text style={[styles.sectionHint, { color: colors.textSecondary }]}>After you accept an active route, stops appear here.</Text>
+        </View>
+        <View style={styles.sectionToContentGap} />
         {pickupsLoading ? (
           <SurfaceCard elevated={false} style={styles.loadingCard}>
             <ActivityIndicator size="small" color={colors.primary} />
@@ -234,7 +236,7 @@ function AssignedRouteOverview({ onMenuPress }) {
             {primaryRouteName}
             {routeNames.length > 1 ? ` · +${routeNames.length - 1} more` : ""}
           </Text>
-          <View style={[styles.syncPill, { backgroundColor: colors.surface }]}>
+          <View style={[styles.syncPill, { backgroundColor: colors.surface, borderColor: colors.borderSubtle }]}>
             <Ionicons name={isLoading ? "sync" : "cloud-done-outline"} size={14} color={colors.textSecondary} />
             <Text style={[styles.syncLine, { color: colors.textSecondary }]}>
               {isLoading ? "Refreshing…" : "Synced with dispatch"}
@@ -244,7 +246,7 @@ function AssignedRouteOverview({ onMenuPress }) {
         <TouchableOpacity
           onPress={onMenuPress}
           hitSlop={tokens.hitSlop}
-          style={[styles.iconBtn, { backgroundColor: colors.surface }]}
+          style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.borderSubtle }]}
           accessibilityLabel="Route actions"
         >
           <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
@@ -253,7 +255,7 @@ function AssignedRouteOverview({ onMenuPress }) {
 
       {hasActive ? (
         <>
-          <View style={[styles.progressBar, { backgroundColor: colors.textSecondary + "28" }]}>
+          <View style={[styles.progressBar, { backgroundColor: colors.textSecondary + "1F" }]}>
             <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: colors.primary }]} />
           </View>
           <Text style={[styles.progressCaption, { color: colors.textSecondary }]}>
@@ -336,7 +338,7 @@ function RecentActivity() {
               icon="checkmark-circle"
               title={`Route completed: ${latestRoute.name}`}
               subtitle={latestRoute.dateCompleted}
-              trailing={<TagChip label={`${latestRoute.binsCollected} stops`} color={colors.pillBlue} />}
+            trailing={<TagChip label={`${latestRoute.binsCollected} stops`} color={colors.pillBlue} />}
             />
             <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
           </>
@@ -423,20 +425,26 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 32,
+    paddingTop: 12,
+    paddingBottom: 36,
   },
   spacing: {
-    height: 18,
+    height: 20,
+  },
+  sectionHeaderBlock: {
+    gap: 4,
+  },
+  sectionToContentGap: {
+    height: 14,
   },
   sectionTitle: {
-    fontSize: 17,
-    fontWeight: "800",
+    fontSize: 18,
+    fontWeight: "700",
     letterSpacing: -0.2,
   },
   sectionHint: {
     fontSize: 13,
-    lineHeight: 19,
+    lineHeight: 20,
     fontWeight: "500",
   },
   loadingCard: {
@@ -449,51 +457,58 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
   },
-  heroCard: {},
-  routeCard: {},
+  heroCard: {
+    paddingTop: 18,
+  },
+  routeCard: {
+    paddingTop: 18,
+  },
   quickActionsCard: {
-    gap: 2,
+    gap: 4,
   },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 12,
+    marginBottom: 14,
   },
   heroIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 46,
+    height: 46,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 12,
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "800",
-    letterSpacing: 0.6,
+    letterSpacing: 0.7,
     textTransform: "uppercase",
-    marginBottom: 2,
+    marginBottom: 3,
   },
   cardTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "700",
     opacity: 0.95,
   },
   routeNameLine: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "800",
-    marginTop: 4,
+    marginTop: 5,
     letterSpacing: -0.3,
+    lineHeight: 25,
   },
   syncPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     alignSelf: "flex-start",
-    paddingHorizontal: 10,
+    paddingHorizontal: 11,
     paddingVertical: 6,
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 999,
-    marginTop: 8,
+    marginTop: 10,
   },
   syncLine: {
     fontSize: 12,
@@ -503,18 +518,20 @@ const styles = StyleSheet.create({
   iconBtn: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
   },
   routeCardHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: 4,
+    marginBottom: 8,
   },
   routeBlockTitle: {
     fontSize: 16,
     fontWeight: "800",
+    lineHeight: 21,
   },
   emptyRouteHint: {
     fontSize: 13,
@@ -523,54 +540,55 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   progressBar: {
-    height: 8,
-    borderRadius: 6,
+    height: 9,
+    borderRadius: 999,
     overflow: "hidden",
-    marginTop: 12,
+    marginTop: 14,
   },
   progressFill: {
-    height: 8,
-    borderRadius: 6,
+    height: 9,
+    borderRadius: 999,
   },
   progressCaption: {
-    fontSize: 12,
-    marginTop: 8,
+    fontSize: 13,
+    marginTop: 10,
     fontWeight: "600",
+    lineHeight: 18,
   },
   statsRow: {
     flexDirection: "row",
-    gap: 10,
+    gap: 12,
   },
   statContainer: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
   },
   statValue: {
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: "800",
     marginBottom: 4,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 12,
     textAlign: "center",
     fontWeight: "600",
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginVertical: 4,
+    marginVertical: 6,
   },
   activityTile: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 12,
     gap: 12,
   },
   activityIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -581,10 +599,11 @@ const styles = StyleSheet.create({
   activityTitle: {
     fontSize: 15,
     fontWeight: "700",
-    marginBottom: 2,
+    marginBottom: 3,
+    lineHeight: 20,
   },
   activitySubtitle: {
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
   },
 });

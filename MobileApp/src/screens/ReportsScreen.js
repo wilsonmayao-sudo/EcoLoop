@@ -35,8 +35,45 @@ const EXCLUDED_PROBLEM_TYPES = new Set([
   "truck breakdown",
 ]);
 
+const STAFF_REPORT_NOTIFICATION_ROLES = ["admin", "dispatcher", "supervisor"];
+const OTHER_PROBLEM_TYPE = "Other";
+
 function normalizeStatus(value) {
   return String(value ?? "").toLowerCase().replace(/\s+/g, "_");
+}
+
+function isOtherProblemType(value) {
+  return String(value ?? "").trim().toLowerCase() === OTHER_PROBLEM_TYPE.toLowerCase();
+}
+
+function reportDisplayNumber(report) {
+  return report?.report_number ?? report?.report_id ?? "New report";
+}
+
+function reportNotificationMessage(payload) {
+  const driverName = payload.reported_by || "A truck driver";
+  const category = payload.report_type || payload.type || "an issue";
+  const location = payload.location && payload.location !== "Not specified" ? ` at ${payload.location}` : "";
+  return `${driverName} submitted ${category}${location}. Open Reports & Issues to review.`;
+}
+
+async function notifyStaffOfNewReport(report, payload) {
+  const sourceId = report?.id ? String(report.id) : null;
+  const title = `New report: ${reportDisplayNumber(report)}`;
+  const message = reportNotificationMessage(payload);
+  const { error } = await supabase.from("notifications").insert(
+    STAFF_REPORT_NOTIFICATION_ROLES.map((role) => ({
+      role,
+      title,
+      message,
+      type: "warning",
+      category: "report",
+      source_table: "waste_reports",
+      source_id: sourceId,
+      read: false,
+    })),
+  );
+  if (error) throw error;
 }
 
 function formatDateTime(value) {
@@ -74,6 +111,7 @@ export default function ReportsScreen() {
   const [showCreate, setShowCreate] = useState(false);
   const [showTypeOptions, setShowTypeOptions] = useState(false);
   const [newType, setNewType] = useState("");
+  const [newCustomType, setNewCustomType] = useState("");
   const [newLocation, setNewLocation] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newLat, setNewLat] = useState(null);
@@ -91,8 +129,22 @@ export default function ReportsScreen() {
     const options = Array.from(dedup.values());
     const nonOther = options.filter((item) => item.toLowerCase() !== "other");
     const hasOther = options.some((item) => item.toLowerCase() === "other");
-    return hasOther ? [...nonOther, "Other"] : nonOther;
+    return hasOther ? [...nonOther, OTHER_PROBLEM_TYPE] : nonOther;
   }, [categories]);
+
+  const isCustomProblemType = isOtherProblemType(newType);
+
+  const resetCreateForm = useCallback(() => {
+    setShowCreate(false);
+    setShowTypeOptions(false);
+    setNewType("");
+    setNewCustomType("");
+    setNewDescription("");
+    setNewLocation("");
+    setNewLat(null);
+    setNewLng(null);
+    setPhotoUri("");
+  }, []);
 
   const load = useCallback(async () => {
     if (!driver?.id) return;
@@ -216,10 +268,17 @@ export default function ReportsScreen() {
       if (uploaded.error) throw uploaded.error;
       imageUrl = supabase.storage.from("report-images").getPublicUrl(path).data.publicUrl;
     }
-    const { error: insErr } = await supabase
+    const { data: insertedReport, error: insErr } = await supabase
       .from("waste_reports")
-      .insert({ ...mutation.payload, image_url: imageUrl });
+      .insert({ ...mutation.payload, image_url: imageUrl })
+      .select("id, report_id, report_number")
+      .single();
     if (insErr) throw insErr;
+    try {
+      await notifyStaffOfNewReport(insertedReport, mutation.payload);
+    } catch (notifyErr) {
+      console.warn("Report notification failed:", notifyErr?.message ?? notifyErr);
+    }
   }, [driver?.id]);
 
   useEffect(() => {
@@ -238,16 +297,22 @@ export default function ReportsScreen() {
       Alert.alert("Missing fields", "Problem type and notes are required.");
       return;
     }
+    if (isOtherProblemType(newType) && !newCustomType.trim()) {
+      Alert.alert("Missing custom issue", "Please describe the custom problem before submitting.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
       const routeId = pendingPickups?.[0]?.routeId ? String(pendingPickups[0].routeId) : null;
-      const reportType = newType.trim();
+      const selectedType = newType.trim();
+      const customType = newCustomType.trim();
+      const reportType = isOtherProblemType(selectedType) ? customType : selectedType;
       const payload = {
         driver_id: String(driver.id),
         route_id: routeId,
         report_type: reportType,
-        type: reportType,
+        type: isOtherProblemType(selectedType) ? OTHER_PROBLEM_TYPE : reportType,
         description: newDescription.trim(),
         image_url: null,
         latitude: newLat,
@@ -268,20 +333,22 @@ export default function ReportsScreen() {
       } else {
         let imageUrl = null;
         if (photoUri) imageUrl = await uploadImage();
-        const { error: insErr } = await supabase.from("waste_reports").insert({
-          ...payload,
-          image_url: imageUrl,
-        });
+        const { data: insertedReport, error: insErr } = await supabase
+          .from("waste_reports")
+          .insert({
+            ...payload,
+            image_url: imageUrl,
+          })
+          .select("id, report_id, report_number")
+          .single();
         if (insErr) throw insErr;
+        try {
+          await notifyStaffOfNewReport(insertedReport, payload);
+        } catch (notifyErr) {
+          console.warn("Report notification failed:", notifyErr?.message ?? notifyErr);
+        }
       }
-      setShowCreate(false);
-      setShowTypeOptions(false);
-      setNewType("");
-      setNewDescription("");
-      setNewLocation("");
-      setNewLat(null);
-      setNewLng(null);
-      setPhotoUri("");
+      resetCreateForm();
       await load();
       if (netState.isConnected) {
         Alert.alert("Submitted", "Report successfully saved.");
@@ -297,7 +364,7 @@ export default function ReportsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [driver?.id, driver?.name, load, newDescription, newLat, newLng, newLocation, newType, pendingPickups, uploadImage]);
+  }, [driver?.id, driver?.name, load, newCustomType, newDescription, newLat, newLng, newLocation, newType, pendingPickups, resetCreateForm, uploadImage]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
@@ -341,6 +408,7 @@ export default function ReportsScreen() {
               icon="add"
               onPress={() => {
                 setNewType(problemTypeOptions[0] ?? "Truck breakdown");
+                setNewCustomType("");
                 setShowCreate(true);
               }}
               fullWidth={false}
@@ -383,7 +451,7 @@ export default function ReportsScreen() {
           <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
             <View style={styles.rowBetween}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Submit Overall Report</Text>
-              <TouchableOpacity onPress={() => setShowCreate(false)}>
+              <TouchableOpacity onPress={resetCreateForm}>
                 <Ionicons name="close" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -396,10 +464,33 @@ export default function ReportsScreen() {
             {showTypeOptions ? (
               <View style={[styles.dropdownList, { borderColor: colors.textSecondary + "33", backgroundColor: colors.surface }]}>
                 {problemTypeOptions.map((cat) => (
-                  <TouchableOpacity key={cat} style={styles.dropdownItem} onPress={() => { setNewType(cat); setShowTypeOptions(false); }}>
+                  <TouchableOpacity
+                    key={cat}
+                    style={styles.dropdownItem}
+                    onPress={() => {
+                      setNewType(cat);
+                      if (!isOtherProblemType(cat)) setNewCustomType("");
+                      setShowTypeOptions(false);
+                    }}
+                  >
                     <Text style={{ color: colors.textPrimary }}>{cat}</Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+            ) : null}
+
+            {isCustomProblemType ? (
+              <View style={styles.customIssueBox}>
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Custom problem</Text>
+                <TextInput
+                  style={[styles.input, styles.inputMultiline, styles.customIssueInput, { borderColor: colors.textSecondary + "33", color: colors.textPrimary }]}
+                  value={newCustomType}
+                  onChangeText={setNewCustomType}
+                  placeholder="Describe the problem type..."
+                  placeholderTextColor={colors.textSecondary + "88"}
+                  multiline
+                />
+                <Text style={[styles.helper, { color: colors.textSecondary }]}>This will appear as the report category for staff.</Text>
               </View>
             ) : null}
 
@@ -447,7 +538,7 @@ export default function ReportsScreen() {
             />
 
             <View style={[styles.rowBetween, { gap: tokens.space.sm, marginTop: tokens.space.md }]}>
-              <AppButton title="Cancel" variant="outline" onPress={() => setShowCreate(false)} fullWidth={false} style={{ flex: 1 }} />
+              <AppButton title="Cancel" variant="outline" onPress={resetCreateForm} fullWidth={false} style={{ flex: 1 }} />
               <AppButton
                 title={loading ? "Submitting…" : "Submit report"}
                 onPress={() => void submit()}
@@ -518,6 +609,8 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontWeight: "700", marginTop: 4 },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, fontSize: 14 },
   inputMultiline: { minHeight: 90, textAlignVertical: "top" },
+  customIssueBox: { gap: 6 },
+  customIssueInput: { minHeight: 74 },
   dropdown: { flexDirection: "row", alignItems: "center" },
   dropdownList: { borderWidth: 1, borderRadius: 10, overflow: "hidden" },
   dropdownItem: { paddingHorizontal: 10, paddingVertical: 9 },

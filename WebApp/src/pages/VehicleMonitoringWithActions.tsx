@@ -3,7 +3,18 @@ import type { ReactNode } from "react";
 import { X, Truck, MapPin, Calendar, AlertTriangle, Bell, ClipboardList } from "lucide-react";
 import Toast from "../components/feedback/Toast";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
-import { formatDateOnly, formatDateTime, getRouteProgress, mapLatLngToPoint, useLiveData, type VehicleRecord } from "../hooks/useLiveData";
+import {
+  formatDateOnly,
+  formatDateTime,
+  getRouteProgress,
+  mapLatLngToPoint,
+  relativeTime,
+  useLiveData,
+  type DriverRecord,
+  type RouteRecord,
+  type VehicleLocationRecord,
+  type VehicleRecord,
+} from "../hooks/useLiveData";
 
 type PageType = "dashboard" | "route-planning" | "vehicle-monitoring" | "reports" | "bin-locations" | "notifications";
 
@@ -15,6 +26,36 @@ interface VehicleMonitoringWithActionsProps {
 
 const emptyMaintenanceForm = { vehicleId: "", maintenanceType: "", scheduledAt: "", durationMinutes: "", notes: "" };
 const emptyAlertForm = { message: "" };
+const LIVE_LOCATION_STALE_MS = 5 * 60 * 1000;
+const LIVE_LOCATION_DELAYED_MS = 60 * 1000;
+
+interface FleetMarker {
+  key: string;
+  label: string;
+  driver: DriverRecord | null;
+  vehicle: VehicleRecord | null;
+  route: RouteRecord | null;
+  status: string;
+  latitude: number;
+  longitude: number;
+  speedKph: number | null;
+  accuracyM: number | null;
+  lastUpdatedAt: string;
+  delayed: boolean;
+}
+
+function finiteNumber(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function locationUpdatedAt(location: VehicleLocationRecord) {
+  return location.updated_at ?? location.recorded_at ?? null;
+}
+
+function normalizeStatusLabel(value?: string | null) {
+  return (value ?? "unknown").replace(/_/g, " ");
+}
 
 export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning, onNavigateToReports, onNavigate }: VehicleMonitoringWithActionsProps) {
   const {
@@ -24,6 +65,7 @@ export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning
     drivers,
     routes,
     vehicles,
+    vehicleLocations,
     maintenanceRecords,
     maintenanceTypes,
     loading,
@@ -34,7 +76,7 @@ export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning
   } = useLiveData();
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
-  const [selectedVehicle, setSelectedVehicle] = useState<VehicleRecord | null>(null);
+  const [selectedMarker, setSelectedMarker] = useState<FleetMarker | null>(null);
   const [maintenanceForm, setMaintenanceForm] = useState(emptyMaintenanceForm);
   const [alertForm, setAlertForm] = useState(emptyAlertForm);
   const [formError, setFormError] = useState<string | null>(null);
@@ -51,6 +93,81 @@ export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning
     [vehicles],
   );
 
+  const liveFleetMarkers = useMemo(() => {
+    const now = Date.now();
+    const driverById = new Map(drivers.map((driver) => [String(driver.id), driver]));
+    const routeById = new Map(routes.map((route) => [String(route.id), route]));
+    const vehicleById = new Map(vehicles.map((vehicle) => [String(vehicle.id), vehicle]));
+    const driverByVehicleId = new Map(
+      drivers
+        .filter((driver) => driver.assigned_vehicle_id != null)
+        .map((driver) => [String(driver.assigned_vehicle_id), driver]),
+    );
+    const activeRouteByDriverId = new Map<string, RouteRecord>();
+
+    routes.forEach((route) => {
+      const routeStatus = String(route.status ?? "").toLowerCase();
+      if (route.driver_id == null || !["active", "pending", "planned"].includes(routeStatus)) return;
+      const key = String(route.driver_id);
+      const existing = activeRouteByDriverId.get(key);
+      if (!existing || new Date(route.started_at ?? route.assignment_updated_at ?? route.created_at ?? 0).getTime() > new Date(existing.started_at ?? existing.assignment_updated_at ?? existing.created_at ?? 0).getTime()) {
+        activeRouteByDriverId.set(key, route);
+      }
+    });
+
+    const byOwner = new Map<string, FleetMarker>();
+
+    vehicleLocations.forEach((location) => {
+      const lat = finiteNumber(location.latitude);
+      const lng = finiteNumber(location.longitude);
+      const updatedAt = locationUpdatedAt(location);
+      if (lat == null || lng == null || !updatedAt) return;
+
+      const updatedMs = new Date(updatedAt).getTime();
+      if (!Number.isFinite(updatedMs) || now - updatedMs > LIVE_LOCATION_STALE_MS) return;
+
+      const vehicle = location.vehicle_id != null ? vehicleById.get(String(location.vehicle_id)) ?? null : null;
+      const driver =
+        (location.driver_id != null ? driverById.get(String(location.driver_id)) : null) ??
+        (vehicle?.driver_id != null ? driverById.get(String(vehicle.driver_id)) : null) ??
+        (location.vehicle_id != null ? driverByVehicleId.get(String(location.vehicle_id)) : null) ??
+        null;
+      const route =
+        (location.route_id != null ? routeById.get(String(location.route_id)) : null) ??
+        (driver?.id != null ? activeRouteByDriverId.get(String(driver.id)) : null) ??
+        (vehicle?.route_id != null ? routeById.get(String(vehicle.route_id)) : null) ??
+        null;
+
+      const ownerKey = driver?.id != null ? `driver:${driver.id}` : vehicle?.id != null ? `vehicle:${vehicle.id}` : `location:${location.id ?? updatedAt}`;
+      const marker: FleetMarker = {
+        key: ownerKey,
+        label: driver?.name ?? vehicle?.label ?? vehicle?.code ?? `Vehicle ${location.vehicle_id ?? ""}`.trim(),
+        driver,
+        vehicle,
+        route,
+        status: driver?.status ?? vehicle?.status ?? "unknown",
+        latitude: lat,
+        longitude: lng,
+        speedKph: finiteNumber(location.speed_kph),
+        accuracyM: finiteNumber(location.accuracy_m),
+        lastUpdatedAt: updatedAt,
+        delayed: now - updatedMs > LIVE_LOCATION_DELAYED_MS,
+      };
+
+      const existing = byOwner.get(ownerKey);
+      if (!existing || updatedMs >= new Date(existing.lastUpdatedAt).getTime()) {
+        byOwner.set(ownerKey, marker);
+      }
+    });
+
+    return Array.from(byOwner.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [drivers, routes, vehicleLocations, vehicles]);
+
+  const mapCoordinateContext = useMemo(
+    () => liveFleetMarkers.map((marker) => ({ lat: marker.latitude, lng: marker.longitude })),
+    [liveFleetMarkers],
+  );
+
   const routePoints = useMemo(() => {
     return routes.map((route) => {
       const stops = routeStops
@@ -58,11 +175,11 @@ export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning
         .sort((a, b) => a.stop_order - b.stop_order)
         .map((stop) => {
           const bin = stop.bins ?? bins.find((item) => String(item.id) === String(stop.bin_id));
-          return mapLatLngToPoint(Number(bin?.latitude), Number(bin?.longitude), bins);
+          return mapLatLngToPoint(Number(bin?.latitude), Number(bin?.longitude), bins, mapCoordinateContext);
         });
       return { route, points: stops };
     });
-  }, [bins, routeStops, routes]);
+  }, [bins, mapCoordinateContext, routeStops, routes]);
 
   const scheduleMaintenance = async () => {
     try {
@@ -224,7 +341,7 @@ export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning
                   </svg>
                 ))}
                 {bins.map((bin) => {
-                  const point = mapLatLngToPoint(Number(bin.latitude), Number(bin.longitude), bins);
+                  const point = mapLatLngToPoint(Number(bin.latitude), Number(bin.longitude), bins, mapCoordinateContext);
                   const completed = deliveries.some((delivery) => String(delivery.bin_id) === String(bin.id) && delivery.status === "completed");
                   return (
                     <div key={bin.id} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${point.x}%`, top: `${point.y}%` }} title={bin.location}>
@@ -232,23 +349,23 @@ export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning
                     </div>
                   );
                 })}
-                {vehicles.map((vehicle) => {
-                  const point = mapLatLngToPoint(Number(vehicle.latitude), Number(vehicle.longitude), bins);
+                {liveFleetMarkers.map((marker) => {
+                  const point = mapLatLngToPoint(marker.latitude, marker.longitude, bins, mapCoordinateContext);
                   return (
                     <button
                       type="button"
-                      key={vehicle.id}
-                      className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-lg p-2 border border-gray-200 hover:scale-110 transition-transform"
+                      key={marker.key}
+                      className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-lg p-2 border hover:scale-110 transition-transform ${marker.delayed ? "border-amber-300" : "border-emerald-300"}`}
                       style={{ left: `${point.x}%`, top: `${point.y}%` }}
-                      onClick={() => setSelectedVehicle(vehicle)}
-                      title={vehicle.label}
+                      onClick={() => setSelectedMarker(marker)}
+                      title={`${marker.label} · ${normalizeStatusLabel(marker.status)} · ${relativeTime(marker.lastUpdatedAt)}`}
                     >
-                      <Truck className={`size-5 ${vehicle.status === "maintenance" ? "text-amber-600" : "text-emerald-600"}`} />
+                      <Truck className={`size-5 ${marker.delayed ? "text-amber-600" : "text-emerald-600"}`} />
                     </button>
                   );
                 })}
-                {!loading && vehicles.length === 0 && (
-                  <div className="absolute inset-0 flex items-center justify-center text-gray-500">No vehicle records with live locations.</div>
+                {!loading && liveFleetMarkers.length === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center text-gray-500">No fresh driver GPS locations.</div>
                 )}
               </div>
             </div>
@@ -260,20 +377,22 @@ export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning
                   <h3 className="font-semibold text-gray-900">Fleet Status</h3>
                 </div>
                 <div className="p-5 space-y-3 max-h-[520px] overflow-y-auto">
-                  {vehicles.map((vehicle) => {
-                    const route = routes.find((item) => String(item.id) === String(vehicle.route_id));
+                  {liveFleetMarkers.map((marker) => {
                     return (
-                      <button key={vehicle.id} onClick={() => setSelectedVehicle(vehicle)} className="w-full text-left rounded-lg bg-gray-50 p-3 hover:bg-gray-100">
-                        <div className="flex items-center justify-between">
-                          <p className="font-medium text-gray-900">{vehicle.label}</p>
-                          <span className={`text-xs capitalize px-2 py-1 rounded-full ${statusClass(vehicle.status)}`}>{vehicle.status.replace("_", " ")}</span>
+                      <button key={marker.key} onClick={() => setSelectedMarker(marker)} className="w-full text-left rounded-lg bg-gray-50 p-3 hover:bg-gray-100">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-gray-900">{marker.label}</p>
+                            <p className="text-xs text-gray-500">{marker.vehicle?.label ?? marker.vehicle?.code ?? "No vehicle record linked"}</p>
+                          </div>
+                          <span className={`text-xs capitalize px-2 py-1 rounded-full ${statusClass(marker.status)}`}>{normalizeStatusLabel(marker.status)}</span>
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">{route ? `Assigned to ${route.name}` : "No active route"}</p>
-                        {typeof vehicle.fuel_percent === "number" && <p className="text-xs text-gray-500">Fuel: {vehicle.fuel_percent}%</p>}
+                        <p className="text-xs text-gray-500 mt-1">{marker.route ? `Current route: ${marker.route.name}` : "No active route"}</p>
+                        <p className={`text-xs mt-1 ${marker.delayed ? "text-amber-600" : "text-emerald-600"}`}>GPS updated {relativeTime(marker.lastUpdatedAt)}</p>
                       </button>
                     );
                   })}
-                  {!loading && vehicles.length === 0 && <p className="text-sm text-gray-500">No vehicles found.</p>}
+                  {!loading && liveFleetMarkers.length === 0 && <p className="text-sm text-gray-500">No fresh live driver locations found.</p>}
                 </div>
               </div>
 
@@ -299,27 +418,28 @@ export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning
         </div>
       </div>
 
-      {selectedVehicle && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300]" onClick={() => setSelectedVehicle(null)}>
+      {selectedMarker && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300]" onClick={() => setSelectedMarker(null)}>
           <div className="bg-white rounded-xl shadow-2xl w-[560px] max-h-[90vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <div>
-                <h3 className="text-gray-900">{selectedVehicle.label}</h3>
-                <p className="text-sm text-gray-600">{selectedVehicle.code}</p>
+                <h3 className="text-gray-900">{selectedMarker.label}</h3>
+                <p className="text-sm text-gray-600">{selectedMarker.vehicle?.label ?? selectedMarker.vehicle?.code ?? "Live GPS from driver app"}</p>
               </div>
-              <button onClick={() => setSelectedVehicle(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setSelectedMarker(null)} className="text-gray-400 hover:text-gray-600">
                 <X className="size-6" />
               </button>
             </div>
             <div className="p-6 grid grid-cols-2 gap-4 text-sm">
-              <div><span className="text-gray-500">Status</span><p className="text-gray-900 capitalize">{selectedVehicle.status.replace("_", " ")}</p></div>
-              <div><span className="text-gray-500">Driver</span><p className="text-gray-900">{drivers.find((driver) => String(driver.id) === String(selectedVehicle.driver_id))?.name ?? "Unassigned"}</p></div>
-              <div><span className="text-gray-500">Route</span><p className="text-gray-900">{routes.find((route) => String(route.id) === String(selectedVehicle.route_id))?.name ?? "Unassigned"}</p></div>
-              <div><span className="text-gray-500">Progress</span><p className="text-gray-900">{selectedVehicle.route_id ? `${getRouteProgress(selectedVehicle.route_id, deliveries)}%` : "No route"}</p></div>
-              <div><span className="text-gray-500">Capacity</span><p className="text-gray-900">{selectedVehicle.capacity_kg ? `${selectedVehicle.capacity_kg} kg` : "Not recorded"}</p></div>
-              <div><span className="text-gray-500">Fuel</span><p className="text-gray-900">{typeof selectedVehicle.fuel_percent === "number" ? `${selectedVehicle.fuel_percent}%` : "Not recorded"}</p></div>
-              <div><span className="text-gray-500">Latitude</span><p className="text-gray-900">{selectedVehicle.latitude ?? "Not recorded"}</p></div>
-              <div><span className="text-gray-500">Longitude</span><p className="text-gray-900">{selectedVehicle.longitude ?? "Not recorded"}</p></div>
+              <div><span className="text-gray-500">Status</span><p className="text-gray-900 capitalize">{normalizeStatusLabel(selectedMarker.status)}</p></div>
+              <div><span className="text-gray-500">Driver</span><p className="text-gray-900">{selectedMarker.driver?.name ?? "Unassigned"}</p></div>
+              <div><span className="text-gray-500">Route</span><p className="text-gray-900">{selectedMarker.route?.name ?? "Unassigned"}</p></div>
+              <div><span className="text-gray-500">Progress</span><p className="text-gray-900">{selectedMarker.route?.id ? `${getRouteProgress(String(selectedMarker.route.id), deliveries)}%` : "No route"}</p></div>
+              <div><span className="text-gray-500">Last updated</span><p className={selectedMarker.delayed ? "text-amber-600" : "text-gray-900"}>{formatDateTime(selectedMarker.lastUpdatedAt)}</p></div>
+              <div><span className="text-gray-500">Speed</span><p className="text-gray-900">{selectedMarker.speedKph != null ? `${selectedMarker.speedKph.toFixed(1)} kph` : "Not reported"}</p></div>
+              <div><span className="text-gray-500">GPS accuracy</span><p className="text-gray-900">{selectedMarker.accuracyM != null ? `${selectedMarker.accuracyM.toFixed(1)} m` : "Not reported"}</p></div>
+              <div><span className="text-gray-500">Latitude</span><p className="text-gray-900">{selectedMarker.latitude.toFixed(7)}</p></div>
+              <div><span className="text-gray-500">Longitude</span><p className="text-gray-900">{selectedMarker.longitude.toFixed(7)}</p></div>
             </div>
           </div>
         </div>

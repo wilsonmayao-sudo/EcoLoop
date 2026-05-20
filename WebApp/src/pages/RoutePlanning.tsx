@@ -4,6 +4,7 @@ import ConfirmModal from "../components/feedback/ConfirmModal";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
 import { formatDistanceKm, formatDurationMinutes } from "../utils/routing/geo";
 import { optimizeMultiStopRouteAsync } from "../utils/routing/optimizeMultiStop";
+import { clusterStopsByDepotSweep } from "../utils/routing/clusterStops";
 import type { RouteStop } from "../utils/routing/types";
 import TrafficRouteMapPreview from "../components/maps/TrafficRouteMapPreview";
 import { isMapboxConfigured } from "../services/mapboxMatrix";
@@ -24,6 +25,13 @@ function routeStatusBadgeClass(status: string) {
   if (n === "completed") return "bg-gray-100 text-gray-700";
   if (n === "planned" || n === "pending") return "bg-blue-100 text-blue-700";
   return "bg-gray-100 text-gray-700";
+}
+
+function labelOptimizationSource(route: Route) {
+  if (route.costSource === "mapbox-traffic" || route.optimizationUsedTraffic) return "Hybrid traffic";
+  if (route.optimizationMethod === "astar-state") return "Local A*";
+  if (route.optimizationMethod === "insertion-2opt-oropt") return "Local heuristic";
+  return "Local optimizer";
 }
 
 async function notifyDriverRouteAssigned(params: {
@@ -64,11 +72,15 @@ interface Route {
   stops: number;
   distance: string;
   duration: string;
+  distanceKm?: number;
+  durationMinutes?: number;
   truck: string;
   coordinates?: [number, number];
   optimizedStops?: string[];
   /** Set when route was optimized using Mapbox Matrix driving-traffic durations. */
   optimizationUsedTraffic?: boolean;
+  optimizationMethod?: string;
+  costSource?: string;
   generatedAt?: string;
   assignmentUpdatedAt?: string;
 }
@@ -120,7 +132,7 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
         await Promise.all([
           supabase.from("bins").select("id, code, location, latitude, longitude").order("id", { ascending: true }),
           supabase.from("drivers").select("id, name, status, auth_user_id").order("name", { ascending: true }),
-          supabase.from("routes").select("id, name, status, distance_km, duration_minutes, driver_id, center_lat, center_lng, generated_at, assignment_updated_at, started_at, completed_at").order("created_at", { ascending: false }),
+          supabase.from("routes").select("id, name, status, distance_km, duration_minutes, driver_id, center_lat, center_lng, generated_at, assignment_updated_at, started_at, completed_at, optimization_method, cost_source, used_mapbox_traffic").order("created_at", { ascending: false }),
         ]);
 
       if (binsError) throw binsError;
@@ -164,16 +176,23 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
       setRoutes(
         (routesData ?? []).map((route) => {
           const driver = mappedDrivers.find((item) => String(item.id) === String(route.driver_id));
+          const distanceKm = Number(route.distance_km ?? 0);
+          const durationMinutes = Number(route.duration_minutes ?? 0);
           return {
             id: String(route.id),
             name: route.name,
             status: route.status,
             stops: stopMap.get(String(route.id))?.length ?? 0,
-            distance: formatDistanceKm(Number(route.distance_km ?? 0) * 1000),
-            duration: formatDurationMinutes(Number(route.duration_minutes ?? 0)),
+            distance: formatDistanceKm(distanceKm * 1000),
+            duration: formatDurationMinutes(durationMinutes),
+            distanceKm,
+            durationMinutes,
             truck: driver?.name ?? "Unassigned",
             coordinates: [Number(route.center_lat ?? DEPOT.coordinate.lat), Number(route.center_lng ?? DEPOT.coordinate.lng)],
             optimizedStops: stopMap.get(String(route.id)) ?? [],
+            optimizationUsedTraffic: Boolean(route.used_mapbox_traffic),
+            optimizationMethod: route.optimization_method ?? undefined,
+            costSource: route.cost_source ?? undefined,
             generatedAt: route.generated_at,
             assignmentUpdatedAt: route.assignment_updated_at,
           };
@@ -210,19 +229,24 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
     const optimized = await optimizeMultiStopRouteAsync({ depot: DEPOT, stops: routeStops });
     if (!optimized) return null;
     const now = new Date().toLocaleString();
+    const distanceKm = Number((optimized.totalDistanceMeters / 1000).toFixed(2));
     return {
       id: "",
       name: routeName,
       status: "pending",
-      stops: selectedBins.length,
+      stops: optimized.orderedStops.length,
       distance: formatDistanceKm(optimized.totalDistanceMeters),
       duration: formatDurationMinutes(optimized.estimatedDurationMinutes),
+      distanceKm,
+      durationMinutes: optimized.estimatedDurationMinutes,
       truck: assignedDriver,
       coordinates: optimized.routeCenter,
       optimizedStops: optimized.orderedStops.map((stop) => stop.id),
       generatedAt: now,
       assignmentUpdatedAt: now,
       optimizationUsedTraffic: optimized.usedMapboxTraffic === true,
+      optimizationMethod: optimized.optimizationMethod,
+      costSource: optimized.costSource,
     };
   };
 
@@ -232,12 +256,16 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
       return;
     }
 
-    const batchCount = Math.min(availableDrivers.length, knownBins.length);
-    const bucketedBins: KnownBin[][] = Array.from({ length: batchCount }, () => []);
-
-    knownBins.forEach((bin, index) => {
-      bucketedBins[index % batchCount].push(bin);
-    });
+    const bucketedBins = clusterStopsByDepotSweep<KnownBin>(
+      knownBins,
+      DEPOT.coordinate,
+      Math.min(availableDrivers.length, knownBins.length),
+      (bin) => ({ lat: bin.coordinates[0], lng: bin.coordinates[1] }),
+    );
+    if (bucketedBins.length === 0) {
+      setOptimizationError("No bins have valid coordinates for route generation.");
+      return;
+    }
 
     Promise.all(
       bucketedBins.map(async (bins, index) => {
@@ -250,13 +278,16 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
           .insert({
             name: route.name,
             status: route.status,
-            distance_km: Number(route.distance.replace(" km", "")),
-            duration_minutes: Math.max(1, Number(route.duration.split("h")[0]) * 60 || Number(route.duration.replace("m", ""))),
+            distance_km: route.distanceKm ?? Number(route.distance.replace(" km", "")),
+            duration_minutes: route.durationMinutes ?? 1,
             driver_id: driver.id,
             center_lat: route.coordinates?.[0] ?? DEPOT.coordinate.lat,
             center_lng: route.coordinates?.[1] ?? DEPOT.coordinate.lng,
             generated_at: new Date().toISOString(),
             assignment_updated_at: new Date().toISOString(),
+            optimization_method: route.optimizationMethod,
+            cost_source: route.costSource,
+            used_mapbox_traffic: route.optimizationUsedTraffic === true,
           })
           .select("id")
           .single();
@@ -320,13 +351,16 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
           .insert({
             name: route.name,
             status: route.status,
-            distance_km: Number(route.distance.replace(" km", "")),
-            duration_minutes: Math.max(1, Number(route.duration.split("h")[0]) * 60 || Number(route.duration.replace("m", ""))),
+            distance_km: route.distanceKm ?? Number(route.distance.replace(" km", "")),
+            duration_minutes: route.durationMinutes ?? 1,
             driver_id: selectedDriver.id,
             center_lat: route.coordinates?.[0] ?? DEPOT.coordinate.lat,
             center_lng: route.coordinates?.[1] ?? DEPOT.coordinate.lng,
             generated_at: new Date().toISOString(),
             assignment_updated_at: new Date().toISOString(),
+            optimization_method: route.optimizationMethod,
+            cost_source: route.costSource,
+            used_mapbox_traffic: route.optimizationUsedTraffic === true,
           })
           .select("id")
           .single();
@@ -665,11 +699,11 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                   <span className="text-sm text-gray-600">Duration:</span>
                   <span className="text-sm text-gray-900">{selectedRoute.duration}</span>
                 </div>
-                {selectedRoute.optimizationUsedTraffic && (
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Live traffic</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  <span className={`rounded px-2 py-0.5 text-xs font-medium ${selectedRoute.optimizationUsedTraffic ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                    {labelOptimizationSource(selectedRoute)}
+                  </span>
+                </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-gray-600">Truck:</span>
                   <span className="text-sm text-gray-900">{selectedRoute.truck}</span>

@@ -41,21 +41,22 @@ export default function AppButton({
       : "#FFFFFF";
 
   const iconColor = textStyle?.color ?? labelColor;
+  const isOutline = variant === "outline" || variant === "outlineMuted";
 
   return (
     <TouchableOpacity
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
-      activeOpacity={0.88}
+      activeOpacity={0.82}
       onPress={onPress}
       disabled={disabled || loading}
       style={[
         styles.base,
         {
-          backgroundColor: variant === "outline" || variant === "outlineMuted" ? colors.card : bg,
+          backgroundColor: isOutline ? colors.card : bg,
           borderColor,
           borderWidth,
-          opacity: disabled && !loading ? 0.5 : 1,
+          opacity: disabled && !loading ? 0.62 : 1,
         },
         fullWidth && styles.fullWidth,
         style,
@@ -82,9 +83,9 @@ export default function AppButton({
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: 48,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    minHeight: 50,
+    paddingHorizontal: 18,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -95,11 +96,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 9,
   },
   label: {
     fontSize: 15,
     fontWeight: "700",
+    letterSpacing: -0.1,
     textAlign: "center",
   },
   iconLeft: { marginRight: 0 },

@@ -20,8 +20,8 @@ export default function TagChip({ label, color, backgroundColor, textColor }) {
         {
           backgroundColor: bg,
           borderRadius: tokens.radius.full,
-          paddingHorizontal: tokens.space.sm + 2,
-          paddingVertical: tokens.space.xs + 2,
+          paddingHorizontal: tokens.space.sm + 3,
+          paddingVertical: tokens.space.xs + 3,
         },
       ]}
     >
@@ -37,5 +37,6 @@ const styles = StyleSheet.create({
   label: {
     fontWeight: "700",
     fontSize: 12,
+    letterSpacing: -0.1,
   },
 });
