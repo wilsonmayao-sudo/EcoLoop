@@ -554,7 +554,7 @@ export function useLiveData() {
     };
   }, [bins, deliveries, drivers, reports, routes, vehicles]);
 
-  const createBin = async (payload: { code: string; location: string; type: string; latitude: number; longitude: number; status?: string; capacity_percent?: number | null }) => {
+  const createBin = async (payload: { code: string; location: string; type?: string | null; latitude: number; longitude: number; status?: string; capacity_percent?: number | null }) => {
     const { error } = await supabase.from("bins").insert(payload);
     if (error) throw error;
     await load();

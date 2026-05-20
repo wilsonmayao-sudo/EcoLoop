@@ -8,6 +8,9 @@ import { useAuth } from "./AuthContext";
 const PickupContext = createContext();
 const PICKUPS_CACHE_KEY = "pickups_cache_v2";
 
+const isValidCoordinate = (lat, lng) =>
+  Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+
 export const usePickups = () => {
   const context = useContext(PickupContext);
   if (!context) {
@@ -18,15 +21,19 @@ export const usePickups = () => {
 
 const mapDeliveryToPickup = (delivery, stopOrder) => {
   const bin = delivery.bins ?? {};
+  const latitude = Number(bin.latitude);
+  const longitude = Number(bin.longitude);
+  if (!isValidCoordinate(latitude, longitude)) return null;
+
   return {
     deliveryId: delivery.id,
     binId: String(bin.id),
     id: bin.code ?? `Bin ${bin.id}`,
     street: bin.location ?? "Unknown Street",
     eta: delivery.eta ?? "Pending",
-    coords: `${Number(bin.latitude ?? 0).toFixed(4)}, ${Number(bin.longitude ?? 0).toFixed(4)}`,
-    lat: Number(bin.latitude ?? 0),
-    lng: Number(bin.longitude ?? 0),
+    coords: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+    lat: latitude,
+    lng: longitude,
     status: `Pending Pick-up - ${bin.location ?? "Unspecified"}`,
     due: delivery.due_label ?? "Scheduled",
     tagColor: "pillBlue",
@@ -146,6 +153,7 @@ export const PickupProvider = ({ children }) => {
         const bo = orderMap.get(stopKey(d.route_id, d.bin_id)) ?? 9999;
         return mapDeliveryToPickup(d, bo);
       })
+      .filter(Boolean)
       .sort((a, b) => {
         if (String(a.routeId) !== String(b.routeId)) return String(a.routeId).localeCompare(String(b.routeId));
         return a.stopOrder - b.stopOrder;
@@ -215,6 +223,9 @@ export const PickupProvider = ({ children }) => {
         { event: "*", schema: "public", table: "routes", filter: `driver_id=eq.${driver.id}` },
         () => void safeReload(),
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "bins" }, () => {
+        if (routeIdsRef.current.size > 0) void safeReload();
+      })
       .subscribe();
 
     return () => {
