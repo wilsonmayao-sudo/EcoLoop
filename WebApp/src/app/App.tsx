@@ -15,7 +15,7 @@ import { useRolePermissions, type PageType } from "../hooks/useLiveData";
 
 const FALLBACK_PAGE_ACCESS: Record<Exclude<AppRole, "truck_driver">, PageType[]> = {
   admin: ["dashboard", "reports", "bin-locations", "notifications", "user-approvals", "system-settings"],
-  dispatcher: ["dashboard", "route-planning", "vehicle-monitoring", "bin-locations", "notifications"],
+  dispatcher: ["dashboard", "route-planning", "vehicle-monitoring", "reports", "bin-locations", "notifications"],
   supervisor: ["supervisor-dashboard", "reports", "notifications"],
 };
 
