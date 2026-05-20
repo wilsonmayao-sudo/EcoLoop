@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "../../context/ThemeContext";
-import { useNotifications } from "../../context/NotificationContext";
 import { TAB_BAR_CONTENT_HEIGHT } from "../../constants/layout";
 import HomeScreen from "../../screens/HomeScreen";
 import MapNavigateScreen from "../../screens/MapNavigateScreen";
@@ -37,9 +36,6 @@ const TabBarIcon = React.memo(({ route, focused, color, size }) => {
 export default function TabNavigator({ onLogout }) {
   const { colors, tokens, isDarkMode } = useTheme();
   const insets = useSafeAreaInsets();
-  const { unreadCount, enabled: notificationsEnabled } = useNotifications();
-  const homeTabBadge =
-    notificationsEnabled && unreadCount > 0 ? (unreadCount > 99 ? "99+" : String(unreadCount)) : undefined;
 
   const tabBarBottomPad = Math.max(insets.bottom, Platform.OS === "ios" ? 10 : 8);
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + tabBarBottomPad;
@@ -77,21 +73,7 @@ export default function TabNavigator({ onLogout }) {
           lazy: true,
         })}
       >
-        <Tab.Screen
-          name="Home"
-          component={HomeScreen}
-          options={{
-            tabBarBadge: homeTabBadge,
-            tabBarBadgeStyle: {
-              backgroundColor: colors.badge,
-              color: "#fff",
-              fontSize: 10,
-              fontWeight: "800",
-              minWidth: 18,
-              height: 18,
-            },
-          }}
-        />
+        <Tab.Screen name="Home" component={HomeScreen} />
         <Tab.Screen name="Map" component={MapNavigateScreen} options={{ tabBarLabel: "Navigate" }} />
         <Tab.Screen name="Reports" component={ReportsScreen} />
         <Tab.Screen name="Profile">

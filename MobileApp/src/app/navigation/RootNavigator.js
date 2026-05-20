@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import LoginScreen from '../../screens/LoginScreen';
 import HelpSupportScreen from '../../screens/HelpSupportScreen';
 import LanguageScreen from '../../screens/LanguageScreen';
+import NotificationsScreen from '../../screens/NotificationsScreen';
 import PrivacySecurityScreen from '../../screens/PrivacySecurityScreen';
 import AboutEcoloopScreen from '../../screens/AboutEcoloopScreen';
 import TabNavigator from './TabNavigator';
@@ -38,6 +39,7 @@ export default function RootNavigator() {
             <Stack.Screen name="Main">
               {(props) => <TabNavigator {...props} onLogout={signOut} />}
             </Stack.Screen>
+            <Stack.Screen name="Notifications" component={NotificationsScreen} />
             <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
             <Stack.Screen name="Language" component={LanguageScreen} />
             <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />

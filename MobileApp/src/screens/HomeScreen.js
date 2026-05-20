@@ -117,7 +117,7 @@ function DriverRouteControls() {
 
 export default function HomeScreen() {
   const { colors, tokens } = useTheme();
-  const { enabled: notificationsEnabled, toggle: toggleNotifications, unreadCount } = useNotifications();
+  const { enabled: notificationsEnabled, unreadCount } = useNotifications();
   const navigation = useNavigation();
   const { pendingPickups, completePickup, getTotalPickups, getRemainingPickups, getCompletedPickups, isLoading: pickupsLoading } = usePickups();
   const [justCompletedAll, setJustCompletedAll] = useState(false);
@@ -164,7 +164,7 @@ export default function HomeScreen() {
         rightIcons={[
           {
             name: notificationsEnabled ? "notifications" : "notifications-outline",
-            onPress: toggleNotifications,
+            onPress: () => navigation.getParent()?.navigate("Notifications"),
             active: notificationsEnabled,
             badge:
               notificationsEnabled && unreadCount > 0
