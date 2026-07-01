@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Trash2, MapPin, AlertTriangle, X, CheckCircle, User, Image as ImageIcon, Route, Navigation } from "lucide-react";
+import { AlertTriangle, X, CheckCircle, User, Image as ImageIcon, Route, Navigation, Trash2 } from "lucide-react";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import Toast from "../components/feedback/Toast";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
+import RoleIndicator from "../components/layout/RoleIndicator";
 import ReportLocationMap from "../components/reports/ReportLocationMap";
 import { useAuth } from "../contexts/AuthContext";
 import { formatDateOnly, formatDateTime, useLiveData, type WasteReportRecord } from "../hooks/useLiveData";
@@ -15,6 +16,15 @@ interface ReportsAndIssuesProps {
 }
 
 const statusOptions = ["pending", "in_progress", "resolved"];
+
+type StatusFilter = "all" | "pending" | "in_progress" | "resolved";
+
+const statusFilterOptions: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All Reports" },
+  { value: "pending", label: "Pending" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "resolved", label: "Resolved" },
+];
 
 function displayValue(value?: string | null) {
   return value ? value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Not recorded";
@@ -40,12 +50,25 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
   } = useLiveData();
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null as WasteReportRecord | null);
+  const [statusFilter, setStatusFilter] = useState("all" as StatusFilter);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [reportToDelete, setReportToDelete] = useState(null as string | null);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState({ message: "", type: "success" as "success" | "error" | "warning" | "info" });
   const { profile } = useAuth();
-  const canManageReports = profile?.role === "admin" || profile?.role === "supervisor";
+  const canEditReportStatus = profile?.role === "supervisor" || profile?.role === "dispatcher";
+  const canDeleteReports =
+    profile?.role === "admin" || profile?.role === "supervisor" || profile?.role === "dispatcher";
+
+  const openReportDetails = (report: WasteReportRecord) => {
+    setSelectedReport(report);
+    setShowDetailsModal(true);
+  };
+
+  const closeReportDetails = () => {
+    setShowDetailsModal(false);
+    setShowDeleteConfirm(false);
+    setSelectedReport(null);
+  };
 
   useEffect(() => {
     if (!showDetailsModal || !selectedReport?.id) return;
@@ -63,15 +86,20 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
     [reports],
   );
 
+  const filteredReports = useMemo(() => {
+    if (statusFilter === "all") return reports;
+    return reports.filter((report) => report.status === statusFilter);
+  }, [reports, statusFilter]);
+
+  const activeFilterLabel = statusFilterOptions.find((option) => option.value === statusFilter)?.label ?? "All Reports";
+
   const confirmDelete = async () => {
-    const id = reportToDelete;
-    if (!id) return;
+    if (!selectedReport) return;
+    const id = selectedReport.id;
     try {
       await deleteReport(id);
-      if (selectedReport?.id === id) {
-        setSelectedReport(null);
-        setShowDetailsModal(false);
-      }
+      setShowDeleteConfirm(false);
+      closeReportDetails();
       setToastMessage({ message: "Report deleted successfully.", type: "success" });
       setShowToast(true);
     } catch (err: any) {
@@ -85,28 +113,42 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
   const handleMarkAsResolved = async () => {
     if (!selectedReport) return;
     if (selectedReport.status === "resolved") return;
-    await resolveReport(selectedReport.id);
-    await notifyDriverReportStatus(selectedReport, "resolved");
-    setSelectedReport({ ...selectedReport, status: "resolved", resolved_at: new Date().toISOString() });
-    setToastMessage({ message: "Report marked as resolved.", type: "success" });
-    setShowToast(true);
+    try {
+      await resolveReport(selectedReport.id);
+      await notifyDriverReportStatus(selectedReport, "resolved");
+      setSelectedReport({ ...selectedReport, status: "resolved", resolved_at: new Date().toISOString() });
+      setToastMessage({ message: "Report marked as resolved.", type: "success" });
+      setShowToast(true);
+    } catch (err: any) {
+      const msg = err?.message ?? "Could not update report status. You may not have permission.";
+      setToastMessage({ message: msg, type: "error" });
+      setShowToast(true);
+    }
   };
 
   const handleStatusChange = async (report: WasteReportRecord, status: string) => {
     if (report.status === status) return;
-    await updateReport(report.id, {
-      status,
-      resolved_at: status === "resolved" ? new Date().toISOString() : null,
-    });
-    await notifyDriverReportStatus(report, status);
+    try {
+      await updateReport(report.id, {
+        status,
+        resolved_at: status === "resolved" ? new Date().toISOString() : null,
+      });
+      await notifyDriverReportStatus(report, status);
+      setToastMessage({ message: `Report status updated to ${displayValue(status)}.`, type: "success" });
+      setShowToast(true);
+    } catch (err: any) {
+      const msg = err?.message ?? "Could not update report status. You may not have permission.";
+      setToastMessage({ message: msg, type: "error" });
+      setShowToast(true);
+    }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case "pending":
-        return "bg-red-100 text-red-700";
-      case "in_progress":
         return "bg-yellow-100 text-yellow-700";
+      case "in_progress":
+        return "bg-blue-100 text-blue-700";
       case "resolved":
         return "bg-green-100 text-green-700";
       default:
@@ -154,6 +196,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
   return (
     <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
       <div className="space-y-6">
+        <RoleIndicator />
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-gray-900">Reports & Issues</h2>
@@ -179,12 +222,12 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <div className="text-gray-600 text-sm">Pending</div>
             <div className="text-gray-900 mt-2">{loading ? "..." : reportStats.pending}</div>
-            <div className="text-red-500 text-sm mt-1">Needs attention</div>
+            <div className="text-yellow-500 text-sm mt-1">Needs attention</div>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <div className="text-gray-600 text-sm">In Progress</div>
             <div className="text-gray-900 mt-2">{loading ? "..." : reportStats.inProgress}</div>
-            <div className="text-yellow-500 text-sm mt-1">Being handled</div>
+            <div className="text-blue-500 text-sm mt-1">Being handled</div>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <div className="text-gray-600 text-sm">Resolved</div>
@@ -194,8 +237,31 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
         </div>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="p-6 border-b border-gray-200">
-            <h3 className="text-gray-900">All Reports</h3>
+          <div className="flex flex-col gap-4 border-b border-gray-200 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-gray-900">{activeFilterLabel}</h3>
+              {statusFilter !== "all" && (
+                <p className="mt-1 text-sm text-gray-500">
+                  Showing {filteredReports.length} of {reports.length} reports
+                </p>
+              )}
+            </div>
+            <div className="inline-flex flex-wrap rounded-lg border border-gray-200 bg-gray-50 p-1">
+              {statusFilterOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setStatusFilter(option.value)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    statusFilter === option.value
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -210,15 +276,18 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                   <th className="px-4 py-3 text-left text-sm text-gray-600">Status</th>
                   <th className="px-4 py-3 text-left text-sm text-gray-600">Submitted</th>
                   <th className="px-4 py-3 text-left text-sm text-gray-600">Assigned</th>
-                  <th className="px-4 py-3 text-left text-sm text-gray-600">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {reports.map((report) => {
+                {filteredReports.map((report) => {
                   const thumbUrl = resolveReportImageUrl(report.image_url);
                   const hasGps = parseReportCoordinate(report.latitude) != null && parseReportCoordinate(report.longitude) != null;
                   return (
-                  <tr key={report.id} className="hover:bg-gray-50 transition-colors">
+                  <tr
+                    key={report.id}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => openReportDetails(report)}
+                  >
                     <td className="px-4 py-4 text-sm text-gray-900">
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-2">
@@ -260,8 +329,8 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                         <span className="text-xs text-gray-400">None</span>
                       )}
                     </td>
-                    <td className="px-4 py-4">
-                      {canManageReports ? (
+                    <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
+                      {canEditReportStatus ? (
                         <select value={report.status} onChange={(event) => void handleStatusChange(report, event.target.value)} className={`max-w-[9rem] px-2 py-1 rounded-full text-xs border-0 capitalize ${getStatusColor(report.status)}`}>
                           {statusOptions.map((status) => (
                             <option key={status} value={status}>
@@ -275,39 +344,15 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                     </td>
                     <td className="px-4 py-4 text-sm text-gray-900 whitespace-nowrap">{formatDateTime(report.created_at)}</td>
                     <td className="px-4 py-4 text-sm text-gray-900 max-w-[8rem] truncate">{report.assigned_to ?? "Unassigned"}</td>
-                    <td className="px-4 py-4">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedReport(report);
-                            setShowDetailsModal(true);
-                          }}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                          title="View full report"
-                        >
-                          <MapPin className="size-4" />
-                        </button>
-                        {canManageReports && (
-                          <button
-                            onClick={() => {
-                              setReportToDelete(report.id);
-                              setShowDeleteConfirm(true);
-                            }}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                            title="Delete Report"
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
                   </tr>
                   );
                 })}
-                {!loading && reports.length === 0 && (
+                {!loading && filteredReports.length === 0 && (
                   <tr>
-                    <td className="px-6 py-8 text-center text-gray-500" colSpan={10}>
-                      No reports found yet.
+                    <td className="px-6 py-8 text-center text-gray-500" colSpan={9}>
+                      {reports.length === 0
+                        ? "No reports found yet."
+                        : `No ${activeFilterLabel.toLowerCase()} found.`}
                     </td>
                   </tr>
                 )}
@@ -317,7 +362,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
         </div>
 
         {showDetailsModal && selectedReport && (
-          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-3 md:p-6" onClick={() => setShowDetailsModal(false)}>
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-3 md:p-6" onClick={closeReportDetails}>
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
               <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-4 md:px-6">
                 <div className="min-w-0">
@@ -332,7 +377,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                     )}
                   </p>
                 </div>
-                <button type="button" className="shrink-0 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700" onClick={() => setShowDetailsModal(false)} aria-label="Close">
+                <button type="button" className="shrink-0 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700" onClick={closeReportDetails} aria-label="Close">
                   <X className="size-5" />
                 </button>
               </div>
@@ -366,8 +411,22 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                         ) : selectedReport.report_type?.trim() && selectedReport.type && selectedReport.report_type.trim() !== selectedReport.type && (
                           <p className="text-xs text-gray-500 mt-1">Internal type: {selectedReport.type}</p>
                         )}
-                        <div className="mt-2">
-                          <span className={`inline-flex px-2 py-1 rounded-full text-xs capitalize ${getStatusColor(selectedReport.status)}`}>{displayValue(selectedReport.status)}</span>
+                        <div className="mt-2" onClick={(event) => event.stopPropagation()}>
+                          {canEditReportStatus ? (
+                            <select
+                              value={selectedReport.status}
+                              onChange={(event) => void handleStatusChange(selectedReport, event.target.value)}
+                              className={`max-w-full px-2 py-1 rounded-full text-xs border-0 capitalize ${getStatusColor(selectedReport.status)}`}
+                            >
+                              {statusOptions.map((status) => (
+                                <option key={status} value={status}>
+                                  {displayValue(status)}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className={`inline-flex px-2 py-1 rounded-full text-xs capitalize ${getStatusColor(selectedReport.status)}`}>{displayValue(selectedReport.status)}</span>
+                          )}
                         </div>
                       </div>
                       <div className="rounded-lg border border-gray-100 bg-gray-50/80 p-4 sm:col-span-2 lg:col-span-1">
@@ -449,10 +508,20 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
               })()}
 
               <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-gray-200 bg-white p-4 sm:flex-row sm:gap-3 md:px-6">
-                <button type="button" onClick={() => setShowDetailsModal(false)} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                {canDeleteReports && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 sm:mr-auto"
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                    Delete Report
+                  </button>
+                )}
+                <button type="button" onClick={closeReportDetails} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
                   Close
                 </button>
-                {canManageReports && selectedReport.status !== "resolved" && (
+                {canEditReportStatus && selectedReport.status !== "resolved" && (
                   <button type="button" onClick={() => void handleMarkAsResolved()} className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
                     Mark as Resolved
                   </button>
@@ -464,10 +533,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
 
         <ConfirmModal
           isOpen={showDeleteConfirm}
-          onClose={() => {
-            setShowDeleteConfirm(false);
-            setReportToDelete(null);
-          }}
+          onClose={() => setShowDeleteConfirm(false)}
           onConfirm={() => confirmDelete()}
           title="Delete Report"
           message="Are you sure you want to delete this report? This action cannot be undone."

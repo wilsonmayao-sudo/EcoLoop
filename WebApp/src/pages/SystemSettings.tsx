@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { LockKeyhole, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
+import RoleIndicator from "../components/layout/RoleIndicator";
 import Toast from "../components/feedback/Toast";
 import { useLiveData } from "../hooks/useLiveData";
 
@@ -59,6 +60,7 @@ export default function SystemSettings({ onNavigate }: SystemSettingsProps) {
   return (
     <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
       <div className="space-y-6 max-w-6xl">
+        <RoleIndicator />
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-gray-900">System Settings</h2>

@@ -44,7 +44,7 @@ on conflict (name) do nothing;
 insert into public.role_permissions (role, page, can_read, can_create, can_update, can_delete)
 values
   ('admin', 'dashboard', true, false, false, false),
-  ('admin', 'reports', true, true, true, true),
+  ('admin', 'reports', true, true, false, true),
   ('admin', 'bin-locations', true, true, true, true),
   ('admin', 'notifications', true, true, true, true),
   ('admin', 'user-approvals', true, false, true, false),
@@ -54,6 +54,7 @@ values
   ('dispatcher', 'vehicle-monitoring', true, true, true, false),
   ('dispatcher', 'bin-locations', true, true, true, true),
   ('dispatcher', 'notifications', true, true, true, true),
+  ('dispatcher', 'reports', true, false, true, true),
   ('supervisor', 'supervisor-dashboard', true, false, false, false),
   ('supervisor', 'reports', true, false, true, false),
   ('supervisor', 'notifications', true, false, true, false)

@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Eye, MapPin, Plus, Trash2, WandSparkles, X } from "lucide-react";
+import { Eye, MapPin, Plus, Trash2, X } from "lucide-react";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
+import RoleIndicator from "../components/layout/RoleIndicator";
 import { formatDistanceKm, formatDurationMinutes } from "../utils/routing/geo";
 import { optimizeMultiStopRouteAsync } from "../utils/routing/optimizeMultiStop";
-import { clusterStopsByDepotSweep } from "../utils/routing/clusterStops";
 import type { RouteStop } from "../utils/routing/types";
 import TrafficRouteMapPreview from "../components/maps/TrafficRouteMapPreview";
 import { isMapboxConfigured } from "../services/mapboxMatrix";
@@ -121,9 +121,6 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [newRoute, setNewRoute] = useState({ name: "", truck: "" });
   const [selectedBinIds, setSelectedBinIds] = useState<string[]>([]);
-
-  const availableDrivers = drivers.filter((driver) => driver.status === "available");
-  const driversById = useMemo(() => new Map(drivers.map((driver) => [String(driver.id), driver])), [drivers]);
 
   const syncFromSupabase = async () => {
     setIsLoading(true);
@@ -248,83 +245,6 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
       optimizationMethod: optimized.optimizationMethod,
       costSource: optimized.costSource,
     };
-  };
-
-  const handleAutoGenerateRoutes = () => {
-    if (availableDrivers.length === 0) {
-      setOptimizationError("No available drivers. Add availability before auto-generating routes.");
-      return;
-    }
-
-    const bucketedBins = clusterStopsByDepotSweep<KnownBin>(
-      knownBins,
-      DEPOT.coordinate,
-      Math.min(availableDrivers.length, knownBins.length),
-      (bin) => ({ lat: bin.coordinates[0], lng: bin.coordinates[1] }),
-    );
-    if (bucketedBins.length === 0) {
-      setOptimizationError("No bins have valid coordinates for route generation.");
-      return;
-    }
-
-    Promise.all(
-      bucketedBins.map(async (bins, index) => {
-        const driver = availableDrivers[index];
-        const route = await buildRouteFromBins(`Auto Route ${index + 1}`, bins, driver.name);
-        if (!route) throw new Error("Failed to optimize generated route.");
-
-        const { data: createdRoute, error: createRouteError } = await supabase
-          .from("routes")
-          .insert({
-            name: route.name,
-            status: route.status,
-            distance_km: route.distanceKm ?? Number(route.distance.replace(" km", "")),
-            duration_minutes: route.durationMinutes ?? 1,
-            driver_id: driver.id,
-            center_lat: route.coordinates?.[0] ?? DEPOT.coordinate.lat,
-            center_lng: route.coordinates?.[1] ?? DEPOT.coordinate.lng,
-            generated_at: new Date().toISOString(),
-            assignment_updated_at: new Date().toISOString(),
-            optimization_method: route.optimizationMethod,
-            cost_source: route.costSource,
-            used_mapbox_traffic: route.optimizationUsedTraffic === true,
-          })
-          .select("id")
-          .single();
-        if (createRouteError || !createdRoute) throw createRouteError ?? new Error("No route id returned.");
-        const newRouteId = (createdRoute as { id: string }).id;
-
-        const binsByCode = new Map<string, KnownBin>(knownBins.map((bin) => [bin.code, bin]));
-        const routeStopsPayload = (route.optimizedStops ?? []).map((code, stopOrder) => ({
-          route_id: newRouteId,
-          bin_id: binsByCode.get(code)?.id,
-          stop_order: stopOrder + 1,
-        })).filter((stop) => Boolean(stop.bin_id));
-        if (routeStopsPayload.length > 0) {
-          const { error: stopsError } = await supabase.from("route_stops").insert(routeStopsPayload);
-          if (stopsError) throw stopsError;
-        }
-        const deliveriesPayload = routeStopsPayload.map((stop) => ({
-          route_id: newRouteId,
-          bin_id: stop.bin_id,
-          driver_id: driver.id,
-          status: "assigned",
-          eta: null,
-        }));
-        if (deliveriesPayload.length > 0) {
-          const { error: deliveriesError } = await supabase.from("deliveries").insert(deliveriesPayload);
-          if (deliveriesError) throw deliveriesError;
-        }
-        await notifyDriverRouteAssigned({
-          routeId: newRouteId,
-          routeName: route.name,
-          stopCount: routeStopsPayload.length,
-          driverAuthUserId: driver.auth_user_id,
-        });
-      }),
-    )
-      .then(() => setOptimizationError(null))
-      .catch(() => setOptimizationError("Could not auto-generate routes. Check drivers and bins, then try again."));
   };
 
   const handleCreateRoute = async () => {
@@ -456,6 +376,7 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
   return (
     <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
       <div className="space-y-6">
+        <RoleIndicator />
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -505,14 +426,7 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
         </div>
 
         {/* Dispatcher Actions */}
-        <div className="flex justify-end gap-3">
-          <button
-            onClick={handleAutoGenerateRoutes}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-          >
-            <WandSparkles className="size-4" />
-            Auto Generate Routes
-          </button>
+        <div className="flex justify-end">
           <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"

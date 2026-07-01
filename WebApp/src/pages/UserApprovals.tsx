@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { UserCheck, RefreshCw } from "lucide-react";
 import { supabase } from "../services/supabaseClient";
 import type { AppRole, AccountStatus } from "../contexts/AuthContext";
+import RoleIndicator from "../components/layout/RoleIndicator";
 
 type PageType = "dashboard" | "route-planning" | "vehicle-monitoring" | "reports" | "bin-locations" | "notifications" | "user-approvals";
 
@@ -66,7 +67,8 @@ export default function UserApprovals({ onNavigate }: UserApprovalsProps) {
   return (
     <div className="h-full overflow-y-auto bg-gray-50">
       <div className="max-w-4xl mx-auto p-8">
-        <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <RoleIndicator />
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-6 mt-4">
           <div>
             <h1 className="font-['Poppins:Bold',sans-serif] text-2xl text-gray-900">Pending accounts</h1>
             <p className="font-['Poppins:Regular',sans-serif] text-sm text-gray-600 mt-1">

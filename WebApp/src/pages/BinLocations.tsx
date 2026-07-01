@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { MapPin, Plus, X, Navigation, Pencil, Trash2 } from "lucide-react";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
+import RoleIndicator from "../components/layout/RoleIndicator";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import { formatDateOnly, useLiveData, type BinRecord } from "../hooks/useLiveData";
 
@@ -105,6 +106,7 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
   return (
     <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
       <div className="space-y-6">
+        <RoleIndicator />
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-gray-900">Bin Locations</h2>

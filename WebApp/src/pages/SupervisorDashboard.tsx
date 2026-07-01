@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Activity, CalendarClock, CheckCircle, ClipboardList, Truck, Users } from "lucide-react";
+import { Activity, CalendarClock, CheckCircle, ClipboardList, FileDown, Truck, Users } from "lucide-react";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
+import RoleIndicator from "../components/layout/RoleIndicator";
+import { useAuth } from "../contexts/AuthContext";
 import { normalizeStatus } from "../hooks/useLiveData";
 import { supabase } from "../services/supabaseClient";
+import type { ReportPeriod } from "../utils/reportDateRange";
 
 function labelRouteStatus(status: string) {
   const n = normalizeStatus(status);
@@ -54,11 +57,18 @@ interface DeliveryRow {
 }
 
 export default function SupervisorDashboard({ onNavigate }: SupervisorDashboardProps) {
+  const { profile } = useAuth();
+  const isSupervisor = profile?.role === "supervisor";
   const [routes, setRoutes] = useState<RouteRow[]>([]);
   const [drivers, setDrivers] = useState<DriverRow[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("today");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const loadOperations = async () => {
     setLoading(true);
@@ -137,16 +147,87 @@ export default function SupervisorDashboard({ onNavigate }: SupervisorDashboardP
     return Math.round((routeDeliveries.filter((delivery) => delivery.status === "completed").length / routeDeliveries.length) * 100);
   };
 
+  const handleExportPdf = async () => {
+    if (!isSupervisor) return;
+    if (reportPeriod === "custom" && (!customStart || !customEnd)) {
+      setExportError("Select both start and end dates for a custom range.");
+      return;
+    }
+
+    setExporting(true);
+    setExportError(null);
+    try {
+      const { exportSupervisorPdf } = await import("../utils/supervisorPdfExport");
+      await exportSupervisorPdf({
+        supervisorName: profile?.full_name ?? profile?.email ?? "Supervisor",
+        period: reportPeriod,
+        customStart: reportPeriod === "custom" ? customStart : undefined,
+        customEnd: reportPeriod === "custom" ? customEnd : undefined,
+      });
+    } catch (exportErr) {
+      setExportError(exportErr instanceof Error ? exportErr.message : "Unable to export PDF.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <RoleIndicator />
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h2 className="text-gray-900">Supervisor Operations</h2>
             <p className="text-gray-600">Overview of routes, drivers, collections, schedules, and fleet activity.</p>
           </div>
-          {onNavigate && <NotificationDropdown onViewAll={() => onNavigate("notifications")} />}
+          <div className="flex items-center gap-3 flex-wrap">
+            {isSupervisor && (
+              <>
+                <select
+                  value={reportPeriod}
+                  onChange={(event) => setReportPeriod(event.target.value as ReportPeriod)}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+                  aria-label="Reporting period"
+                >
+                  <option value="today">Today</option>
+                  <option value="week">This Week</option>
+                  <option value="month">This Month</option>
+                  <option value="custom">Custom Range</option>
+                </select>
+                {reportPeriod === "custom" && (
+                  <>
+                    <input
+                      type="date"
+                      value={customStart}
+                      onChange={(event) => setCustomStart(event.target.value)}
+                      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+                      aria-label="Custom range start date"
+                    />
+                    <input
+                      type="date"
+                      value={customEnd}
+                      onChange={(event) => setCustomEnd(event.target.value)}
+                      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+                      aria-label="Custom range end date"
+                    />
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleExportPdf()}
+                  disabled={exporting}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  <FileDown className="size-4" />
+                  {exporting ? "Exporting…" : "Export PDF"}
+                </button>
+              </>
+            )}
+            {onNavigate && <NotificationDropdown onViewAll={() => onNavigate("notifications")} />}
+          </div>
         </div>
+
+        {exportError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{exportError}</div>}
 
         {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 

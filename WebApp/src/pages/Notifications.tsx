@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { Bell, Check, Trash2, AlertCircle, Info, CheckCircle, X } from "lucide-react";
 import ConfirmModal from "../components/feedback/ConfirmModal";
+import RoleIndicator from "../components/layout/RoleIndicator";
 import { formatDateOnly, relativeTime, useLiveData } from "../hooks/useLiveData";
 
-type NotificationFilter = "all" | "unread" | "route" | "bin" | "truck" | "report" | "system";
+type NotificationFilter = "all" | "unread";
 
 export default function Notifications() {
   const {
@@ -85,11 +86,12 @@ export default function Notifications() {
     setShowClearAllConfirm(false);
   };
 
-  const filters: NotificationFilter[] = ["all", "unread", "route", "bin", "truck", "report", "system"];
+  const filters: NotificationFilter[] = ["all", "unread"];
 
   return (
     <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
       <div className="space-y-6">
+        <RoleIndicator />
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-gray-900">Notifications</h2>

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { X, Truck, MapPin, Calendar, AlertTriangle, Bell, ClipboardList } from "lucide-react";
 import Toast from "../components/feedback/Toast";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
+import RoleIndicator from "../components/layout/RoleIndicator";
 import {
   formatDateOnly,
   formatDateTime,
@@ -265,6 +266,7 @@ export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning
     <>
       <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
         <div className="space-y-6">
+          <RoleIndicator />
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-gray-900">Vehicle Monitoring</h2>
