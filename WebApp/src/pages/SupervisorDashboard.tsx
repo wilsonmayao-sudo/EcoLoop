@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Activity, CalendarClock, CheckCircle, ClipboardList, FileDown, Truck, Users } from "lucide-react";
+import { Activity, CalendarClock, CheckCircle, ClipboardList, FileDown, Truck, Users, X } from "lucide-react";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
 import RoleIndicator from "../components/layout/RoleIndicator";
 import { useAuth } from "../contexts/AuthContext";
@@ -58,7 +58,7 @@ interface DeliveryRow {
 
 export default function SupervisorDashboard({ onNavigate }: SupervisorDashboardProps) {
   const { profile } = useAuth();
-  const isSupervisor = profile?.role === "supervisor";
+  const canExportDriverPdf = profile?.role === "supervisor" || profile?.role === "dispatcher";
   const [routes, setRoutes] = useState<RouteRow[]>([]);
   const [drivers, setDrivers] = useState<DriverRow[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
@@ -67,6 +67,8 @@ export default function SupervisorDashboard({ onNavigate }: SupervisorDashboardP
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("today");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
+  const [selectedDriverId, setSelectedDriverId] = useState("");
+  const [showExportModal, setShowExportModal] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -108,6 +110,12 @@ export default function SupervisorDashboard({ onNavigate }: SupervisorDashboardP
     };
   }, []);
 
+  useEffect(() => {
+    if (!selectedDriverId && drivers.length > 0) {
+      setSelectedDriverId(String(drivers[0].id));
+    }
+  }, [drivers, selectedDriverId]);
+
   const driverById = useMemo(() => new Map(drivers.map((driver) => [String(driver.id), driver])), [drivers]);
   const deliveriesByRoute = useMemo(() => {
     return deliveries.reduce((acc, delivery) => {
@@ -148,7 +156,11 @@ export default function SupervisorDashboard({ onNavigate }: SupervisorDashboardP
   };
 
   const handleExportPdf = async () => {
-    if (!isSupervisor) return;
+    if (!canExportDriverPdf) return;
+    if (!selectedDriverId) {
+      setExportError("Select a driver before exporting.");
+      return;
+    }
     if (reportPeriod === "custom" && (!customStart || !customEnd)) {
       setExportError("Select both start and end dates for a custom range.");
       return;
@@ -160,10 +172,12 @@ export default function SupervisorDashboard({ onNavigate }: SupervisorDashboardP
       const { exportSupervisorPdf } = await import("../utils/supervisorPdfExport");
       await exportSupervisorPdf({
         supervisorName: profile?.full_name ?? profile?.email ?? "Supervisor",
+        driverId: selectedDriverId,
         period: reportPeriod,
         customStart: reportPeriod === "custom" ? customStart : undefined,
         customEnd: reportPeriod === "custom" ? customEnd : undefined,
       });
+      setShowExportModal(false);
     } catch (exportErr) {
       setExportError(exportErr instanceof Error ? exportErr.message : "Unable to export PDF.");
     } finally {
@@ -181,55 +195,133 @@ export default function SupervisorDashboard({ onNavigate }: SupervisorDashboardP
             <p className="text-gray-600">Overview of routes, drivers, collections, schedules, and fleet activity.</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            {isSupervisor && (
-              <>
-                <select
-                  value={reportPeriod}
-                  onChange={(event) => setReportPeriod(event.target.value as ReportPeriod)}
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
-                  aria-label="Reporting period"
-                >
-                  <option value="today">Today</option>
-                  <option value="week">This Week</option>
-                  <option value="month">This Month</option>
-                  <option value="custom">Custom Range</option>
-                </select>
-                {reportPeriod === "custom" && (
-                  <>
-                    <input
-                      type="date"
-                      value={customStart}
-                      onChange={(event) => setCustomStart(event.target.value)}
-                      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
-                      aria-label="Custom range start date"
-                    />
-                    <input
-                      type="date"
-                      value={customEnd}
-                      onChange={(event) => setCustomEnd(event.target.value)}
-                      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
-                      aria-label="Custom range end date"
-                    />
-                  </>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void handleExportPdf()}
-                  disabled={exporting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
-                >
-                  <FileDown className="size-4" />
-                  {exporting ? "Exporting…" : "Export PDF"}
-                </button>
-              </>
+            {canExportDriverPdf && (
+              <button
+                type="button"
+                onClick={() => {
+                  setExportError(null);
+                  setShowExportModal(true);
+                }}
+                disabled={drivers.length === 0}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                <FileDown className="size-4" />
+                Export PDF
+              </button>
             )}
             {onNavigate && <NotificationDropdown onViewAll={() => onNavigate("notifications")} />}
           </div>
         </div>
 
-        {exportError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{exportError}</div>}
-
         {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+        {showExportModal && (
+          <div
+            className="fixed inset-0 z-[400] flex items-center justify-center bg-black/50 p-4"
+            onClick={() => {
+              if (!exporting) setShowExportModal(false);
+            }}
+          >
+            <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Export driver PDF</h3>
+                  <p className="mt-1 text-sm text-gray-600">Select the driver and date range for the operational report.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowExportModal(false)}
+                  disabled={exporting}
+                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+                  aria-label="Close export dialog"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4 px-5 py-5">
+                {exportError && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{exportError}</div>}
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="driver-export-select">Driver</label>
+                  <select
+                    id="driver-export-select"
+                    value={selectedDriverId}
+                    onChange={(event) => setSelectedDriverId(event.target.value)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="">Select driver</option>
+                    {drivers.map((driver) => (
+                      <option key={driver.id} value={String(driver.id)}>
+                        {driver.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="driver-export-period">Date range</label>
+                  <select
+                    id="driver-export-period"
+                    value={reportPeriod}
+                    onChange={(event) => setReportPeriod(event.target.value as ReportPeriod)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="today">Today</option>
+                    <option value="week">This Week</option>
+                    <option value="month">This Month</option>
+                    <option value="custom">Custom Range</option>
+                  </select>
+                </div>
+
+                {reportPeriod === "custom" && (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="driver-export-start">Start date</label>
+                      <input
+                        id="driver-export-start"
+                        type="date"
+                        value={customStart}
+                        onChange={(event) => setCustomStart(event.target.value)}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="driver-export-end">End date</label>
+                      <input
+                        id="driver-export-end"
+                        type="date"
+                        value={customEnd}
+                        onChange={(event) => setCustomEnd(event.target.value)}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 border-t border-gray-200 px-5 py-4 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowExportModal(false)}
+                  disabled={exporting}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleExportPdf()}
+                  disabled={exporting || !selectedDriverId}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  <FileDown className="size-4" />
+                  {exporting ? "Exporting..." : "Generate PDF"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {summaryCards.map((card) => {

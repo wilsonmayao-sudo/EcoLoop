@@ -8,9 +8,13 @@ export interface SupervisorExportRoute {
   name: string;
   status: string;
   driver_id: string | number | null;
+  distance_km?: number | null;
+  duration_minutes?: number | null;
   generated_at: string | null;
   assignment_updated_at?: string | null;
+  started_at?: string | null;
   completed_at?: string | null;
+  created_at?: string | null;
   updated_at?: string | null;
 }
 
@@ -35,11 +39,15 @@ export interface SupervisorExportReport {
   driver_id?: string | number | null;
   report_type?: string | null;
   type: string;
+  location?: string | null;
   description?: string | null;
   status: string;
+  priority?: string | null;
   reported_by?: string | null;
   assigned_to?: string | null;
+  route_id?: string | number | null;
   created_at: string;
+  resolved_at?: string | null;
 }
 
 export interface SupervisorExportVehicle {
@@ -90,7 +98,7 @@ export async function fetchSupervisorExportData(): Promise<SupervisorExportData>
       supabase.from("system_settings").select("key, value").eq("key", "organization").maybeSingle(),
       supabase
         .from("routes")
-        .select("id, name, status, driver_id, generated_at, assignment_updated_at, completed_at, updated_at")
+        .select("id, name, status, driver_id, distance_km, duration_minutes, generated_at, assignment_updated_at, started_at, completed_at, created_at, updated_at")
         .order("generated_at", { ascending: false }),
       supabase.from("drivers").select("id, name, status, assigned_vehicle_id").order("name", { ascending: true }),
       supabase
@@ -99,7 +107,7 @@ export async function fetchSupervisorExportData(): Promise<SupervisorExportData>
         .order("updated_at", { ascending: false }),
       supabase
         .from("waste_reports")
-        .select("id, driver_id, report_type, type, description, status, reported_by, assigned_to, created_at")
+        .select("id, driver_id, report_type, type, location, description, status, priority, reported_by, assigned_to, route_id, created_at, resolved_at")
         .order("created_at", { ascending: false }),
       supabase
         .from("vehicles")

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, X, CheckCircle, User, Image as ImageIcon, Route, Navigation, Trash2 } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, X, CheckCircle, User, Image as ImageIcon, Route, Navigation, Trash2, ChevronDown } from "lucide-react";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import Toast from "../components/feedback/Toast";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
@@ -26,8 +26,108 @@ const statusFilterOptions: { value: StatusFilter; label: string }[] = [
   { value: "resolved", label: "Resolved" },
 ];
 
+interface StatusSelectProps {
+  value: string;
+  onChange: (status: string) => void;
+  getStatusColor: (status: string) => string;
+  className?: string;
+}
+
 function displayValue(value?: string | null) {
   return value ? value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Not recorded";
+}
+
+function StatusSelect({ value, onChange, getStatusColor, className = "" }: StatusSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, minWidth: 0 });
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  const updateMenuPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const menuHeight = 104;
+    const gap = 4;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const shouldOpenUp = spaceBelow < menuHeight + gap && rect.top > spaceBelow;
+
+    setMenuPosition({
+      top: shouldOpenUp ? Math.max(gap, rect.top - menuHeight - gap) : rect.bottom + gap,
+      left: Math.max(gap, Math.min(rect.left, window.innerWidth - rect.width - gap)),
+      minWidth: rect.width,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [open, updateMenuPosition]);
+
+  return (
+    <div
+      className={`relative inline-block text-left ${className}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => {
+          updateMenuPosition();
+          setOpen((current) => !current);
+        }}
+        className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-1 text-xs capitalize ${getStatusColor(value)}`}
+      >
+        <span className="truncate">{displayValue(value)}</span>
+        <ChevronDown className={`size-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+      </button>
+
+      {open && (
+        <div
+          className="fixed z-[350] overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg"
+          style={{
+            top: menuPosition.top,
+            left: menuPosition.left,
+            minWidth: menuPosition.minWidth,
+          }}
+        >
+          <div role="listbox" aria-label="Report status" className="max-h-40 overflow-auto">
+            {statusOptions.map((status) => (
+              <button
+                key={status}
+                type="button"
+                role="option"
+                aria-selected={status === value}
+                onClick={() => {
+                  setOpen(false);
+                  onChange(status);
+                }}
+                className={`block w-full whitespace-nowrap px-3 py-1.5 text-left capitalize ${
+                  status === value
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                {displayValue(status)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function isCustomIssueReport(report: WasteReportRecord) {
@@ -331,13 +431,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                     </td>
                     <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
                       {canEditReportStatus ? (
-                        <select value={report.status} onChange={(event) => void handleStatusChange(report, event.target.value)} className={`max-w-[9rem] px-2 py-1 rounded-full text-xs border-0 capitalize ${getStatusColor(report.status)}`}>
-                          {statusOptions.map((status) => (
-                            <option key={status} value={status}>
-                              {displayValue(status)}
-                            </option>
-                          ))}
-                        </select>
+                        <StatusSelect value={report.status} onChange={(status) => void handleStatusChange(report, status)} getStatusColor={getStatusColor} className="max-w-[9rem]" />
                       ) : (
                         <span className={`inline-flex rounded-full px-2 py-1 text-xs capitalize ${getStatusColor(report.status)}`}>{displayValue(report.status)}</span>
                       )}
@@ -413,17 +507,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                         )}
                         <div className="mt-2" onClick={(event) => event.stopPropagation()}>
                           {canEditReportStatus ? (
-                            <select
-                              value={selectedReport.status}
-                              onChange={(event) => void handleStatusChange(selectedReport, event.target.value)}
-                              className={`max-w-full px-2 py-1 rounded-full text-xs border-0 capitalize ${getStatusColor(selectedReport.status)}`}
-                            >
-                              {statusOptions.map((status) => (
-                                <option key={status} value={status}>
-                                  {displayValue(status)}
-                                </option>
-                              ))}
-                            </select>
+                            <StatusSelect value={selectedReport.status} onChange={(status) => void handleStatusChange(selectedReport, status)} getStatusColor={getStatusColor} className="max-w-full" />
                           ) : (
                             <span className={`inline-flex px-2 py-1 rounded-full text-xs capitalize ${getStatusColor(selectedReport.status)}`}>{displayValue(selectedReport.status)}</span>
                           )}
