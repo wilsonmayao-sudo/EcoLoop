@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Header from "../components/ui/Header";
 import SurfaceCard from "../components/ui/SurfaceCard";
-import TagChip from "../components/ui/TagChip";
 import AppButton from "../components/ui/AppButton";
 import { useTheme } from "../context/ThemeContext";
 import { useNotifications } from "../context/NotificationContext";
@@ -59,7 +58,7 @@ function getTypeMeta(type, colors) {
 }
 
 export default function NotificationsScreen({ navigation }) {
-  const { colors, tokens } = useTheme();
+  const { colors } = useTheme();
   const {
     enabled,
     toggle,
@@ -72,7 +71,6 @@ export default function NotificationsScreen({ navigation }) {
     markAllRead,
   } = useNotifications();
   const [refreshing, setRefreshing] = useState(false);
-  const dynamicStyles = useMemo(() => getDynamicStyles(colors, tokens), [colors, tokens]);
 
   const readCount = Math.max(0, items.length - unreadCount);
 
@@ -123,17 +121,17 @@ export default function NotificationsScreen({ navigation }) {
             </View>
             <View style={styles.summaryText}>
               <Text style={[styles.summaryTitle, { color: colors.textPrimary }]}>
-                {enabled ? `${unreadCount} unread` : "Notifications off"}
+                {enabled ? `${unreadCount} unread` : `${unreadCount} unread - silent`}
               </Text>
               <Text style={[styles.summarySubtitle, { color: colors.textSecondary }]}>
                 {enabled
                   ? `${items.length} total notifications - ${readCount} read`
-                  : "Turn notifications on to receive route alerts and updates."}
+                  : `${items.length} total notifications - alerts and badges are off.`}
               </Text>
             </View>
           </View>
 
-          {enabled && unreadCount > 0 ? (
+          {unreadCount > 0 ? (
             <AppButton
               title="Mark all read"
               icon="checkmark-done-outline"
@@ -145,7 +143,7 @@ export default function NotificationsScreen({ navigation }) {
 
           {!enabled ? (
             <AppButton
-              title="Turn notifications on"
+              title="Turn alerts on"
               icon="notifications-outline"
               onPress={toggle}
               style={styles.summaryButton}
@@ -166,82 +164,71 @@ export default function NotificationsScreen({ navigation }) {
           {loading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
         </View>
 
-        {!enabled ? (
-          <EmptyState
-            icon="notifications-off-outline"
-            title="Notifications are disabled"
-            message="Enable notifications to see route updates and alerts here."
-          />
-        ) : !loading && items.length === 0 ? (
+        {!loading && items.length === 0 ? (
           <EmptyState
             icon="notifications-outline"
             title="No notifications yet"
             message="Route assignments, updates, and alerts will appear here."
           />
         ) : (
-          <View style={styles.list}>
-            {items.map((notification) => (
+          <SurfaceCard style={styles.list}>
+            {items.map((notification, index) => (
               <NotificationItem
                 key={notification.id}
                 notification={notification}
                 colors={colors}
-                dynamicStyles={dynamicStyles}
                 onPress={() => handleMarkRead(notification)}
+                showDivider={index < items.length - 1}
               />
             ))}
-          </View>
+          </SurfaceCard>
         )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function NotificationItem({ notification, colors, dynamicStyles, onPress }) {
+function NotificationItem({ notification, colors, onPress, showDivider }) {
   const meta = getTypeMeta(notification.type, colors);
 
   return (
-    <TouchableOpacity activeOpacity={0.84} onPress={onPress}>
-      <SurfaceCard
-        elevated={!notification.read}
-        style={[
-          styles.notificationCard,
-          {
-            borderColor: notification.read ? colors.borderSubtle : meta.color + "55",
-          },
-        ]}
-      >
+    <>
+      <TouchableOpacity activeOpacity={0.84} onPress={onPress} style={styles.notificationItem}>
         <View style={styles.notificationRow}>
           <View style={[styles.notificationIcon, { backgroundColor: meta.color + "18" }]}>
-            <Ionicons name={meta.icon} size={22} color={meta.color} />
+            <Ionicons name={meta.icon} size={20} color={meta.color} />
           </View>
 
           <View style={styles.notificationBody}>
             <View style={styles.notificationTitleRow}>
-              <Text style={[dynamicStyles.notificationTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+              <Text style={[styles.notificationTitle, { color: colors.textPrimary }]} numberOfLines={1}>
                 {notification.title ?? "Notification"}
               </Text>
               {!notification.read ? <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} /> : null}
             </View>
 
-            <Text style={[styles.notificationMessage, { color: colors.textSecondary }]} numberOfLines={3}>
+            <Text style={[styles.notificationMessage, { color: colors.textSecondary }]} numberOfLines={2}>
               {notification.message ?? ""}
             </Text>
 
             <View style={styles.notificationMetaRow}>
-              <TagChip label={formatCategory(notification.category)} color={meta.color} />
-              <TagChip
-                label={notification.read ? "Read" : "New"}
-                color={notification.read ? colors.pillBlue : colors.success}
-              />
-              <View style={styles.timeRow}>
-                <Ionicons name="time-outline" size={13} color={colors.textSecondary} />
-                <Text style={[styles.timeText, { color: colors.textSecondary }]}>{relativeTime(notification.created_at)}</Text>
-              </View>
+              <Text style={[styles.categoryText, { color: meta.color }]} numberOfLines={1}>
+                {formatCategory(notification.category)}
+              </Text>
+              <Text style={[styles.metaDot, { color: colors.textSecondary }]}>•</Text>
+              <Text style={[styles.timeText, { color: colors.textSecondary }]}>{relativeTime(notification.created_at)}</Text>
+              {!notification.read ? (
+                <>
+                  <Text style={[styles.metaDot, { color: colors.textSecondary }]}>•</Text>
+                  <Text style={[styles.newText, { color: colors.success }]}>New</Text>
+                </>
+              ) : null}
             </View>
           </View>
         </View>
-      </SurfaceCard>
-    </TouchableOpacity>
+      </TouchableOpacity>
+      {showDivider ? <View style={[styles.itemDivider, { backgroundColor: colors.borderSubtle }]} /> : null}
+    </>
   );
 }
 
@@ -255,19 +242,6 @@ function EmptyState({ icon, title, message }) {
       <Text style={[styles.stateText, { color: colors.textSecondary }]}>{message}</Text>
     </SurfaceCard>
   );
-}
-
-function getDynamicStyles(colors, tokens) {
-  return StyleSheet.create({
-    notificationTitle: {
-      color: colors.textPrimary,
-      flex: 1,
-      fontSize: tokens.font.title,
-      fontWeight: "800",
-      letterSpacing: -0.2,
-      lineHeight: 21,
-    },
-  });
 }
 
 const styles = StyleSheet.create({
@@ -329,20 +303,20 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   list: {
-    gap: 12,
+    paddingVertical: 0,
   },
-  notificationCard: {
-    borderWidth: 1,
+  notificationItem: {
+    paddingVertical: 12,
   },
   notificationRow: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
     alignItems: "flex-start",
   },
   notificationIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -352,36 +326,51 @@ const styles = StyleSheet.create({
   },
   notificationTitleRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 8,
   },
+  notificationTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "800",
+    lineHeight: 19,
+  },
   unreadDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    marginTop: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   notificationMessage: {
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 5,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 3,
     fontWeight: "500",
   },
   notificationMetaRow: {
     flexDirection: "row",
     alignItems: "center",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 12,
+    gap: 5,
+    marginTop: 6,
   },
-  timeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
+  categoryText: {
+    maxWidth: "44%",
+    fontSize: 11,
+    fontWeight: "800",
   },
   timeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
+  },
+  metaDot: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  newText: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  itemDivider: {
+    height: StyleSheet.hairlineWidth,
   },
   stateCard: {
     marginTop: 12,

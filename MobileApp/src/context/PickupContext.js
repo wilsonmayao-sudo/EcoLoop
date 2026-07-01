@@ -36,6 +36,8 @@ const mapDeliveryToPickup = (delivery, stopOrder) => {
     accessibilityStatus: "accessible",
     routeName: delivery.routes?.name ?? "Assigned Route",
     routeId: delivery.route_id,
+    deliveryStatus: normalizeRouteStatus(delivery.status),
+    completedAt: delivery.completed_at ?? null,
     stopOrder: typeof stopOrder === "number" ? stopOrder : 9999,
   };
 };
@@ -54,6 +56,7 @@ async function updateDriverRouteStatus(driverId, status, timestamp) {
 export const PickupProvider = ({ children }) => {
   const { driver } = useAuth();
   const [pendingPickups, setPendingPickups] = useState([]);
+  const [assignedPickups, setAssignedPickups] = useState([]);
   const [driverRoutes, setDriverRoutes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [totalAssignedCount, setTotalAssignedCount] = useState(0);
@@ -65,18 +68,20 @@ export const PickupProvider = ({ children }) => {
     try {
       const parsed = JSON.parse(cache);
       setPendingPickups(parsed.pendingPickups ?? []);
+      setAssignedPickups(parsed.assignedPickups ?? parsed.pendingPickups ?? []);
       setTotalAssignedCount(parsed.totalAssignedCount ?? parsed.pendingPickups?.length ?? 0);
-      routeIdsRef.current = new Set((parsed.pendingPickups ?? []).map((p) => String(p.routeId)).filter(Boolean));
+      routeIdsRef.current = new Set((parsed.assignedPickups ?? parsed.pendingPickups ?? []).map((p) => String(p.routeId)).filter(Boolean));
     } catch (error) {
       console.warn("Failed parsing pickup cache:", error?.message);
     }
   }, []);
 
-  const persistCache = useCallback(async (nextPickups, assignedCount) => {
+  const persistCache = useCallback(async (nextPickups, assignedCount, nextAssignedPickups = nextPickups) => {
     await AsyncStorage.setItem(
       PICKUPS_CACHE_KEY,
       JSON.stringify({
         pendingPickups: nextPickups,
+        assignedPickups: nextAssignedPickups,
         totalAssignedCount: assignedCount,
       }),
     );
@@ -85,6 +90,7 @@ export const PickupProvider = ({ children }) => {
   const loadFromSupabase = useCallback(async () => {
     if (!driver?.id) {
       setPendingPickups([]);
+      setAssignedPickups([]);
       setDriverRoutes([]);
       setTotalAssignedCount(0);
       routeIdsRef.current = new Set();
@@ -94,46 +100,73 @@ export const PickupProvider = ({ children }) => {
 
     const { data: routeRows, error: routesErr } = await supabase
       .from("routes")
-      .select("id, name, status, started_at, completed_at, driver_id, vehicle_id, created_at")
+      .select("id, name, status, started_at, completed_at, driver_id, vehicle_id, created_at, generated_at, assignment_updated_at, distance_km, duration_minutes")
       .eq("driver_id", driver.id)
       .order("created_at", { ascending: false });
 
     if (routesErr) throw routesErr;
-    const routesList = routeRows ?? [];
+    const routeIds = (routeRows ?? []).map((route) => route.id).filter(Boolean);
+    let routeMetaById = new Map();
+    if (routeIds.length > 0) {
+      const { data: stopsMeta, error: stopsMetaErr } = await supabase
+        .from("route_stops")
+        .select("route_id, bins(location)")
+        .in("route_id", routeIds);
+      if (!stopsMetaErr && stopsMeta) {
+        routeMetaById = stopsMeta.reduce((acc, stop) => {
+          const key = String(stop.route_id);
+          const current = acc.get(key) ?? { stopCount: 0, areas: [] };
+          current.stopCount += 1;
+          const location = stop.bins?.location;
+          if (location && !current.areas.includes(location)) current.areas.push(location);
+          acc.set(key, current);
+          return acc;
+        }, new Map());
+      }
+    }
+
+    const routesList = (routeRows ?? []).map((route) => {
+      const meta = routeMetaById.get(String(route.id)) ?? { stopCount: 0, areas: [] };
+      return {
+        ...route,
+        stopCount: meta.stopCount,
+        areas: meta.areas,
+      };
+    });
     setDriverRoutes(routesList);
 
-    const activeRouteIds = routesList
-      .filter((r) => normalizeRouteStatus(r.status) === "active")
+    const assignedRouteIds = routesList
+      .filter((r) => ["active", "pending", "planned"].includes(normalizeRouteStatus(r.status)))
       .map((r) => String(r.id));
 
-    if (activeRouteIds.length === 0) {
+    if (assignedRouteIds.length === 0) {
       setPendingPickups([]);
+      setAssignedPickups([]);
       setTotalAssignedCount(0);
       routeIdsRef.current = new Set();
-      await persistCache([], 0);
+      await persistCache([], 0, []);
       setIsLoading(false);
       return;
     }
 
     const { data: deliveries, error } = await supabase
       .from("deliveries")
-      .select("id, route_id, bin_id, status, eta, due_label, has_delay, routes(name), bins(id, code, location, latitude, longitude)")
+      .select("id, route_id, bin_id, status, eta, due_label, has_delay, completed_at, routes(name), bins(id, code, location, latitude, longitude)")
       .eq("driver_id", driver.id)
-      .in("route_id", activeRouteIds)
-      .neq("status", "completed")
+      .in("route_id", assignedRouteIds)
       .order("updated_at", { ascending: false });
 
     if (error) throw error;
 
     const list = deliveries ?? [];
-    const routeIds = [...new Set(list.map((d) => d.route_id).filter(Boolean))];
+    const deliveryRouteIds = [...new Set(list.map((d) => d.route_id).filter(Boolean))];
 
     let stopRows = [];
-    if (routeIds.length > 0) {
+    if (deliveryRouteIds.length > 0) {
       const { data: rs, error: rsErr } = await supabase
         .from("route_stops")
         .select("route_id, bin_id, stop_order")
-        .in("route_id", routeIds)
+        .in("route_id", deliveryRouteIds)
         .order("stop_order", { ascending: true });
       if (!rsErr && rs) stopRows = rs;
     }
@@ -141,7 +174,7 @@ export const PickupProvider = ({ children }) => {
     const stopKey = (routeId, binId) => `${String(routeId)}::${String(binId)}`;
     const orderMap = new Map(stopRows.map((s) => [stopKey(s.route_id, s.bin_id), Number(s.stop_order) ?? 9999]));
 
-    const mapped = list
+    const allMapped = list
       .map((d) => {
         const bo = orderMap.get(stopKey(d.route_id, d.bin_id)) ?? 9999;
         return mapDeliveryToPickup(d, bo);
@@ -151,11 +184,13 @@ export const PickupProvider = ({ children }) => {
         return a.stopOrder - b.stopOrder;
       });
 
-    const assignedCount = mapped.length;
-    routeIdsRef.current = new Set(mapped.map((m) => String(m.routeId)).filter(Boolean));
+    const mapped = allMapped.filter((pickup) => normalizeRouteStatus(pickup.deliveryStatus) !== "completed");
+    const assignedCount = allMapped.length;
+    routeIdsRef.current = new Set(allMapped.map((m) => String(m.routeId)).filter(Boolean));
     setPendingPickups(mapped);
+    setAssignedPickups(allMapped);
     setTotalAssignedCount(assignedCount);
-    await persistCache(mapped, assignedCount);
+    await persistCache(mapped, assignedCount, allMapped);
     setIsLoading(false);
   }, [driver?.id, persistCache]);
 
@@ -223,11 +258,23 @@ export const PickupProvider = ({ children }) => {
   }, [driver?.id, loadFromSupabase]);
 
   const completePickup = useCallback(
-    (binId) => {
+    (deliveryId, binId) => {
       setPendingPickups((prev) => {
-        const target = prev.find((pickup) => pickup.binId === binId);
-        const next = prev.filter((pickup) => pickup.binId !== binId);
-        persistCache(next, totalAssignedCount).catch(() => {});
+        const target = prev.find((pickup) =>
+          deliveryId ? String(pickup.deliveryId) === String(deliveryId) : pickup.binId === binId,
+        );
+        const next = prev.filter((pickup) =>
+          deliveryId ? String(pickup.deliveryId) !== String(deliveryId) : pickup.binId !== binId,
+        );
+        setAssignedPickups((assigned) => {
+          const nextAssigned = assigned.map((pickup) =>
+            (deliveryId ? String(pickup.deliveryId) === String(deliveryId) : pickup.binId === binId)
+              ? { ...pickup, deliveryStatus: "completed", completedAt: new Date().toISOString() }
+              : pickup,
+          );
+          persistCache(next, totalAssignedCount, nextAssigned).catch(() => {});
+          return nextAssigned;
+        });
 
         if (target?.deliveryId) {
           NetInfo.fetch().then(async (state) => {
@@ -310,6 +357,7 @@ export const PickupProvider = ({ children }) => {
 
   const value = {
     pendingPickups,
+    assignedPickups,
     driverRoutes,
     completePickup,
     acceptRoute,
