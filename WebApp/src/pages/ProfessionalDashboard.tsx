@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { TrendingUp, Truck, MapPin, AlertCircle, Activity, CheckCircle, Clock, Users, ShieldCheck, Database, UserCheck } from "lucide-react";
+import { TrendingUp, Truck, MapPin, AlertCircle, Activity, CheckCircle, Clock, Users, ShieldCheck, Database } from "lucide-react";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
 import RoleIndicator from "../components/layout/RoleIndicator";
 import { formatDateOnly, getRouteProgress, normalizeStatus, relativeTime, useLiveData } from "../hooks/useLiveData";
@@ -22,6 +22,7 @@ type PageType =
   | "reports"
   | "bin-locations"
   | "notifications"
+  | "users"
   | "user-approvals"
   | "supervisor-dashboard"
   | "system-settings";
@@ -30,6 +31,7 @@ type WebRole = "admin" | "dispatcher" | "supervisor" | "truck_driver";
 
 interface ProfessionalDashboardProps {
   onNavigate: (page: PageType) => void;
+  onNavigateUsers?: (filter: "total" | "active") => void;
   role?: WebRole;
 }
 
@@ -41,7 +43,7 @@ interface AdminUserProfileRow {
   status: AccountStatus;
 }
 
-export default function ProfessionalDashboard({ onNavigate, role = "admin" }: ProfessionalDashboardProps) {
+export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, role = "admin" }: ProfessionalDashboardProps) {
   const { dashboardStats, reports, routes, deliveries, vehicles, notifications, driverById, loading, error } = useLiveData();
   const canManageRoutes = role === "dispatcher";
   const [adminUsers, setAdminUsers] = useState<AdminUserProfileRow[]>([]);
@@ -96,7 +98,7 @@ export default function ProfessionalDashboard({ onNavigate, role = "admin" }: Pr
         { id: "view-reports", title: "View Reports", description: "Check recent issues", icon: AlertCircle, color: "purple", page: "reports" as PageType },
       ]
     : [
-        { id: "users", title: "User Accounts", description: "Approve and manage system users", icon: Users, color: "emerald", page: "user-approvals" as PageType },
+        { id: "users", title: "User Accounts", description: "Review and manage system users", icon: Users, color: "emerald", page: "users" as PageType },
         { id: "settings", title: "System Settings", description: "Review platform configuration", icon: Activity, color: "blue", page: "system-settings" as PageType },
         { id: "view-reports", title: "View Reports", description: "Review submitted issues", icon: AlertCircle, color: "purple", page: "reports" as PageType },
       ];
@@ -113,18 +115,10 @@ export default function ProfessionalDashboard({ onNavigate, role = "admin" }: Pr
     return Array.from(counts.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [adminUsers]);
   const adminStats = [
-    { id: "total-users", title: "Total Users", value: adminUsers.length, icon: Users, color: "emerald", page: "user-approvals" as PageType },
-    { id: "pending-drivers", title: "Pending Drivers", value: adminUsers.filter((user) => user.role === "truck_driver" && user.status === "pending_approval").length, icon: UserCheck, color: "red", page: "user-approvals" as PageType },
+    { id: "total-users", title: "Total Users", value: adminUsers.length, icon: Users, color: "emerald", page: "users" as PageType, userFilter: "total" as const },
     { id: "pending-accounts", title: "Pending Accounts", value: adminUsers.filter((user) => user.status === "pending_approval").length, icon: AlertCircle, color: "purple", page: "user-approvals" as PageType },
-    { id: "active-users", title: "Active Users", value: adminUsers.filter((user) => user.status === "active").length, icon: ShieldCheck, color: "blue", page: "user-approvals" as PageType },
+    { id: "active-users", title: "Active Users", value: adminUsers.filter((user) => user.status === "active").length, icon: ShieldCheck, color: "blue", page: "users" as PageType, userFilter: "active" as const },
   ];
-  const accountStatusSummary = useMemo(() => {
-    const counts = adminUsers.reduce((acc, user) => {
-      acc.set(user.status, (acc.get(user.status) ?? 0) + 1);
-      return acc;
-    }, new Map<AccountStatus, number>());
-    return Array.from(counts.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [adminUsers]);
   const systemActivity = notifications
     .filter((notification) => notification.category === "system" || notification.type === "warning" || notification.type === "error")
     .slice(0, 4);
@@ -134,11 +128,6 @@ export default function ProfessionalDashboard({ onNavigate, role = "admin" }: Pr
     { label: "Total Reports", value: reports.length },
     { label: "System Notices", value: systemActivity.length },
   ];
-  const userActivity = notifications
-    .filter((notification) => notification.user_auth_id || notification.role)
-    .slice(0, 4);
-  const recentUserAccounts = adminUsers.slice(0, 4);
-
   const getColorClasses = (color: string) => {
     const colors = {
       emerald: { bg: "bg-emerald-50", text: "text-emerald-600", hover: "hover:bg-emerald-100", border: "border-emerald-200" },
@@ -178,14 +167,14 @@ export default function ProfessionalDashboard({ onNavigate, role = "admin" }: Pr
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{adminUsersError ?? error}</div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {adminStats.map((stat) => {
               const colors = getColorClasses(stat.color);
               const Icon = stat.icon;
               return (
                 <button
                   key={stat.id}
-                  onClick={() => onNavigate(stat.page)}
+                  onClick={() => stat.userFilter && onNavigateUsers ? onNavigateUsers(stat.userFilter) : onNavigate(stat.page)}
                   className={`bg-white rounded-xl p-6 border-2 ${colors.border} ${colors.hover} transition-all hover:shadow-lg cursor-pointer text-left group`}
                 >
                   <div className="flex items-start justify-between mb-4">
@@ -220,7 +209,7 @@ export default function ProfessionalDashboard({ onNavigate, role = "admin" }: Pr
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+              <div>
                 <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
                   <div className="flex items-center justify-between mb-6">
                     <h2 className="font-['Poppins:SemiBold',sans-serif] text-xl text-gray-900">Total Reports</h2>
@@ -253,27 +242,6 @@ export default function ProfessionalDashboard({ onNavigate, role = "admin" }: Pr
                       );
                     })}
                     {!loading && recentReports.length === 0 && <p className="text-sm text-gray-500">No reports found.</p>}
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-                  <h2 className="font-['Poppins:SemiBold',sans-serif] text-xl text-gray-900 mb-6">Recent User Accounts</h2>
-                  <div className="space-y-3">
-                    {recentUserAccounts.map((user) => (
-                      <div key={user.auth_user_id} className="rounded-lg bg-gray-50 p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-['Poppins:Medium',sans-serif] text-sm text-gray-900 truncate">{user.full_name}</p>
-                            <p className="font-['Poppins:Regular',sans-serif] text-xs text-gray-600 truncate">{user.email}</p>
-                          </div>
-                          <span className="font-['Poppins:Medium',sans-serif] text-xs px-3 py-1 rounded-full capitalize bg-gray-200 text-gray-800">
-                            {user.status.replace("_", " ")}
-                          </span>
-                        </div>
-                        <p className="font-['Poppins:Regular',sans-serif] text-xs text-gray-500 mt-2 capitalize">{user.role.replace("_", " ")}</p>
-                      </div>
-                    ))}
-                    {!adminUsersLoading && recentUserAccounts.length === 0 && <p className="text-sm text-gray-500">No user accounts found.</p>}
                   </div>
                 </div>
               </div>
@@ -317,19 +285,6 @@ export default function ProfessionalDashboard({ onNavigate, role = "admin" }: Pr
               </div>
 
               <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-                <h2 className="font-['Poppins:SemiBold',sans-serif] text-xl text-gray-900 mb-6">Account Status Overview</h2>
-                <div className="space-y-3">
-                  {accountStatusSummary.map(([status, count]) => (
-                    <div key={status} className="flex items-center justify-between">
-                      <span className="font-['Poppins:Regular',sans-serif] text-sm text-gray-700 capitalize">{status.replace("_", " ")}</span>
-                      <span className="font-['Poppins:Medium',sans-serif] text-sm text-gray-900">{adminUsersLoading ? "..." : count}</span>
-                    </div>
-                  ))}
-                  {!adminUsersLoading && accountStatusSummary.length === 0 && <p className="text-sm text-gray-500">No account statuses found.</p>}
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
                 <h2 className="font-['Poppins:SemiBold',sans-serif] text-xl text-gray-900 mb-6">System Status</h2>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -356,33 +311,6 @@ export default function ProfessionalDashboard({ onNavigate, role = "admin" }: Pr
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-                <h2 className="font-['Poppins:SemiBold',sans-serif] text-xl text-gray-900 mb-6">System Activity</h2>
-                <div className="space-y-3">
-                  {systemActivity.map((item) => (
-                    <div key={item.id} className="rounded-lg bg-gray-50 p-3">
-                      <p className="font-['Poppins:Medium',sans-serif] text-sm text-gray-900">{item.title}</p>
-                      <p className="font-['Poppins:Regular',sans-serif] text-xs text-gray-600 line-clamp-2 mt-1">{item.message}</p>
-                      <p className="font-['Poppins:Regular',sans-serif] text-xs text-gray-500 mt-2">{relativeTime(item.created_at)}</p>
-                    </div>
-                  ))}
-                  {!loading && systemActivity.length === 0 && <p className="text-sm text-gray-500">No system activity found.</p>}
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-                <h2 className="font-['Poppins:SemiBold',sans-serif] text-xl text-gray-900 mb-6">Recent User Actions</h2>
-                <div className="space-y-3">
-                  {userActivity.map((item) => (
-                    <div key={item.id} className="rounded-lg bg-gray-50 p-3">
-                      <p className="font-['Poppins:Medium',sans-serif] text-sm text-gray-900">{item.title}</p>
-                      <p className="font-['Poppins:Regular',sans-serif] text-xs text-gray-600 line-clamp-2 mt-1">{item.message}</p>
-                      <p className="font-['Poppins:Regular',sans-serif] text-xs text-gray-500 mt-2">{relativeTime(item.created_at)}</p>
-                    </div>
-                  ))}
-                  {!loading && userActivity.length === 0 && <p className="text-sm text-gray-500">No recent user actions found.</p>}
-                </div>
-              </div>
             </div>
           </div>
         </div>

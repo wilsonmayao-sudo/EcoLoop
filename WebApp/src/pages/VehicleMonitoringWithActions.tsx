@@ -4,6 +4,7 @@ import { X, Truck, MapPin, Calendar, AlertTriangle, Bell, ClipboardList } from "
 import Toast from "../components/feedback/Toast";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
 import RoleIndicator from "../components/layout/RoleIndicator";
+import CustomSelect from "../components/ui/CustomSelect";
 import {
   formatDateOnly,
   formatDateTime,
@@ -75,6 +76,8 @@ export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning
     createMaintenanceRecord,
     createNotifications,
   } = useLiveData();
+  const vehicleOptions = useMemo(() => vehicles.map((vehicle) => ({ value: String(vehicle.id), label: vehicle.label })), [vehicles]);
+  const maintenanceTypeOptions = useMemo(() => maintenanceTypes.map((type) => ({ value: type.name, label: type.name })), [maintenanceTypes]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [selectedMarker, setSelectedMarker] = useState<FleetMarker | null>(null);
@@ -449,14 +452,22 @@ export default function VehicleMonitoringWithActions({ onNavigateToRoutePlanning
 
       {showScheduleModal && (
         <Modal title="Schedule Maintenance" onClose={() => setShowScheduleModal(false)} icon={<Calendar className="size-6 text-purple-600" />}>
-          <select className="field" value={maintenanceForm.vehicleId} onChange={(event) => setMaintenanceForm({ ...maintenanceForm, vehicleId: event.target.value })}>
-            <option value="">Select vehicle</option>
-            {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>)}
-          </select>
-          <select className="field" value={maintenanceForm.maintenanceType} onChange={(event) => setMaintenanceForm({ ...maintenanceForm, maintenanceType: event.target.value })}>
-            <option value="">Select maintenance type</option>
-            {maintenanceTypes.map((type) => <option key={type.id} value={type.name}>{type.name}</option>)}
-          </select>
+          <CustomSelect
+            value={maintenanceForm.vehicleId}
+            onChange={(vehicleId) => setMaintenanceForm({ ...maintenanceForm, vehicleId })}
+            options={vehicleOptions}
+            placeholder="Select vehicle"
+            buttonClassName="field flex"
+            ariaLabel="Select vehicle"
+          />
+          <CustomSelect
+            value={maintenanceForm.maintenanceType}
+            onChange={(maintenanceType) => setMaintenanceForm({ ...maintenanceForm, maintenanceType })}
+            options={maintenanceTypeOptions}
+            placeholder="Select maintenance type"
+            buttonClassName="field flex"
+            ariaLabel="Select maintenance type"
+          />
           <input className="field" type="datetime-local" value={maintenanceForm.scheduledAt} onChange={(event) => setMaintenanceForm({ ...maintenanceForm, scheduledAt: event.target.value })} />
           <input className="field" placeholder="Estimated duration minutes" value={maintenanceForm.durationMinutes} onChange={(event) => setMaintenanceForm({ ...maintenanceForm, durationMinutes: event.target.value })} />
           <textarea className="field min-h-24" placeholder="Notes" value={maintenanceForm.notes} onChange={(event) => setMaintenanceForm({ ...maintenanceForm, notes: event.target.value })} />

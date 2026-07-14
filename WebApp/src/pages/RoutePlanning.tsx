@@ -10,6 +10,7 @@ import TrafficRouteMapPreview from "../components/maps/TrafficRouteMapPreview";
 import { isMapboxConfigured } from "../services/mapboxMatrix";
 import { supabase } from "../services/supabaseClient";
 import { formatDateOnly, getSetting, normalizeStatus, useLiveData } from "../hooks/useLiveData";
+import CustomSelect from "../components/ui/CustomSelect";
 
 function labelRouteStatus(status: string) {
   const n = (status ?? "").toLowerCase();
@@ -121,6 +122,14 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [newRoute, setNewRoute] = useState({ name: "", truck: "" });
   const [selectedBinIds, setSelectedBinIds] = useState<string[]>([]);
+  const driverOptions = useMemo(
+    () => drivers.map((driver) => ({
+      value: driver.name,
+      label: driver.name,
+      colorClassName: driver.status === "available" ? "bg-emerald-500" : "bg-amber-500",
+    })),
+    [drivers],
+  );
 
   const syncFromSupabase = async () => {
     setIsLoading(true);
@@ -323,6 +332,11 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
   };
 
   const handleDriverAssignment = async (routeId: string, driverName: string) => {
+    const route = routes.find((item) => item.id === routeId);
+    if (route && !["pending", "planned"].includes(normalizeStatus(route.status))) {
+      setOptimizationError("This route has already been accepted and cannot be reassigned.");
+      return;
+    }
     const nextDriver = drivers.find((driver) => driver.name === driverName);
     if (!nextDriver) return;
     const driverId = String(nextDriver.id);
@@ -469,18 +483,16 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                     <td className="px-6 py-4 text-sm text-gray-900">{route.distance}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">{route.duration}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      <select
+                      <CustomSelect
                         value={route.truck}
-                        onChange={(e) => void handleDriverAssignment(route.id, e.target.value)}
-                        className="px-2 py-1 border border-gray-300 rounded-md bg-white"
-                      >
-                        <option value="Unassigned">Unassigned</option>
-                        {drivers.map((driver) => (
-                          <option key={driver.id} value={driver.name}>
-                            {driver.name} {driver.status === "available" ? "(Available)" : "(On Route)"}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(driverName) => void handleDriverAssignment(route.id, driverName)}
+                        options={[{ value: "Unassigned", label: "Unassigned" }, ...driverOptions]}
+                        disabled={!["pending", "planned"].includes(normalizeStatus(route.status))}
+                        className="w-40"
+                        buttonClassName="h-8 px-2 py-1 border border-gray-300 rounded-md bg-white text-xs text-gray-800"
+                        menuClassName="text-xs"
+                        ariaLabel="Assigned driver"
+                      />
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex gap-2">
@@ -550,14 +562,14 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">Assign Truck</label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" value={newRoute.truck} onChange={(e) => setNewRoute({ ...newRoute, truck: e.target.value })}>
-                    <option value="">Select driver</option>
-                    {drivers.map((driver) => (
-                      <option key={driver.id} value={driver.name}>
-                        {driver.name} {driver.status === "available" ? "(Available)" : "(On Route)"}
-                      </option>
-                    ))}
-                  </select>
+                  <CustomSelect
+                    value={newRoute.truck}
+                    onChange={(driverName) => setNewRoute({ ...newRoute, truck: driverName })}
+                    options={driverOptions}
+                    placeholder="Select driver"
+                    buttonClassName="h-10 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    ariaLabel="Assign truck"
+                  />
                 </div>
                 <p className="text-xs text-gray-500">New routes are created as <span className="font-medium">Pending</span> until the driver accepts them in the mobile app.</p>
                 <div className="flex gap-3 mt-6">

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Mail, Lock, User as UserIcon, Phone, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import svgPaths from "../../assets/icons/ecoloopLogo";
+import CustomSelect from "../../components/ui/CustomSelect";
 
 interface RegisterPageFunctionalProps {
   onRegister: (params: {
@@ -14,7 +15,14 @@ interface RegisterPageFunctionalProps {
   onLoginClick: () => void;
 }
 
+const roleOptions = [
+  { value: "admin", label: "Admin" },
+  { value: "dispatcher", label: "Dispatcher" },
+  { value: "supervisor", label: "Supervisor" },
+];
+
 export default function RegisterPageFunctional({ onRegister, onBack, onLoginClick }: RegisterPageFunctionalProps) {
+  const [legalModal, setLegalModal] = useState<"terms" | "privacy" | null>(null);
   const [formData, setFormData] = useState({
     fullName: "",
     contactNumber: "",
@@ -88,19 +96,19 @@ export default function RegisterPageFunctional({ onRegister, onBack, onLoginClic
   };
 
   return (
-    <div className="relative w-full min-h-screen overflow-y-auto bg-gradient-to-br from-emerald-400 via-teal-400 to-blue-400 flex flex-col items-center justify-center py-12 px-4">
+    <div className="relative w-full min-h-screen overflow-y-auto bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600 flex flex-col items-center justify-start pt-5 sm:pt-8 pb-4 px-4">
       {/* Back Button */}
       <button
         onClick={onBack}
-        className="absolute top-6 left-6 flex items-center gap-2 text-white hover:text-gray-100 transition-colors"
+        className="absolute top-4 left-4 sm:top-6 sm:left-6 flex items-center gap-2 text-white hover:text-gray-100 transition-colors"
       >
         <ArrowLeft className="size-5" />
         <span className="font-['Poppins:Medium',sans-serif]">Back</span>
       </button>
 
       {/* Logo and Branding */}
-      <div className="flex flex-col items-center mb-8">
-        <div className="bg-white rounded-full p-6 mb-6 shadow-xl">
+      <div className="flex flex-col items-center mb-9">
+        <div className="bg-white rounded-full p-4 mb-1 shadow-xl">
           <svg className="size-12" fill="none" viewBox="0 0 48 48">
             <g clipPath="url(#clip0_register)">
               <path d={svgPaths.p20737200} fill="#10b981" />
@@ -113,26 +121,26 @@ export default function RegisterPageFunctional({ onRegister, onBack, onLoginClic
           </svg>
         </div>
         
-        <h1 className="font-['Poppins:Bold',sans-serif] text-4xl text-white mb-2">
+        <h1 className="font-['Poppins:Bold',sans-serif] text-3xl sm:text-4xl text-white leading-tight">
           Join ECOLOOP
         </h1>
-        <p className="font-['Poppins:Regular',sans-serif] text-lg text-white/90">
+        <p className="font-['Poppins:Regular',sans-serif] text-base sm:text-lg text-white/90 text-center leading-tight">
           Create your account to get started
         </p>
       </div>
 
       {/* Register Form Card */}
-      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 mb-8">
-        <form onSubmit={handleSubmit}>
-          {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{error}</div>}
-          {success && <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl p-3 text-sm">{success}</div>}
+      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl p-6 sm:p-8 mb-4">
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
+          {error && <div className="sm:col-span-2 bg-red-50 border border-red-200 text-red-700 rounded-lg p-2.5 text-sm">{error}</div>}
+          {success && <div className="sm:col-span-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg p-2.5 text-sm">{success}</div>}
           {/* Full Name */}
-          <div className="mb-4">
-            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-2">
+          <div>
+            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-1">
               Full Name
             </label>
             <div className="relative">
-              <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-gray-400" />
+              <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
               <input
                 type="text"
                 value={formData.fullName}
@@ -140,18 +148,18 @@ export default function RegisterPageFunctional({ onRegister, onBack, onLoginClic
                 placeholder="Enter your full name"
                 required
                 disabled={isSubmitting}
-                className="w-full h-12 pl-11 pr-4 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                className="w-full h-11 pl-10 pr-3 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
               />
             </div>
           </div>
 
           {/* Contact Number */}
-          <div className="mb-4">
-            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-2">
+          <div>
+            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-1">
               Contact Number
             </label>
             <div className="relative">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-gray-400" />
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
               <input
                 type="tel"
                 value={formData.contactNumber}
@@ -159,18 +167,18 @@ export default function RegisterPageFunctional({ onRegister, onBack, onLoginClic
                 placeholder="Mobile number"
                 required
                 disabled={isSubmitting}
-                className="w-full h-12 pl-11 pr-4 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                className="w-full h-11 pl-10 pr-3 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
               />
             </div>
           </div>
 
           {/* Email */}
-          <div className="mb-4">
-            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-2">
+          <div>
+            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-1">
               Email Address
             </label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-gray-400" />
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
               <input
                 type="email"
                 value={formData.email}
@@ -178,37 +186,34 @@ export default function RegisterPageFunctional({ onRegister, onBack, onLoginClic
                 placeholder="Work email"
                 required
                 disabled={isSubmitting}
-                className="w-full h-12 pl-11 pr-4 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                className="w-full h-11 pl-10 pr-3 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
               />
             </div>
-            {formData.email.length > 0 && !emailValid && <p className="mt-2 text-xs text-red-600">Invalid email format.</p>}
+            {formData.email.length > 0 && !emailValid && <p className="mt-1 text-xs text-red-600">Invalid email format.</p>}
           </div>
 
           {/* Account Type (Web only roles) */}
-          <div className="mb-4">
-            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-2">
+          <div>
+            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-1">
               Account Type
             </label>
-            <select
+            <CustomSelect
               value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value as "admin" | "dispatcher" | "supervisor" })}
-              required
+              onChange={(role) => setFormData({ ...formData, role: role as "admin" | "dispatcher" | "supervisor" })}
+              options={roleOptions}
               disabled={isSubmitting}
-              className="w-full h-12 px-4 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-            >
-              <option value="admin">Admin</option>
-              <option value="dispatcher">Dispatcher</option>
-              <option value="supervisor">Supervisor</option>
-            </select>
+              buttonClassName="h-11 px-3 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+              ariaLabel="Account type"
+            />
           </div>
 
           {/* Password */}
-          <div className="mb-4">
-            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-2">
+          <div>
+            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-1">
               Password
             </label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-gray-400" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
               <input
                 type={showPassword ? "text" : "password"}
                 value={formData.password}
@@ -216,11 +221,11 @@ export default function RegisterPageFunctional({ onRegister, onBack, onLoginClic
                 placeholder="Create a strong password"
                 required
                 disabled={isSubmitting}
-                className="w-full h-12 pl-11 pr-4 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                className="w-full h-11 pl-10 pr-10 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
               />
               <button
                 type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 size-5 text-gray-400"
+                className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-gray-400"
                 onClick={() => setShowPassword(!showPassword)}
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
@@ -228,17 +233,17 @@ export default function RegisterPageFunctional({ onRegister, onBack, onLoginClic
               </button>
             </div>
             {formData.password.length > 0 && (!passwordLongEnough || !passwordComplex) && (
-              <p className="mt-2 text-xs text-red-600">Use 8+ chars with letters and numbers.</p>
+              <p className="mt-1 text-xs text-red-600">Use 8+ chars with letters and numbers.</p>
             )}
           </div>
 
           {/* Confirm Password */}
-          <div className="mb-5">
-            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-2">
+          <div>
+            <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-1">
               Confirm Password
             </label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-gray-400" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
               <input
                 type={showConfirmPassword ? "text" : "password"}
                 value={formData.confirmPassword}
@@ -246,11 +251,11 @@ export default function RegisterPageFunctional({ onRegister, onBack, onLoginClic
                 placeholder="Confirm your password"
                 required
                 disabled={isSubmitting}
-                className="w-full h-12 pl-11 pr-4 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                className="w-full h-11 pl-10 pr-10 bg-white border border-gray-300 rounded-lg font-['Poppins:Regular',sans-serif] text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
               />
               <button
                 type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 size-5 text-gray-400"
+                className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-gray-400"
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
               >
@@ -260,7 +265,7 @@ export default function RegisterPageFunctional({ onRegister, onBack, onLoginClic
           </div>
 
           {/* Terms Checkbox */}
-          <div className="flex items-start gap-3 mb-6">
+          <div className="sm:col-span-2 flex items-start gap-2">
             <input
               type="checkbox"
               id="terms"
@@ -268,59 +273,81 @@ export default function RegisterPageFunctional({ onRegister, onBack, onLoginClic
               onChange={(e) => setFormData({ ...formData, agreeToTerms: e.target.checked })}
               className="mt-1 w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
             />
-            <label htmlFor="terms" className="font-['Poppins:Regular',sans-serif] text-sm text-gray-600 leading-tight">
-              I agree to the{" "}
-              <span className="font-['Poppins:Medium',sans-serif] text-emerald-600 cursor-pointer hover:underline">
+            <div className="font-['Poppins:Regular',sans-serif] text-xs sm:text-sm text-gray-600 leading-tight">
+              <label htmlFor="terms">I agree to the </label>
+              <button
+                type="button"
+                onClick={() => setLegalModal("terms")}
+                className="font-['Poppins:Medium',sans-serif] text-emerald-600 hover:underline"
+              >
                 Terms & Conditions
-              </span>
+              </button>
               {" "}and{" "}
-              <span className="font-['Poppins:Medium',sans-serif] text-emerald-600 cursor-pointer hover:underline">
+              <button
+                type="button"
+                onClick={() => setLegalModal("privacy")}
+                className="font-['Poppins:Medium',sans-serif] text-emerald-600 hover:underline"
+              >
                 Privacy Policy
-              </span>
-            </label>
+              </button>
+              .
+            </div>
           </div>
 
           {/* Create Account Button */}
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full h-[52px] bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-70 disabled:cursor-not-allowed text-white rounded-xl font-['Poppins:SemiBold',sans-serif] text-base transition-all shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] relative overflow-hidden group mb-3"
+            className="sm:col-span-2 w-full h-12 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-70 disabled:cursor-not-allowed text-white rounded-xl font-['Poppins:SemiBold',sans-serif] text-sm transition-all shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] relative overflow-hidden group"
           >
             <span className="relative z-10">{isSubmitting ? "Creating..." : "Create Account"}</span>
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
           </button>
 
-          {/* Divider */}
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300"></div>
-            </div>
-            <div className="relative flex justify-center">
-              <span className="px-3 bg-white font-['Poppins:Regular',sans-serif] text-sm text-gray-500">
-                Already have an account?
-              </span>
-            </div>
+          <div className="sm:col-span-2 text-center font-['Poppins:Regular',sans-serif] text-xs sm:text-sm text-gray-500">
+            Already have an account?{" "}
+            <button
+              type="button"
+              onClick={onLoginClick}
+              disabled={isSubmitting}
+              className="font-['Poppins:Medium',sans-serif] text-emerald-600 hover:text-emerald-700 hover:underline disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              Login to Account
+            </button>
           </div>
-
-          {/* Login Button */}
-          <button
-            type="button"
-            onClick={onLoginClick}
-            disabled={isSubmitting}
-            className="w-full h-[52px] bg-sky-500 hover:bg-sky-600 active:bg-sky-700 disabled:opacity-70 disabled:cursor-not-allowed text-white rounded-xl font-['Poppins:SemiBold',sans-serif] text-base transition-all shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] relative overflow-hidden group"
-          >
-            <span className="relative z-10">Login to Account</span>
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
-          </button>
         </form>
       </div>
 
       {/* Footer Info */}
-      <div className="mb-8 text-center">
+      <div className="mb-2 text-center">
         <p className="font-['Poppins:Regular',sans-serif] text-sm text-white/80">
           © 2025 ECOLOOP - Naga City System
         </p>
       </div>
+
+      {legalModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 className="font-['Poppins:Bold',sans-serif] text-xl text-gray-900">
+              {legalModal === "terms" ? "Terms and Conditions" : "Privacy Policy"}
+            </h2>
+            <p className="mt-3 font-['Poppins:Regular',sans-serif] text-sm leading-relaxed text-gray-600">
+              {legalModal === "terms"
+                ? "Use this account only for authorized ECOLOOP waste collection and fleet operations. Provide accurate registration details, keep your login credentials private, follow administrator instructions, and do not attempt unauthorized access. Misuse, false information, or security violations may result in account suspension or removal."
+                : "ECOLOOP uses your name, contact number, email, role, and account status for registration, approval, authentication, support, and system administration. Your information is accessible only to authorized administrators and required service providers, and is handled for legitimate ECOLOOP operations."}
+            </p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setLegalModal(null)}
+                className="rounded-lg bg-emerald-600 px-5 py-2 font-['Poppins:SemiBold',sans-serif] text-sm text-white transition-colors hover:bg-emerald-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

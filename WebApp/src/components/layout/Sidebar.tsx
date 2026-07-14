@@ -1,5 +1,5 @@
 import React from "react";
-import { LayoutDashboard, Map, Truck, FileText, MapPin, Bell, LogOut, User, UserCheck, Settings, Activity } from "lucide-react";
+import { LayoutDashboard, Map, Truck, FileText, MapPin, LogOut, User, UserCheck, Settings, Activity } from "lucide-react";
 import svgPaths from "../../assets/icons/sidebarLogo";
 
 type PageType =
@@ -9,6 +9,7 @@ type PageType =
   | "reports"
   | "bin-locations"
   | "notifications"
+  | "users"
   | "user-approvals"
   | "supervisor-dashboard"
   | "system-settings";
@@ -31,7 +32,7 @@ export default function Sidebar({ currentPage, onNavigate, onLogout, userName, u
     { id: "vehicle-monitoring", label: "Vehicle Monitoring", icon: Truck },
     { id: "reports", label: "Reports & Issues", icon: FileText },
     { id: "bin-locations", label: "Bin Locations", icon: MapPin },
-    { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "users", label: "Users", icon: User },
     { id: "user-approvals", label: "Pending accounts", icon: UserCheck },
     { id: "system-settings", label: "System Settings", icon: Settings },
   ];

@@ -1,8 +1,15 @@
 import React, { useState } from "react";
 import { Mail, Lock, ArrowLeft, Eye, EyeOff, Recycle, Leaf, Shield, CheckCircle } from "lucide-react";
 import svgPaths from "../../assets/icons/ecoloopLogo";
+import CustomSelect from "../../components/ui/CustomSelect";
 
 type WebLoginRole = "admin" | "dispatcher" | "supervisor";
+
+const roleOptions = [
+  { value: "admin", label: "Admin" },
+  { value: "dispatcher", label: "Dispatcher" },
+  { value: "supervisor", label: "Supervisor" },
+];
 
 interface LoginPageFunctionalProps {
   onLogin: (params: { email: string; password: string; role: WebLoginRole }) => Promise<void>;
@@ -186,17 +193,14 @@ export default function LoginPageFunctional({ onLogin, onRegister, onBack }: Log
               <label className="block font-['Poppins:Medium',sans-serif] text-sm text-gray-700 mb-2">
                 Account Type
               </label>
-              <select
+              <CustomSelect
                 value={role}
-                onChange={(e) => setRole(e.target.value as WebLoginRole)}
-                required
+                onChange={(nextRole) => setRole(nextRole as WebLoginRole)}
+                options={roleOptions}
                 disabled={isSubmitting}
-                className="w-full h-14 px-4 bg-white border-2 border-gray-200 rounded-xl font-['Poppins:Regular',sans-serif] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100 transition-all"
-              >
-                <option value="admin">Admin</option>
-                <option value="dispatcher">Dispatcher</option>
-                <option value="supervisor">Supervisor</option>
-              </select>
+                buttonClassName="h-14 px-4 bg-white border-2 border-gray-200 rounded-xl font-['Poppins:Regular',sans-serif] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100 transition-all"
+                ariaLabel="Account type"
+              />
             </div>
 
             {/* Password Field */}

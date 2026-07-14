@@ -4,6 +4,8 @@ import NotificationDropdown from "../components/feedback/NotificationDropdown";
 import RoleIndicator from "../components/layout/RoleIndicator";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import { formatDateOnly, useLiveData, type BinRecord } from "../hooks/useLiveData";
+import BinLocationPicker from "../components/maps/BinLocationPicker";
+import CustomSelect from "../components/ui/CustomSelect";
 
 type PageType = "dashboard" | "route-planning" | "vehicle-monitoring" | "reports" | "bin-locations" | "notifications";
 
@@ -11,7 +13,14 @@ interface BinLocationsProps {
   onNavigate?: (page: PageType) => void;
 }
 
-const emptyBinForm = { code: "", location: "", type: "", lat: "", lng: "", capacity: "" };
+const NAGA_CITY_COORDINATE = { latitude: 13.6218, longitude: 123.1948 };
+const emptyBinForm = {
+  code: "",
+  location: "",
+  type: "",
+  lat: String(NAGA_CITY_COORDINATE.latitude),
+  lng: String(NAGA_CITY_COORDINATE.longitude),
+};
 
 export default function BinLocations({ onNavigate }: BinLocationsProps) {
   const { bins, binTypes, loading, error, createBin, updateBin, deleteBin } = useLiveData();
@@ -51,6 +60,12 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
         setFormError("Code, location, and type are required.");
         return;
       }
+      const normalizedCode = newBin.code.trim().toLowerCase();
+      const duplicateCode = bins.some((bin) => (bin.code ?? "").trim().toLowerCase() === normalizedCode);
+      if (duplicateCode) {
+        setFormError("Bin code already exists.");
+        return;
+      }
       const coordinates = parseCoordinates(newBin.lat, newBin.lng);
       await createBin({
         code: newBin.code.trim(),
@@ -59,7 +74,6 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
         latitude: coordinates.latitude,
         longitude: coordinates.longitude,
         status: "active",
-        capacity_percent: newBin.capacity ? Number(newBin.capacity) : null,
       });
       setNewBin(emptyBinForm);
       setShowAddModal(false);
@@ -89,6 +103,8 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
     setSelectedBin(bin);
     setShowMapModal(true);
   };
+
+  const formatCoordinate = (value: number) => value.toFixed(7);
 
   const getTypeColor = (type?: string | null) => {
     switch (type) {
@@ -145,7 +161,11 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
           </div>
           <button
             className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg"
-            onClick={() => setShowAddModal(true)}
+            onClick={() => {
+              setNewBin(emptyBinForm);
+              setFormError(null);
+              setShowAddModal(true);
+            }}
           >
             <Plus className="size-5" />
             <span>Add Location</span>
@@ -221,22 +241,32 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
 
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300]" onClick={() => setShowAddModal(false)}>
-          <div className="bg-white p-6 rounded-lg shadow-lg w-96" onClick={(event) => event.stopPropagation()}>
+          <div className="bg-white p-6 rounded-lg shadow-lg w-[760px] max-h-[90vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
             <h3 className="text-gray-900 mb-4">Add Bin Location</h3>
             <div className="space-y-4">
               <input value={newBin.code} onChange={(event) => setNewBin({ ...newBin, code: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Bin code" />
               <input value={newBin.location} onChange={(event) => setNewBin({ ...newBin, location: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Location" />
-              <select value={newBin.type} onChange={(event) => setNewBin({ ...newBin, type: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                <option value="">Select type</option>
-                {activeBinTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-              <input value={newBin.lat} onChange={(event) => setNewBin({ ...newBin, lat: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Latitude" />
-              <input value={newBin.lng} onChange={(event) => setNewBin({ ...newBin, lng: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Longitude" />
-              <input value={newBin.capacity} onChange={(event) => setNewBin({ ...newBin, capacity: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Capacity percent (optional)" />
+              <CustomSelect
+                value={newBin.type}
+                onChange={(type) => setNewBin({ ...newBin, type })}
+                options={activeBinTypes.map((type) => ({ value: type, label: type }))}
+                placeholder="Select type"
+                buttonClassName="h-10 px-3 bg-white border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all capitalize"
+                ariaLabel="Bin type"
+              />
+              <BinLocationPicker
+                latitude={Number(newBin.lat)}
+                longitude={Number(newBin.lng)}
+                onChange={(coordinate) => setNewBin((prev) => ({
+                  ...prev,
+                  lat: formatCoordinate(coordinate.latitude),
+                  lng: formatCoordinate(coordinate.longitude),
+                }))}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <input value={newBin.lat} onChange={(event) => setNewBin({ ...newBin, lat: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Latitude" />
+                <input value={newBin.lng} onChange={(event) => setNewBin({ ...newBin, lng: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Longitude" />
+              </div>
               {formError && <p className="text-sm text-red-600">{formError}</p>}
             </div>
             <div className="flex gap-3 mt-6">
@@ -313,7 +343,7 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
 
       {showMoveLocationModal && binToMove && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300]" onClick={() => setShowMoveLocationModal(false)}>
-          <div className="bg-white rounded-xl shadow-2xl w-[600px] max-h-[90vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
+          <div className="bg-white rounded-xl shadow-2xl w-[820px] max-h-[90vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-orange-100 rounded-lg">
@@ -330,6 +360,15 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
             </div>
             <div className="p-6 space-y-4">
               <input value={moveForm.location} onChange={(event) => setMoveForm((prev) => ({ ...prev, location: event.target.value }))} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg" placeholder="New location address" />
+              <BinLocationPicker
+                latitude={Number(moveForm.lat)}
+                longitude={Number(moveForm.lng)}
+                onChange={(coordinate) => setMoveForm((prev) => ({
+                  ...prev,
+                  lat: formatCoordinate(coordinate.latitude),
+                  lng: formatCoordinate(coordinate.longitude),
+                }))}
+              />
               <div className="grid grid-cols-2 gap-4">
                 <input value={moveForm.lat} onChange={(event) => setMoveForm((prev) => ({ ...prev, lat: event.target.value }))} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg" placeholder="Latitude" />
                 <input value={moveForm.lng} onChange={(event) => setMoveForm((prev) => ({ ...prev, lng: event.target.value }))} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg" placeholder="Longitude" />

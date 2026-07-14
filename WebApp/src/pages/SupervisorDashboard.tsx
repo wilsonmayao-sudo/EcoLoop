@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Activity, CalendarClock, CheckCircle, ClipboardList, FileDown, Truck, Users, X } from "lucide-react";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
 import RoleIndicator from "../components/layout/RoleIndicator";
+import CustomSelect from "../components/ui/CustomSelect";
 import { useAuth } from "../contexts/AuthContext";
 import { normalizeStatus } from "../hooks/useLiveData";
 import { supabase } from "../services/supabaseClient";
@@ -71,6 +72,13 @@ export default function SupervisorDashboard({ onNavigate }: SupervisorDashboardP
   const [showExportModal, setShowExportModal] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const driverOptions = useMemo(() => drivers.map((driver) => ({ value: String(driver.id), label: driver.name })), [drivers]);
+  const reportPeriodOptions = [
+    { value: "today", label: "Today" },
+    { value: "week", label: "This Week" },
+    { value: "month", label: "This Month" },
+    { value: "custom", label: "Custom Range" },
+  ];
 
   const loadOperations = async () => {
     setLoading(true);
@@ -243,35 +251,26 @@ export default function SupervisorDashboard({ onNavigate }: SupervisorDashboardP
                 {exportError && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{exportError}</div>}
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="driver-export-select">Driver</label>
-                  <select
-                    id="driver-export-select"
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Driver</label>
+                  <CustomSelect
                     value={selectedDriverId}
-                    onChange={(event) => setSelectedDriverId(event.target.value)}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="">Select driver</option>
-                    {drivers.map((driver) => (
-                      <option key={driver.id} value={String(driver.id)}>
-                        {driver.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setSelectedDriverId}
+                    options={driverOptions}
+                    placeholder="Select driver"
+                    buttonClassName="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    ariaLabel="Driver"
+                  />
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="driver-export-period">Date range</label>
-                  <select
-                    id="driver-export-period"
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Date range</label>
+                  <CustomSelect
                     value={reportPeriod}
-                    onChange={(event) => setReportPeriod(event.target.value as ReportPeriod)}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="today">Today</option>
-                    <option value="week">This Week</option>
-                    <option value="month">This Month</option>
-                    <option value="custom">Custom Range</option>
-                  </select>
+                    onChange={(period) => setReportPeriod(period as ReportPeriod)}
+                    options={reportPeriodOptions}
+                    buttonClassName="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    ariaLabel="Date range"
+                  />
                 </div>
 
                 {reportPeriod === "custom" && (

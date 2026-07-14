@@ -8,13 +8,14 @@ import ReportsAndIssues from "../pages/ReportsAndIssues";
 import VehicleMonitoringWithActions from "../pages/VehicleMonitoringWithActions";
 import WelcomeScreen from "../features/auth/WelcomeScreen";
 import UserApprovals from "../pages/UserApprovals";
+import Users from "../pages/Users";
 import SupervisorDashboard from "../pages/SupervisorDashboard";
 import SystemSettings from "../pages/SystemSettings";
 import { AuthProvider, useAuth, type AppRole } from "../contexts/AuthContext";
 import { useRolePermissions, type PageType } from "../hooks/useLiveData";
 
 const FALLBACK_PAGE_ACCESS: Record<Exclude<AppRole, "truck_driver">, PageType[]> = {
-  admin: ["dashboard", "reports", "notifications", "user-approvals", "system-settings"],
+  admin: ["dashboard", "reports", "notifications", "users", "user-approvals", "system-settings"],
   dispatcher: ["dashboard", "route-planning", "vehicle-monitoring", "reports", "bin-locations", "notifications"],
   supervisor: ["supervisor-dashboard", "reports", "notifications"],
 };
@@ -28,6 +29,7 @@ const SIDEBAR_PAGE_ORDER: PageType[] = [
   "reports",
   "bin-locations",
   "notifications",
+  "users",
   "user-approvals",
   "system-settings",
 ];
@@ -38,11 +40,14 @@ function getDefaultPage(readablePages: PageType[]): PageType {
 
 function AppShell() {
   const [currentPage, setCurrentPage] = useState(null as PageType | null);
+  const [usersInitialFilter, setUsersInitialFilter] = useState<"total" | "active">("total");
   const { loading, session, profile, authError, signOut } = useAuth();
   const { readablePages, loading: permissionsLoading, error: permissionsError } = useRolePermissions(profile?.role);
   const effectiveReadablePages =
     readablePages.length > 0
-      ? readablePages
+      ? profile?.role === "admin" && !readablePages.includes("users")
+        ? [...readablePages, "users"]
+        : readablePages
       : profile?.role && profile.role !== "truck_driver"
         ? FALLBACK_PAGE_ACCESS[profile.role]
         : [];
@@ -69,15 +74,22 @@ function AppShell() {
     setCurrentPage(page);
   };
 
+  const navigateToUsers = (filter: "total" | "active") => {
+    setUsersInitialFilter(filter);
+    navigateWithRoleGuard("users");
+  };
+
   const renderPage = () => {
     const pageToRender = activePage;
     switch (pageToRender) {
       case "dashboard":
-        return <ProfessionalDashboard onNavigate={navigateWithRoleGuard} role={profile.role} />;
+        return <ProfessionalDashboard onNavigate={navigateWithRoleGuard} onNavigateUsers={navigateToUsers} role={profile.role} />;
       case "supervisor-dashboard":
         return <SupervisorDashboard onNavigate={navigateWithRoleGuard} />;
       case "user-approvals":
         return <UserApprovals onNavigate={navigateWithRoleGuard} />;
+      case "users":
+        return <Users onNavigate={navigateWithRoleGuard} initialFilter={usersInitialFilter} />;
       case "system-settings":
         return <SystemSettings onNavigate={navigateWithRoleGuard} />;
       case "route-planning":
