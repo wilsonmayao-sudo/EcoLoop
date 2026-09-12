@@ -24,12 +24,13 @@ type ReferenceSection = {
   id: ReferenceTableName;
   label: string;
   description: string;
+  addPlaceholder: string;
   items: ReferenceRecord[];
 };
 
 const referenceTabs: Array<{ id: ReferenceTableName; label: string }> = [
-  { id: "report_categories", label: "Report Categories" },
-  { id: "maintenance_types", label: "Maintenance Types" },
+  { id: "report_categories", label: "Report Types" },
+  { id: "maintenance_types", label: "Maintenance" },
   { id: "service_areas", label: "Service Areas" },
   { id: "bin_types", label: "Bin Types" },
 ];
@@ -58,7 +59,7 @@ export default function SystemSettings({ onNavigate }: SystemSettingsProps) {
     city: organization.city ?? "",
   });
   const [activeReferenceTab, setActiveReferenceTab] = useState<ReferenceTableName>("report_categories");
-  const [newReference, setNewReference] = useState({ name: "", sortOrder: "" });
+  const [newReferenceName, setNewReferenceName] = useState("");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   useEffect(() => {
@@ -78,10 +79,34 @@ export default function SystemSettings({ onNavigate }: SystemSettingsProps) {
 
   const referenceSections: ReferenceSection[] = useMemo(
     () => [
-      { id: "report_categories", label: "Report Categories", description: "Options used to classify driver and waste reports.", items: allReportCategories },
-      { id: "maintenance_types", label: "Maintenance Types", description: "Options used when scheduling vehicle maintenance.", items: allMaintenanceTypes },
-      { id: "service_areas", label: "Service Areas", description: "Named operating areas for city waste collection.", items: allServiceAreas },
-      { id: "bin_types", label: "Bin Types", description: "Collection site types available when adding bins.", items: allBinTypes },
+      {
+        id: "report_categories",
+        label: "Report Types",
+        description: "Choices drivers can pick when they send a report.",
+        addPlaceholder: "Example: Missed pickup",
+        items: allReportCategories,
+      },
+      {
+        id: "maintenance_types",
+        label: "Maintenance",
+        description: "Choices used when recording vehicle maintenance work.",
+        addPlaceholder: "Example: Tire replacement",
+        items: allMaintenanceTypes,
+      },
+      {
+        id: "service_areas",
+        label: "Service Areas",
+        description: "Places or zones used for waste collection work.",
+        addPlaceholder: "Example: Barangay Concepcion Pequena",
+        items: allServiceAreas,
+      },
+      {
+        id: "bin_types",
+        label: "Bin Types",
+        description: "Choices used when adding or updating collection bins.",
+        addPlaceholder: "Example: Public bin",
+        items: allBinTypes,
+      },
     ],
     [allBinTypes, allMaintenanceTypes, allReportCategories, allServiceAreas],
   );
@@ -115,29 +140,29 @@ export default function SystemSettings({ onNavigate }: SystemSettingsProps) {
 
   const addReferenceItem = async () => {
     try {
-      const name = newReference.name.trim();
+      const name = newReferenceName.trim();
       if (!name) {
-        showToast("Reference name is required.", "error");
+        showToast("Enter a name before adding.", "error");
         return;
       }
       await createReferenceItem(activeReferenceTab, {
         name,
         is_active: true,
-        sort_order: newReference.sortOrder ? Number(newReference.sortOrder) : 100,
+        sort_order: 100,
       });
-      setNewReference({ name: "", sortOrder: "" });
-      showToast("Reference item added.");
+      setNewReferenceName("");
+      showToast("Choice added.");
     } catch (err: any) {
-      showToast(err?.message ?? "Unable to add reference item.", "error");
+      showToast(err?.message ?? "Unable to add choice.", "error");
     }
   };
 
   const updateReference = async (table: ReferenceTableName, item: ReferenceRecord, payload: Partial<Pick<ReferenceRecord, "name" | "is_active" | "sort_order">>) => {
     try {
       await updateReferenceItem(table, item.id, payload);
-      showToast("Reference item updated.");
+      showToast("Choice updated.");
     } catch (err: any) {
-      showToast(err?.message ?? "Unable to update reference item.", "error");
+      showToast(err?.message ?? "Unable to update choice.", "error");
     }
   };
 
@@ -148,7 +173,7 @@ export default function SystemSettings({ onNavigate }: SystemSettingsProps) {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-gray-900">System Settings</h2>
-            <p className="text-gray-600">Configure organization identity, routing defaults, and admin reference data.</p>
+            <p className="text-gray-600">Configure organization identity, routing defaults, and dropdown choices.</p>
           </div>
           {onNavigate && <NotificationDropdown onViewAll={() => onNavigate("notifications")} />}
         </div>
@@ -191,14 +216,14 @@ export default function SystemSettings({ onNavigate }: SystemSettingsProps) {
         </div>
 
         <section className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-          <SectionHeader icon={<Database className="size-5 text-emerald-600" />} title="Reference Data Manager" description="Manage dropdown and classification values without deleting historical references." />
+          <SectionHeader icon={<Database className="size-5 text-emerald-600" />} title="Dropdown Choices" description="Control the choices people see in forms across the system." />
           <div className="flex flex-wrap gap-2 mb-5">
             {referenceTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => {
                   setActiveReferenceTab(tab.id);
-                  setNewReference({ name: "", sortOrder: "" });
+                  setNewReferenceName("");
                 }}
                 className={`px-4 py-2 rounded-lg text-sm border transition-colors ${
                   activeReferenceTab === tab.id
@@ -217,20 +242,23 @@ export default function SystemSettings({ onNavigate }: SystemSettingsProps) {
               <p className="text-sm text-gray-600 mt-1">{activeReferenceSection.description}</p>
             </div>
             <div className="divide-y divide-gray-100">
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_140px_120px_auto] gap-3 p-4 bg-white">
-                <input className="field" placeholder={`Add ${activeReferenceSection.label.toLowerCase()}`} value={newReference.name} onChange={(event) => setNewReference({ ...newReference, name: event.target.value })} />
-                <input className="field" placeholder="Sort order" value={newReference.sortOrder} onChange={(event) => setNewReference({ ...newReference, sortOrder: event.target.value })} />
-                <div className="hidden lg:block" />
+              <div className="grid grid-cols-1 gap-3 bg-white p-4 md:grid-cols-[1fr_auto]">
+                <input
+                  className="field"
+                  placeholder={activeReferenceSection.addPlaceholder}
+                  value={newReferenceName}
+                  onChange={(event) => setNewReferenceName(event.target.value)}
+                />
                 <button onClick={() => void addReferenceItem()} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">
                   <Plus className="size-4" />
-                  Add
+                  Add Choice
                 </button>
               </div>
 
               {activeReferenceSection.items.map((item) => (
                 <ReferenceRow key={item.id} table={activeReferenceSection.id} item={item} onUpdate={updateReference} />
               ))}
-              {activeReferenceSection.items.length === 0 && <div className="p-6 text-sm text-gray-500">No reference records found.</div>}
+              {activeReferenceSection.items.length === 0 && <div className="p-6 text-sm text-gray-500">No choices added yet.</div>}
             </div>
           </div>
         </section>
@@ -272,24 +300,19 @@ function ReferenceRow({
   onUpdate: (table: ReferenceTableName, item: ReferenceRecord, payload: Partial<Pick<ReferenceRecord, "name" | "is_active" | "sort_order">>) => Promise<void>;
 }) {
   const [name, setName] = useState(item.name);
-  const [sortOrder, setSortOrder] = useState(String(item.sort_order ?? ""));
 
   useEffect(() => {
     setName(item.name);
-    setSortOrder(String(item.sort_order ?? ""));
-  }, [item.name, item.sort_order]);
+  }, [item.name]);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_140px_120px_auto] gap-3 p-4 items-center">
-      <input className="field" value={name} onChange={(event) => setName(event.target.value)} onBlur={() => name.trim() !== item.name && void onUpdate(table, item, { name: name.trim() })} />
+    <div className="grid grid-cols-1 items-center gap-3 p-4 md:grid-cols-[1fr_auto]">
       <input
         className="field"
-        value={sortOrder}
-        onChange={(event) => setSortOrder(event.target.value)}
-        onBlur={() => {
-          const nextSort = sortOrder === "" ? null : Number(sortOrder);
-          if (nextSort !== item.sort_order && nextSort !== null) void onUpdate(table, item, { sort_order: nextSort });
-        }}
+        aria-label="Choice name"
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        onBlur={() => name.trim() !== item.name && void onUpdate(table, item, { name: name.trim() })}
       />
       <button
         onClick={() => void onUpdate(table, item, { is_active: !(item.is_active ?? true) })}
@@ -298,9 +321,8 @@ function ReferenceRow({
         }`}
       >
         <CheckCircle className="size-4" />
-        {item.is_active ?? true ? "Active" : "Inactive"}
+        {item.is_active ?? true ? "Shown" : "Hidden"}
       </button>
-      <span className="text-xs text-gray-500 lg:text-right">ID: {item.id}</span>
     </div>
   );
 }

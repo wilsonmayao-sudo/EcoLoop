@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { Mail, Lock, ArrowLeft, Eye, EyeOff, Recycle, Leaf, Shield, CheckCircle } from "lucide-react";
-import svgPaths from "../../assets/icons/ecoloopLogo";
+import { Mail, Lock, ArrowLeft, Eye, EyeOff, Recycle, Leaf, Shield } from "lucide-react";
 import CustomSelect from "../../components/ui/CustomSelect";
+import AuthBrandLogos from "./AuthBrandLogos";
 
 type WebLoginRole = "admin" | "dispatcher" | "supervisor";
 
@@ -58,34 +58,16 @@ export default function LoginPageFunctional({ onLogin, onRegister, onBack }: Log
           <div className="absolute top-10 left-10 w-72 h-72 bg-white rounded-full blur-3xl animate-pulse" />
           <div className="absolute bottom-20 right-20 w-96 h-96 bg-white rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
         </div>
-
         {/* Content */}
-        <div className="relative z-10 flex flex-col justify-between p-12 text-white w-full">
-          {/* Logo Section */}
-          <div className="flex items-center gap-3">
-            <div className="bg-white rounded-2xl p-3 shadow-xl">
-              <svg className="size-8" fill="none" viewBox="0 0 48 48">
-                <g clipPath="url(#clip0_login_left)">
-                  <path d={svgPaths.p20737200} fill="#10b981" />
-                </g>
-                <defs>
-                  <clipPath id="clip0_login_left">
-                    <path d="M0 0H48V48H0V0Z" fill="white" />
-                  </clipPath>
-                </defs>
-              </svg>
-            </div>
-            <div>
-              <h2 className="font-['Poppins:Bold',sans-serif] text-2xl">ECOLOOP</h2>
-              <p className="font-['Poppins:Regular',sans-serif] text-sm text-white/80">Waste Management System</p>
-            </div>
-          </div>
-
+        <div className="relative z-10 flex flex-col p-12 text-white w-full">
           {/* Main Content */}
-          <div className="space-y-8">
+          <div className="flex flex-1 flex-col justify-center space-y-8">
             <div className="text-center">
+              <div className="mb-8">
+                <AuthBrandLogos />
+              </div>
               <h1 className="font-['Poppins:Bold',sans-serif] text-5xl mb-4 leading-tight">
-                Waste Management
+                ECOLOOP
               </h1>
               <p className="font-['Poppins:Regular',sans-serif] text-xl text-white/90 max-w-md mx-auto">
                 Smart routing, real-time monitoring, and efficient waste collection for a cleaner Naga City.
@@ -132,25 +114,12 @@ export default function LoginPageFunctional({ onLogin, onRegister, onBack }: Log
           <span className="font-['Poppins:Medium',sans-serif]">Back</span>
         </button>
 
-        {/* Mobile Logo */}
-        <div className="absolute top-6 right-6 lg:hidden flex items-center gap-2">
-          <div className="bg-emerald-600 rounded-xl p-2">
-            <svg className="size-6" fill="none" viewBox="0 0 48 48">
-              <g clipPath="url(#clip0_login_mobile)">
-                <path d={svgPaths.p20737200} fill="white" />
-              </g>
-              <defs>
-                <clipPath id="clip0_login_mobile">
-                  <path d="M0 0H48V48H0V0Z" fill="white" />
-                </clipPath>
-              </defs>
-            </svg>
-          </div>
-          <span className="font-['Poppins:Bold',sans-serif] text-gray-900">ECOLOOP</span>
-        </div>
-
         {/* Login Form */}
         <div className="w-full max-w-md mt-16 lg:mt-0">
+          <div className="mb-6 lg:hidden">
+            <AuthBrandLogos compact />
+          </div>
+
           {/* Header */}
           <div className="text-center mb-8">
             <h2 className="font-['Poppins:Bold',sans-serif] text-3xl text-gray-900 mb-2">
@@ -286,22 +255,8 @@ export default function LoginPageFunctional({ onLogin, onRegister, onBack }: Log
               Create New Account
             </button>
           </form>
-
-          {/* Trust Badges */}
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <div className="flex items-center justify-center gap-6 text-gray-400">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="size-5 text-emerald-600" />
-                <span className="font-['Poppins:Regular',sans-serif] text-sm text-gray-600">Secure Login</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Shield className="size-5 text-emerald-600" />
-                <span className="font-['Poppins:Regular',sans-serif] text-sm text-gray-600">Data Protected</span>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
   );
 }

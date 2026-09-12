@@ -5,6 +5,7 @@ import Toast from "../components/feedback/Toast";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
 import RoleIndicator from "../components/layout/RoleIndicator";
 import ReportLocationMap from "../components/reports/ReportLocationMap";
+import CustomSelect from "../components/ui/CustomSelect";
 import { useAuth } from "../contexts/AuthContext";
 import { formatDateOnly, formatDateTime, useLiveData, type WasteReportRecord } from "../hooks/useLiveData";
 import { parseReportCoordinate, resolveReportImageUrl } from "../utils/reportMedia";
@@ -18,12 +19,20 @@ interface ReportsAndIssuesProps {
 const statusOptions = ["pending", "in_progress", "resolved"];
 
 type StatusFilter = "all" | "pending" | "in_progress" | "resolved";
+type DayFilter = "all" | "today" | "7" | "30";
 
 const statusFilterOptions: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All Reports" },
   { value: "pending", label: "Pending" },
   { value: "in_progress", label: "In Progress" },
   { value: "resolved", label: "Resolved" },
+];
+
+const dayFilterOptions: { value: DayFilter; label: string }[] = [
+  { value: "all", label: "All Days" },
+  { value: "today", label: "Today" },
+  { value: "7", label: "Last 7 Days" },
+  { value: "30", label: "Last 30 Days" },
 ];
 
 interface StatusSelectProps {
@@ -150,6 +159,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
   } = useLiveData();
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null as WasteReportRecord | null);
+  const [dayFilter, setDayFilter] = useState("all" as DayFilter);
   const [statusFilter, setStatusFilter] = useState("all" as StatusFilter);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showToast, setShowToast] = useState(false);
@@ -187,11 +197,26 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
   );
 
   const filteredReports = useMemo(() => {
-    if (statusFilter === "all") return reports;
-    return reports.filter((report) => report.status === statusFilter);
-  }, [reports, statusFilter]);
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const rangeStart =
+      dayFilter === "today"
+        ? todayStart
+        : dayFilter === "7" || dayFilter === "30"
+          ? new Date(now.getFullYear(), now.getMonth(), now.getDate() - (Number(dayFilter) - 1))
+          : null;
+
+    return reports.filter((report) => {
+      if (statusFilter !== "all" && report.status !== statusFilter) return false;
+      if (!rangeStart) return true;
+
+      const submittedAt = new Date(report.created_at);
+      return !Number.isNaN(submittedAt.getTime()) && submittedAt >= rangeStart;
+    });
+  }, [dayFilter, reports, statusFilter]);
 
   const activeFilterLabel = statusFilterOptions.find((option) => option.value === statusFilter)?.label ?? "All Reports";
+  const activeDayFilterLabel = dayFilterOptions.find((option) => option.value === dayFilter)?.label ?? "All Days";
 
   const confirmDelete = async () => {
     if (!selectedReport) return;
@@ -340,27 +365,33 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
           <div className="flex flex-col gap-4 border-b border-gray-200 p-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-gray-900">{activeFilterLabel}</h3>
-              {statusFilter !== "all" && (
+              {(dayFilter !== "all" || statusFilter !== "all") && (
                 <p className="mt-1 text-sm text-gray-500">
-                  Showing {filteredReports.length} of {reports.length} reports
+                  Showing {filteredReports.length} of {reports.length} reports for {activeDayFilterLabel.toLowerCase()}
                 </p>
               )}
             </div>
-            <div className="inline-flex flex-wrap rounded-lg border border-gray-200 bg-gray-50 p-1">
-              {statusFilterOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setStatusFilter(option.value)}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                    statusFilter === option.value
-                      ? "bg-white text-gray-900 shadow-sm"
-                      : "text-gray-600 hover:text-gray-900"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
+            <div className="grid w-full grid-cols-2 gap-3 sm:w-auto sm:min-w-[24rem]">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Days</label>
+                <CustomSelect
+                  value={dayFilter}
+                  onChange={(value) => setDayFilter(value as DayFilter)}
+                  options={dayFilterOptions}
+                  buttonClassName="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  ariaLabel="Filter reports by days"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
+                <CustomSelect
+                  value={statusFilter}
+                  onChange={(value) => setStatusFilter(value as StatusFilter)}
+                  options={statusFilterOptions}
+                  buttonClassName="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  ariaLabel="Filter reports by status"
+                />
+              </div>
             </div>
           </div>
           <div className="overflow-x-auto">

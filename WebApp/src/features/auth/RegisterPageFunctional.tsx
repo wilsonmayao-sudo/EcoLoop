@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Mail, Lock, User as UserIcon, Phone, ArrowLeft, Eye, EyeOff } from "lucide-react";
-import svgPaths from "../../assets/icons/ecoloopLogo";
 import CustomSelect from "../../components/ui/CustomSelect";
+import AuthBrandLogos from "./AuthBrandLogos";
 
 interface RegisterPageFunctionalProps {
   onRegister: (params: {
@@ -108,17 +108,8 @@ export default function RegisterPageFunctional({ onRegister, onBack, onLoginClic
 
       {/* Logo and Branding */}
       <div className="flex flex-col items-center mb-9">
-        <div className="bg-white rounded-full p-4 mb-1 shadow-xl">
-          <svg className="size-12" fill="none" viewBox="0 0 48 48">
-            <g clipPath="url(#clip0_register)">
-              <path d={svgPaths.p20737200} fill="#10b981" />
-            </g>
-            <defs>
-              <clipPath id="clip0_register">
-                <path d="M0 0H48V48H0V0Z" fill="white" />
-              </clipPath>
-            </defs>
-          </svg>
+        <div className="mb-3">
+          <AuthBrandLogos />
         </div>
         
         <h1 className="font-['Poppins:Bold',sans-serif] text-3xl sm:text-4xl text-white leading-tight">

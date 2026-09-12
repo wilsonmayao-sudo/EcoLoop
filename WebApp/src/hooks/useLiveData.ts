@@ -393,6 +393,27 @@ export function useLiveData() {
   const [allMaintenanceTypes, setAllMaintenanceTypes] = useState<ReferenceRecord[]>([]);
   const [allServiceAreas, setAllServiceAreas] = useState<ReferenceRecord[]>([]);
   const [allBinTypes, setAllBinTypes] = useState<ReferenceRecord[]>([]);
+
+  const refreshVehicleLocations = useCallback(async () => {
+    const [latestResult, gpsLogsResult] = await Promise.all([
+      supabase
+        .from("vehicle_locations_latest")
+        .select("vehicle_id, driver_id, route_id, latitude, longitude, speed_kph, heading_deg, updated_at")
+        .order("updated_at", { ascending: false }),
+      supabase
+        .from("vehicle_gps_logs")
+        .select("id, vehicle_id, driver_id, route_id, latitude, longitude, speed_kph, heading_deg, accuracy_m, recorded_at")
+        .order("recorded_at", { ascending: false })
+        .limit(100),
+    ]);
+
+    if (latestResult.error || gpsLogsResult.error) return;
+    const incoming = mergeVehicleLocationRows(
+      normalizeLocationRows((latestResult.data as VehicleLocationRecord[]) ?? [], "latest"),
+      normalizeLocationRows((gpsLogsResult.data as VehicleLocationRecord[]) ?? [], "gps_log"),
+    );
+    setVehicleLocations((current) => mergeVehicleLocationRows(current, incoming));
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -739,6 +760,7 @@ export function useLiveData() {
     vehicleById,
     dashboardStats,
     reload: load,
+    refreshVehicleLocations,
     createBin,
     updateBin,
     deleteBin,

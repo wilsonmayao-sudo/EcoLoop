@@ -94,3 +94,14 @@ export async function publishDriverLocation({ driverId, vehicleId, routeId, loca
   );
   if (error) throw error;
 }
+
+export async function clearDriverLatestLocation({ driverId }) {
+  const normalizedDriverId = normalizeNumericId(driverId);
+  if (!normalizedDriverId) return;
+
+  const { error } = await supabase
+    .from("vehicle_locations_latest")
+    .delete()
+    .eq("driver_id", normalizedDriverId);
+  if (error) throw error;
+}

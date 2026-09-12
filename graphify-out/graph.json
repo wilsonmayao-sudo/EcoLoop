@@ -656,7 +656,7 @@
       "label": "AppProviders()",
       "file_type": "code",
       "source_file": "MobileApp/src/app/providers/AppProviders.js",
-      "source_location": "L12",
+      "source_location": "L13",
       "_origin": "ast"
     },
     {
@@ -856,7 +856,7 @@
       "label": "AuthContext",
       "file_type": "code",
       "source_file": "MobileApp/src/context/AuthContext.js",
-      "source_location": "L4",
+      "source_location": "L5",
       "_origin": "ast"
     },
     {
@@ -864,7 +864,7 @@
       "label": "useAuth()",
       "file_type": "code",
       "source_file": "MobileApp/src/context/AuthContext.js",
-      "source_location": "L7",
+      "source_location": "L8",
       "_origin": "ast"
     },
     {
@@ -872,7 +872,7 @@
       "label": "AuthProvider()",
       "file_type": "code",
       "source_file": "MobileApp/src/context/AuthContext.js",
-      "source_location": "L15",
+      "source_location": "L16",
       "_origin": "ast"
     },
     {
@@ -969,6 +969,54 @@
       "file_type": "code",
       "source_file": "MobileApp/src/context/LanguageContext.js",
       "source_location": "L14",
+      "_origin": "ast"
+    },
+    {
+      "id": "mobileapp_src_context_livelocationcontext",
+      "label": "LiveLocationContext.js",
+      "file_type": "code",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "mobileapp_src_context_livelocationcontext_livelocationcontext",
+      "label": "LiveLocationContext",
+      "file_type": "code",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L16",
+      "_origin": "ast"
+    },
+    {
+      "id": "mobileapp_src_context_livelocationcontext_uselivelocation",
+      "label": "useLiveLocation()",
+      "file_type": "code",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L18",
+      "_origin": "ast"
+    },
+    {
+      "id": "mobileapp_src_context_livelocationcontext_normalizestatus",
+      "label": "normalizeStatus()",
+      "file_type": "code",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L22",
+      "_origin": "ast"
+    },
+    {
+      "id": "mobileapp_src_context_livelocationcontext_cantrackdriver",
+      "label": "canTrackDriver()",
+      "file_type": "code",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L26",
+      "_origin": "ast"
+    },
+    {
+      "id": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "label": "LiveLocationProvider()",
+      "file_type": "code",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L31",
       "_origin": "ast"
     },
     {
@@ -1416,15 +1464,7 @@
       "label": "pickNonEmptyString()",
       "file_type": "code",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L38",
-      "_origin": "ast"
-    },
-    {
-      "id": "mobileapp_src_screens_mapnavigatescreen_routestatusnorm",
-      "label": "routeStatusNorm()",
-      "file_type": "code",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L47",
+      "source_location": "L30",
       "_origin": "ast"
     },
     {
@@ -1432,7 +1472,7 @@
       "label": "MapNavigateScreen()",
       "file_type": "code",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L53",
+      "source_location": "L39",
       "_origin": "ast"
     },
     {
@@ -1440,7 +1480,7 @@
       "label": "LegendDot()",
       "file_type": "code",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L587",
+      "source_location": "L484",
       "_origin": "ast"
     },
     {
@@ -1448,7 +1488,7 @@
       "label": "styles",
       "file_type": "code",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L596",
+      "source_location": "L493",
       "_origin": "ast"
     },
     {
@@ -1600,7 +1640,7 @@
       "label": "InfoTile()",
       "file_type": "code",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L277",
+      "source_location": "L278",
       "_origin": "ast"
     },
     {
@@ -1608,7 +1648,7 @@
       "label": "DropdownTile()",
       "file_type": "code",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L297",
+      "source_location": "L298",
       "_origin": "ast"
     },
     {
@@ -1616,7 +1656,7 @@
       "label": "SwitchTile()",
       "file_type": "code",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L386",
+      "source_location": "L387",
       "_origin": "ast"
     },
     {
@@ -1624,7 +1664,7 @@
       "label": "NavTile()",
       "file_type": "code",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L403",
+      "source_location": "L404",
       "_origin": "ast"
     },
     {
@@ -1632,7 +1672,7 @@
       "label": "EditFieldModal()",
       "file_type": "code",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L415",
+      "source_location": "L416",
       "_origin": "ast"
     },
     {
@@ -1640,7 +1680,7 @@
       "label": "PasswordModal()",
       "file_type": "code",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L463",
+      "source_location": "L464",
       "_origin": "ast"
     },
     {
@@ -1648,7 +1688,7 @@
       "label": "styles",
       "file_type": "code",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L528",
+      "source_location": "L529",
       "_origin": "ast"
     },
     {
@@ -1873,6 +1913,14 @@
       "file_type": "code",
       "source_file": "MobileApp/src/services/liveLocation.js",
       "source_location": "L58",
+      "_origin": "ast"
+    },
+    {
+      "id": "mobileapp_src_services_livelocation_cleardriverlatestlocation",
+      "label": "clearDriverLatestLocation()",
+      "file_type": "code",
+      "source_file": "MobileApp/src/services/liveLocation.js",
+      "source_location": "L98",
       "_origin": "ast"
     },
     {
@@ -2496,7 +2544,7 @@
       "label": "App()",
       "file_type": "code",
       "source_file": "WebApp/src/app/App.tsx",
-      "source_location": "L143",
+      "source_location": "L141",
       "_origin": "ast"
     },
     {
@@ -2504,7 +2552,7 @@
       "label": "AppErrorBoundary",
       "file_type": "code",
       "source_file": "WebApp/src/app/App.tsx",
-      "source_location": "L153",
+      "source_location": "L151",
       "_origin": "ast"
     },
     {
@@ -2512,7 +2560,7 @@
       "label": ".getDerivedStateFromError()",
       "file_type": "code",
       "source_file": "WebApp/src/app/App.tsx",
-      "source_location": "L156",
+      "source_location": "L154",
       "_origin": "ast"
     },
     {
@@ -2520,7 +2568,7 @@
       "label": ".render()",
       "file_type": "code",
       "source_file": "WebApp/src/app/App.tsx",
-      "source_location": "L160",
+      "source_location": "L158",
       "_origin": "ast"
     },
     {
@@ -2740,6 +2788,78 @@
       "_origin": "ast"
     },
     {
+      "id": "webapp_src_components_maps_livefleetmap",
+      "label": "LiveFleetMap.tsx",
+      "file_type": "code",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_components_maps_livefleetmap_livefleetmapmarker",
+      "label": "LiveFleetMapMarker",
+      "file_type": "code",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L5",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_components_maps_livefleetmap_livefleetmapprops",
+      "label": "LiveFleetMapProps",
+      "file_type": "code",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L13",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_components_maps_livefleetmap_window",
+      "label": "Window",
+      "file_type": "code",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L20",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_components_maps_livefleetmap_naga_city_center",
+      "label": "NAGA_CITY_CENTER",
+      "file_type": "code",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L26",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_components_maps_livefleetmap_naga_city_bounds",
+      "label": "NAGA_CITY_BOUNDS",
+      "file_type": "code",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L27",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_components_maps_livefleetmap_iscoordinatevalid",
+      "label": "isCoordinateValid()",
+      "file_type": "code",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L34",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_components_maps_livefleetmap_ensureleaflet",
+      "label": "ensureLeaflet()",
+      "file_type": "code",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L40",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_components_maps_livefleetmap_livefleetmap",
+      "label": "LiveFleetMap()",
+      "file_type": "code",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L63",
+      "_origin": "ast"
+    },
+    {
       "id": "webapp_src_components_maps_trafficroutemappreview",
       "label": "TrafficRouteMapPreview.tsx",
       "file_type": "code",
@@ -2905,6 +3025,30 @@
       "file_type": "code",
       "source_file": "WebApp/src/contexts/AuthContext.tsx",
       "source_location": "L55",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_features_auth_authbrandlogos",
+      "label": "AuthBrandLogos.tsx",
+      "file_type": "code",
+      "source_file": "WebApp/src/features/auth/AuthBrandLogos.tsx",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_features_auth_authbrandlogos_authbrandlogosprops",
+      "label": "AuthBrandLogosProps",
+      "file_type": "code",
+      "source_file": "WebApp/src/features/auth/AuthBrandLogos.tsx",
+      "source_location": "L5",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_features_auth_authbrandlogos_authbrandlogos",
+      "label": "AuthBrandLogos()",
+      "file_type": "code",
+      "source_file": "WebApp/src/features/auth/AuthBrandLogos.tsx",
+      "source_location": "L9",
       "_origin": "ast"
     },
     {
@@ -3512,7 +3656,7 @@
       "label": "labelRouteStatus()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L15",
+      "source_location": "L16",
       "_origin": "ast"
     },
     {
@@ -3520,7 +3664,7 @@
       "label": "routeStatusBadgeClass()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L23",
+      "source_location": "L24",
       "_origin": "ast"
     },
     {
@@ -3528,7 +3672,7 @@
       "label": "labelOptimizationSource()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L31",
+      "source_location": "L32",
       "_origin": "ast"
     },
     {
@@ -3536,7 +3680,7 @@
       "label": "notifyDriverRouteAssigned()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L38",
+      "source_location": "L39",
       "_origin": "ast"
     },
     {
@@ -3544,7 +3688,7 @@
       "label": "PageType",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L63",
+      "source_location": "L64",
       "_origin": "ast"
     },
     {
@@ -3552,7 +3696,7 @@
       "label": "RoutePlanningProps",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L65",
+      "source_location": "L66",
       "_origin": "ast"
     },
     {
@@ -3560,7 +3704,7 @@
       "label": "Route",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L69",
+      "source_location": "L70",
       "_origin": "ast"
     },
     {
@@ -3568,7 +3712,7 @@
       "label": "KnownBin",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L89",
+      "source_location": "L90",
       "_origin": "ast"
     },
     {
@@ -3576,7 +3720,7 @@
       "label": "Driver",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L96",
+      "source_location": "L97",
       "_origin": "ast"
     },
     {
@@ -3584,7 +3728,7 @@
       "label": "DEFAULT_DEPOT",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L102",
+      "source_location": "L103",
       "_origin": "ast"
     },
     {
@@ -3592,7 +3736,7 @@
       "label": "RoutePlanning()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L104",
+      "source_location": "L105",
       "_origin": "ast"
     },
     {
@@ -3832,7 +3976,7 @@
       "label": "PageType",
       "file_type": "code",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L21",
+      "source_location": "L18",
       "_origin": "ast"
     },
     {
@@ -3840,23 +3984,7 @@
       "label": "VehicleMonitoringWithActionsProps",
       "file_type": "code",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L23",
-      "_origin": "ast"
-    },
-    {
-      "id": "webapp_src_pages_vehiclemonitoringwithactions_emptymaintenanceform",
-      "label": "emptyMaintenanceForm",
-      "file_type": "code",
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L29",
-      "_origin": "ast"
-    },
-    {
-      "id": "webapp_src_pages_vehiclemonitoringwithactions_emptyalertform",
-      "label": "emptyAlertForm",
-      "file_type": "code",
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L30",
+      "source_location": "L20",
       "_origin": "ast"
     },
     {
@@ -3864,7 +3992,7 @@
       "label": "FleetMarker",
       "file_type": "code",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L34",
+      "source_location": "L28",
       "_origin": "ast"
     },
     {
@@ -3872,7 +4000,7 @@
       "label": "finiteNumber()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L49",
+      "source_location": "L43",
       "_origin": "ast"
     },
     {
@@ -3880,7 +4008,7 @@
       "label": "locationUpdatedAt()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L54",
+      "source_location": "L48",
       "_origin": "ast"
     },
     {
@@ -3888,7 +4016,15 @@
       "label": "normalizeStatusLabel()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L58",
+      "source_location": "L52",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_pages_vehiclemonitoringwithactions_isdrivertrackable",
+      "label": "isDriverTrackable()",
+      "file_type": "code",
+      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
+      "source_location": "L56",
       "_origin": "ast"
     },
     {
@@ -3896,23 +4032,7 @@
       "label": "VehicleMonitoringWithActions()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L62",
-      "_origin": "ast"
-    },
-    {
-      "id": "webapp_src_pages_vehiclemonitoringwithactions_modal",
-      "label": "Modal()",
-      "file_type": "code",
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L494",
-      "_origin": "ast"
-    },
-    {
-      "id": "webapp_src_pages_vehiclemonitoringwithactions_modalfooter",
-      "label": "ModalFooter()",
-      "file_type": "code",
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L513",
+      "source_location": "L61",
       "_origin": "ast"
     },
     {
@@ -5161,22 +5281,6 @@
       "file_type": "document",
       "source_file": "README.md",
       "source_location": "L61",
-      "_origin": "ast"
-    },
-    {
-      "id": "run_on_new_device",
-      "label": "RUN_ON_NEW_DEVICE.md",
-      "file_type": "document",
-      "source_file": "RUN_ON_NEW_DEVICE.md",
-      "source_location": "L1",
-      "_origin": "ast"
-    },
-    {
-      "id": "run_on_new_device_run_ecoloop_on_a_new_device",
-      "label": "Run Ecoloop on a new device",
-      "file_type": "document",
-      "source_file": "RUN_ON_NEW_DEVICE.md",
-      "source_location": "L1",
       "_origin": "ast"
     },
     {
@@ -6737,11 +6841,31 @@
     },
     {
       "source": "mobileapp_src_app_providers_appproviders",
+      "target": "mobileapp_src_context_livelocationcontext",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/app/providers/AppProviders.js",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_app_providers_appproviders",
+      "target": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/app/providers/AppProviders.js",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_app_providers_appproviders",
       "target": "mobileapp_src_app_providers_appproviders_appproviders",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/app/providers/AppProviders.js",
-      "source_location": "L12",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -7271,11 +7395,31 @@
     },
     {
       "source": "mobileapp_src_context_authcontext",
+      "target": "mobileapp_src_services_livelocation",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/AuthContext.js",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_authcontext",
+      "target": "mobileapp_src_services_livelocation_cleardriverlatestlocation",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/AuthContext.js",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_authcontext",
       "target": "mobileapp_src_context_authcontext_authcontext",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/AuthContext.js",
-      "source_location": "L4",
+      "source_location": "L5",
       "weight": 1.0
     },
     {
@@ -7284,7 +7428,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/AuthContext.js",
-      "source_location": "L7",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -7293,7 +7437,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/AuthContext.js",
-      "source_location": "L15",
+      "source_location": "L16",
       "weight": 1.0
     },
     {
@@ -7465,6 +7609,231 @@
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/LanguageContext.js",
       "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "ref_react",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "ref_react_native",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "ref_expo_location",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "ref_react_native_community_netinfo",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_context_authcontext",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_context_authcontext_useauth",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_context_pickupcontext",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_context_pickupcontext_usepickups",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_services_livelocation",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "c_users_administrator_desktop_ecoloop_mobileapp_src_services_livelocation_live_location_min_interval_ms",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_services_livelocation_cleardriverlatestlocation",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_services_livelocation_normalizegpsfix",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_services_livelocation_publishdriverlocation",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_services_livelocation_shouldpublishlivelocation",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_services_livelocation_shouldrecordlocationhistory",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_context_livelocationcontext_livelocationcontext",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L16",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_context_livelocationcontext_uselivelocation",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_context_livelocationcontext_normalizestatus",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_context_livelocationcontext_cantrackdriver",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext",
+      "target": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L31",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext_cantrackdriver",
+      "target": "mobileapp_src_context_livelocationcontext_normalizestatus",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "target": "mobileapp_src_context_livelocationcontext_normalizestatus",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L44",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "target": "mobileapp_src_context_livelocationcontext_cantrackdriver",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L55",
       "weight": 1.0
     },
     {
@@ -8934,7 +9303,7 @@
     },
     {
       "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "ref_expo_location",
+      "target": "ref_react_native_community_netinfo",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -8944,7 +9313,7 @@
     },
     {
       "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "ref_react_native_community_netinfo",
+      "target": "ref_expo_vector_icons",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -8954,7 +9323,7 @@
     },
     {
       "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "ref_expo_vector_icons",
+      "target": "ref_react_native_webview",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -8964,7 +9333,7 @@
     },
     {
       "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "ref_react_native_webview",
+      "target": "mobileapp_src_context_themecontext",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -8974,42 +9343,12 @@
     },
     {
       "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "mobileapp_src_context_themecontext",
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L9",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen",
       "target": "mobileapp_src_context_themecontext_usetheme",
       "relation": "imports",
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L9",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "mobileapp_src_context_authcontext",
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L10",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "mobileapp_src_context_authcontext_useauth",
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L10",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -9019,7 +9358,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L11",
+      "source_location": "L9",
       "weight": 1.0
     },
     {
@@ -9029,7 +9368,27 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L11",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_screens_mapnavigatescreen",
+      "target": "mobileapp_src_context_livelocationcontext",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_screens_mapnavigatescreen",
+      "target": "mobileapp_src_context_livelocationcontext_uselivelocation",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
+      "source_location": "L10",
       "weight": 1.0
     },
     {
@@ -9039,7 +9398,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L12",
+      "source_location": "L11",
       "weight": 1.0
     },
     {
@@ -9049,7 +9408,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L13",
+      "source_location": "L12",
       "weight": 1.0
     },
     {
@@ -9059,7 +9418,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L13",
+      "source_location": "L12",
       "weight": 1.0
     },
     {
@@ -9069,7 +9428,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L13",
+      "source_location": "L12",
       "weight": 1.0
     },
     {
@@ -9079,7 +9438,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L13",
+      "source_location": "L12",
       "weight": 1.0
     },
     {
@@ -9089,67 +9448,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L13",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "mobileapp_src_services_livelocation",
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L14",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "c_users_administrator_desktop_ecoloop_mobileapp_src_services_livelocation_live_location_min_interval_ms",
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L14",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "mobileapp_src_services_livelocation_normalizegpsfix",
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L14",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "mobileapp_src_services_livelocation_publishdriverlocation",
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L14",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "mobileapp_src_services_livelocation_shouldpublishlivelocation",
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L14",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "mobileapp_src_services_livelocation_shouldrecordlocationhistory",
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L14",
+      "source_location": "L12",
       "weight": 1.0
     },
     {
@@ -9159,7 +9458,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L21",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -9169,7 +9468,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L21",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -9179,7 +9478,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L21",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -9189,7 +9488,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L21",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -9199,7 +9498,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L21",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -9209,7 +9508,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L21",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -9219,7 +9518,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L21",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -9229,7 +9528,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L29",
+      "source_location": "L21",
       "weight": 1.0
     },
     {
@@ -9239,7 +9538,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L29",
+      "source_location": "L21",
       "weight": 1.0
     },
     {
@@ -9249,7 +9548,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L29",
+      "source_location": "L21",
       "weight": 1.0
     },
     {
@@ -9259,7 +9558,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L29",
+      "source_location": "L21",
       "weight": 1.0
     },
     {
@@ -9269,7 +9568,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L29",
+      "source_location": "L21",
       "weight": 1.0
     },
     {
@@ -9278,16 +9577,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L38",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen",
-      "target": "mobileapp_src_screens_mapnavigatescreen_routestatusnorm",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L47",
+      "source_location": "L30",
       "weight": 1.0
     },
     {
@@ -9296,7 +9586,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L53",
+      "source_location": "L39",
       "weight": 1.0
     },
     {
@@ -9305,7 +9595,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L587",
+      "source_location": "L484",
       "weight": 1.0
     },
     {
@@ -9314,7 +9604,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L596",
+      "source_location": "L493",
       "weight": 1.0
     },
     {
@@ -9324,17 +9614,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L65",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen_mapnavigatescreen",
-      "target": "mobileapp_src_screens_mapnavigatescreen_routestatusnorm",
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L97",
+      "source_location": "L48",
       "weight": 1.0
     },
     {
@@ -9908,7 +10188,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L277",
+      "source_location": "L278",
       "weight": 1.0
     },
     {
@@ -9917,7 +10197,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L297",
+      "source_location": "L298",
       "weight": 1.0
     },
     {
@@ -9926,7 +10206,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L386",
+      "source_location": "L387",
       "weight": 1.0
     },
     {
@@ -9935,7 +10215,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L403",
+      "source_location": "L404",
       "weight": 1.0
     },
     {
@@ -9944,7 +10224,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L415",
+      "source_location": "L416",
       "weight": 1.0
     },
     {
@@ -9953,7 +10233,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L463",
+      "source_location": "L464",
       "weight": 1.0
     },
     {
@@ -9962,7 +10242,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L528",
+      "source_location": "L529",
       "weight": 1.0
     },
     {
@@ -10781,6 +11061,15 @@
       "weight": 1.0
     },
     {
+      "source": "mobileapp_src_services_livelocation",
+      "target": "mobileapp_src_services_livelocation_cleardriverlatestlocation",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/services/liveLocation.js",
+      "source_location": "L98",
+      "weight": 1.0
+    },
+    {
       "source": "mobileapp_src_services_livelocation_publishdriverlocation",
       "target": "mobileapp_src_services_livelocation_normalizenumericid",
       "relation": "calls",
@@ -10788,6 +11077,16 @@
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/services/liveLocation.js",
       "source_location": "L59",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_services_livelocation_cleardriverlatestlocation",
+      "target": "mobileapp_src_services_livelocation_normalizenumericid",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/services/liveLocation.js",
+      "source_location": "L99",
       "weight": 1.0
     },
     {
@@ -12197,7 +12496,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/app/App.tsx",
-      "source_location": "L143",
+      "source_location": "L141",
       "weight": 1.0
     },
     {
@@ -12206,7 +12505,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/app/App.tsx",
-      "source_location": "L153",
+      "source_location": "L151",
       "weight": 1.0
     },
     {
@@ -12215,7 +12514,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/app/App.tsx",
-      "source_location": "L156",
+      "source_location": "L154",
       "weight": 1.0
     },
     {
@@ -12224,7 +12523,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/app/App.tsx",
-      "source_location": "L160",
+      "source_location": "L158",
       "weight": 1.0
     },
     {
@@ -12640,6 +12939,128 @@
       "weight": 1.0
     },
     {
+      "source": "webapp_src_components_maps_livefleetmap",
+      "target": "ref_react",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap",
+      "target": "ref_mapbox_gl",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap",
+      "target": "ref_mapbox_gl_dist_mapbox_gl_css",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap",
+      "target": "webapp_src_components_maps_livefleetmap_livefleetmapmarker",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap",
+      "target": "webapp_src_components_maps_livefleetmap_livefleetmapprops",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap",
+      "target": "webapp_src_components_maps_livefleetmap_window",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap",
+      "target": "webapp_src_components_maps_livefleetmap_naga_city_center",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap",
+      "target": "webapp_src_components_maps_livefleetmap_naga_city_bounds",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap",
+      "target": "webapp_src_components_maps_livefleetmap_iscoordinatevalid",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L34",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap",
+      "target": "webapp_src_components_maps_livefleetmap_ensureleaflet",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L40",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap",
+      "target": "webapp_src_components_maps_livefleetmap_livefleetmap",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L63",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap_livefleetmap",
+      "target": "webapp_src_components_maps_livefleetmap_ensureleaflet",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L118",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_components_maps_livefleetmap_livefleetmap",
+      "target": "webapp_src_components_maps_livefleetmap_iscoordinatevalid",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/components/maps/LiveFleetMap.tsx",
+      "source_location": "L157",
+      "weight": 1.0
+    },
+    {
       "source": "webapp_src_components_maps_trafficroutemappreview",
       "target": "ref_react",
       "relation": "imports_from",
@@ -12933,6 +13354,54 @@
       "weight": 1.0
     },
     {
+      "source": "webapp_src_features_auth_authbrandlogos",
+      "target": "webapp_src_assets_icons_ecolooplogo",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/features/auth/AuthBrandLogos.tsx",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_features_auth_authbrandlogos",
+      "target": "c_users_administrator_desktop_ecoloop_webapp_src_assets_images_naga_official_seal_jpg",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/features/auth/AuthBrandLogos.tsx",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_features_auth_authbrandlogos",
+      "target": "c_users_administrator_desktop_ecoloop_webapp_src_assets_images_swmo_logo_jpg",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/features/auth/AuthBrandLogos.tsx",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_features_auth_authbrandlogos",
+      "target": "webapp_src_features_auth_authbrandlogos_authbrandlogosprops",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/features/auth/AuthBrandLogos.tsx",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_features_auth_authbrandlogos",
+      "target": "webapp_src_features_auth_authbrandlogos_authbrandlogos",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/features/auth/AuthBrandLogos.tsx",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
       "source": "webapp_src_features_auth_loginpagefunctional",
       "target": "ref_react",
       "relation": "imports_from",
@@ -12954,7 +13423,7 @@
     },
     {
       "source": "webapp_src_features_auth_loginpagefunctional",
-      "target": "webapp_src_assets_icons_ecolooplogo",
+      "target": "webapp_src_components_ui_customselect",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -12964,7 +13433,7 @@
     },
     {
       "source": "webapp_src_features_auth_loginpagefunctional",
-      "target": "webapp_src_components_ui_customselect",
+      "target": "webapp_src_features_auth_authbrandlogos",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -13030,7 +13499,7 @@
     },
     {
       "source": "webapp_src_features_auth_registerpagefunctional",
-      "target": "webapp_src_assets_icons_ecolooplogo",
+      "target": "webapp_src_components_ui_customselect",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -13040,7 +13509,7 @@
     },
     {
       "source": "webapp_src_features_auth_registerpagefunctional",
-      "target": "webapp_src_components_ui_customselect",
+      "target": "webapp_src_features_auth_authbrandlogos",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -13581,22 +14050,12 @@
     },
     {
       "source": "webapp_src_hooks_uselivedata_uselivedata",
-      "target": "webapp_src_hooks_uselivedata_tableerror",
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "WebApp/src/hooks/useLiveData.ts",
-      "source_location": "L458",
-      "weight": 1.0
-    },
-    {
-      "source": "webapp_src_hooks_uselivedata_uselivedata",
       "target": "webapp_src_hooks_uselivedata_mergevehiclelocationrows",
       "relation": "calls",
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/hooks/useLiveData.ts",
-      "source_location": "L491",
+      "source_location": "L411",
       "weight": 1.0
     },
     {
@@ -13606,7 +14065,17 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/hooks/useLiveData.ts",
-      "source_location": "L492",
+      "source_location": "L412",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_hooks_uselivedata_uselivedata",
+      "target": "webapp_src_hooks_uselivedata_tableerror",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/hooks/useLiveData.ts",
+      "source_location": "L479",
       "weight": 1.0
     },
     {
@@ -13616,7 +14085,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/hooks/useLiveData.ts",
-      "source_location": "L540",
+      "source_location": "L561",
       "weight": 1.0
     },
     {
@@ -13626,7 +14095,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/hooks/useLiveData.ts",
-      "source_location": "L562",
+      "source_location": "L583",
       "weight": 1.0
     },
     {
@@ -13636,7 +14105,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/hooks/useLiveData.ts",
-      "source_location": "L623",
+      "source_location": "L644",
       "weight": 1.0
     },
     {
@@ -14458,7 +14927,7 @@
     },
     {
       "source": "webapp_src_pages_routeplanning",
-      "target": "webapp_src_components_layout_roleindicator",
+      "target": "webapp_src_components_feedback_toast",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -14468,12 +14937,22 @@
     },
     {
       "source": "webapp_src_pages_routeplanning",
-      "target": "webapp_src_utils_routing_geo",
+      "target": "webapp_src_components_layout_roleindicator",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
       "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_pages_routeplanning",
+      "target": "webapp_src_utils_routing_geo",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/pages/RoutePlanning.tsx",
+      "source_location": "L7",
       "weight": 1.0
     },
     {
@@ -14483,7 +14962,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L6",
+      "source_location": "L7",
       "weight": 1.0
     },
     {
@@ -14493,7 +14972,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L6",
+      "source_location": "L7",
       "weight": 1.0
     },
     {
@@ -14503,7 +14982,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L7",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -14513,7 +14992,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L7",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -14523,7 +15002,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L8",
+      "source_location": "L9",
       "weight": 1.0
     },
     {
@@ -14533,7 +15012,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L8",
+      "source_location": "L9",
       "weight": 1.0
     },
     {
@@ -14543,7 +15022,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L9",
+      "source_location": "L10",
       "weight": 1.0
     },
     {
@@ -14553,7 +15032,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L10",
+      "source_location": "L11",
       "weight": 1.0
     },
     {
@@ -14563,7 +15042,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L10",
+      "source_location": "L11",
       "weight": 1.0
     },
     {
@@ -14573,7 +15052,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L11",
+      "source_location": "L12",
       "weight": 1.0
     },
     {
@@ -14583,7 +15062,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L11",
+      "source_location": "L12",
       "weight": 1.0
     },
     {
@@ -14593,7 +15072,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L12",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -14603,7 +15082,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L12",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -14613,7 +15092,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L12",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -14623,7 +15102,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L12",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -14633,7 +15112,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L12",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -14643,7 +15122,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L13",
+      "source_location": "L14",
       "weight": 1.0
     },
     {
@@ -14652,7 +15131,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L15",
+      "source_location": "L16",
       "weight": 1.0
     },
     {
@@ -14661,7 +15140,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L23",
+      "source_location": "L24",
       "weight": 1.0
     },
     {
@@ -14670,7 +15149,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L31",
+      "source_location": "L32",
       "weight": 1.0
     },
     {
@@ -14679,7 +15158,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L38",
+      "source_location": "L39",
       "weight": 1.0
     },
     {
@@ -14688,7 +15167,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L63",
+      "source_location": "L64",
       "weight": 1.0
     },
     {
@@ -14697,7 +15176,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L65",
+      "source_location": "L66",
       "weight": 1.0
     },
     {
@@ -14706,7 +15185,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L69",
+      "source_location": "L70",
       "weight": 1.0
     },
     {
@@ -14715,7 +15194,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L89",
+      "source_location": "L90",
       "weight": 1.0
     },
     {
@@ -14724,7 +15203,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L96",
+      "source_location": "L97",
       "weight": 1.0
     },
     {
@@ -14733,7 +15212,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L102",
+      "source_location": "L103",
       "weight": 1.0
     },
     {
@@ -14742,7 +15221,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L104",
+      "source_location": "L105",
       "weight": 1.0
     },
     {
@@ -14752,7 +15231,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L317",
+      "source_location": "L322",
       "weight": 1.0
     },
     {
@@ -14762,7 +15241,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L388",
+      "source_location": "L427",
       "weight": 1.0
     },
     {
@@ -14772,7 +15251,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L479",
+      "source_location": "L560",
       "weight": 1.0
     },
     {
@@ -14782,7 +15261,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L630",
+      "source_location": "L711",
       "weight": 1.0
     },
     {
@@ -15428,17 +15907,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L3",
-      "weight": 1.0
-    },
-    {
-      "source": "webapp_src_pages_vehiclemonitoringwithactions",
-      "target": "webapp_src_components_feedback_toast",
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L4",
+      "source_location": "L2",
       "weight": 1.0
     },
     {
@@ -15448,7 +15917,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L5",
+      "source_location": "L3",
       "weight": 1.0
     },
     {
@@ -15458,17 +15927,17 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L6",
+      "source_location": "L4",
       "weight": 1.0
     },
     {
       "source": "webapp_src_pages_vehiclemonitoringwithactions",
-      "target": "webapp_src_components_ui_customselect",
+      "target": "webapp_src_components_maps_livefleetmap",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L7",
+      "source_location": "L5",
       "weight": 1.0
     },
     {
@@ -15478,7 +15947,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L8",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -15488,7 +15957,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L8",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -15498,7 +15967,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L8",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -15508,17 +15977,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L8",
-      "weight": 1.0
-    },
-    {
-      "source": "webapp_src_pages_vehiclemonitoringwithactions",
-      "target": "webapp_src_hooks_uselivedata_maplatlngtopoint",
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L8",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -15528,7 +15987,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L8",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -15538,7 +15997,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L8",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -15548,7 +16007,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L8",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -15558,7 +16017,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L8",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -15568,7 +16027,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L8",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -15578,7 +16037,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L8",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -15587,7 +16046,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L21",
+      "source_location": "L18",
       "weight": 1.0
     },
     {
@@ -15596,25 +16055,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L23",
-      "weight": 1.0
-    },
-    {
-      "source": "webapp_src_pages_vehiclemonitoringwithactions",
-      "target": "webapp_src_pages_vehiclemonitoringwithactions_emptymaintenanceform",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L29",
-      "weight": 1.0
-    },
-    {
-      "source": "webapp_src_pages_vehiclemonitoringwithactions",
-      "target": "webapp_src_pages_vehiclemonitoringwithactions_emptyalertform",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L30",
+      "source_location": "L20",
       "weight": 1.0
     },
     {
@@ -15623,7 +16064,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L34",
+      "source_location": "L28",
       "weight": 1.0
     },
     {
@@ -15632,7 +16073,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L49",
+      "source_location": "L43",
       "weight": 1.0
     },
     {
@@ -15641,7 +16082,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L54",
+      "source_location": "L48",
       "weight": 1.0
     },
     {
@@ -15650,7 +16091,16 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L58",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_pages_vehiclemonitoringwithactions",
+      "target": "webapp_src_pages_vehiclemonitoringwithactions_isdrivertrackable",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
+      "source_location": "L56",
       "weight": 1.0
     },
     {
@@ -15659,25 +16109,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L62",
-      "weight": 1.0
-    },
-    {
-      "source": "webapp_src_pages_vehiclemonitoringwithactions",
-      "target": "webapp_src_pages_vehiclemonitoringwithactions_modal",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L494",
-      "weight": 1.0
-    },
-    {
-      "source": "webapp_src_pages_vehiclemonitoringwithactions",
-      "target": "webapp_src_pages_vehiclemonitoringwithactions_modalfooter",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L513",
+      "source_location": "L61",
       "weight": 1.0
     },
     {
@@ -15687,7 +16119,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L125",
+      "source_location": "L120",
       "weight": 1.0
     },
     {
@@ -15697,7 +16129,17 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L127",
+      "source_location": "L122",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_pages_vehiclemonitoringwithactions_vehiclemonitoringwithactions",
+      "target": "webapp_src_pages_vehiclemonitoringwithactions_isdrivertrackable",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
+      "source_location": "L135",
       "weight": 1.0
     },
     {
@@ -15707,7 +16149,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L366",
+      "source_location": "L219",
       "weight": 1.0
     },
     {
@@ -18081,15 +18523,6 @@
       "weight": 1.0
     },
     {
-      "source": "run_on_new_device",
-      "target": "run_on_new_device_run_ecoloop_on_a_new_device",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RUN_ON_NEW_DEVICE.md",
-      "source_location": "L1",
-      "weight": 1.0
-    },
-    {
       "source": "webapp_readme",
       "target": "webapp_readme_ecoloop_webapp",
       "relation": "contains",
@@ -18542,12 +18975,32 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/features/auth/LoginPageFunctional.tsx",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_features_auth_loginpagefunctional",
+      "target": "webapp_src_features_auth_authbrandlogos_authbrandlogos",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/features/auth/LoginPageFunctional.tsx",
       "source_location": "L4",
       "weight": 1.0
     },
     {
       "source": "webapp_src_features_auth_registerpagefunctional",
       "target": "webapp_src_components_ui_customselect_customselect",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/features/auth/RegisterPageFunctional.tsx",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_features_auth_registerpagefunctional",
+      "target": "webapp_src_features_auth_authbrandlogos_authbrandlogos",
       "relation": "imports",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -18662,7 +19115,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L5",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -18672,7 +19125,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L9",
+      "source_location": "L10",
       "weight": 1.0
     },
     {
@@ -18682,7 +19135,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L13",
+      "source_location": "L14",
       "weight": 1.0
     },
     {
@@ -18742,17 +19195,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L6",
-      "weight": 1.0
-    },
-    {
-      "source": "webapp_src_pages_vehiclemonitoringwithactions",
-      "target": "webapp_src_components_ui_customselect_customselect",
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L7",
+      "source_location": "L4",
       "weight": 1.0
     },
     {
@@ -18832,7 +19275,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L246",
+      "source_location": "L247",
       "weight": 1.0
     },
     {
@@ -18842,7 +19285,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/screens/ProfileScreen.js",
-      "source_location": "L464",
+      "source_location": "L465",
       "weight": 1.0
     },
     {
@@ -18962,7 +19405,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L192",
+      "source_location": "L197",
       "weight": 1.0
     },
     {
@@ -18972,7 +19415,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L193",
+      "source_location": "L198",
       "weight": 1.0
     },
     {
@@ -18982,7 +19425,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L235",
+      "source_location": "L240",
       "weight": 1.0
     },
     {
@@ -18992,7 +19435,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L244",
+      "source_location": "L249",
       "weight": 1.0
     },
     {
@@ -19002,7 +19445,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L245",
+      "source_location": "L250",
       "weight": 1.0
     },
     {
@@ -19012,7 +19455,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L336",
+      "source_location": "L375",
       "weight": 1.0
     },
     {
@@ -19262,7 +19705,7 @@
       "context": "field",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L37",
+      "source_location": "L31",
       "weight": 1.0
     },
     {
@@ -19272,7 +19715,7 @@
       "context": "field",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L38",
+      "source_location": "L32",
       "weight": 1.0
     },
     {
@@ -19282,7 +19725,7 @@
       "context": "field",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L39",
+      "source_location": "L33",
       "weight": 1.0
     },
     {
@@ -19416,6 +19859,17 @@
       "weight": 1.0
     },
     {
+      "source": "mobileapp_src_context_authcontext_authprovider",
+      "target": "mobileapp_src_services_livelocation_cleardriverlatestlocation",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "MobileApp/src/context/AuthContext.js",
+      "source_location": "L226",
+      "weight": 1.0
+    },
+    {
       "source": "mobileapp_src_context_completedroutescontext_completedroutesprovider",
       "target": "mobileapp_src_context_authcontext_useauth",
       "relation": "calls",
@@ -19424,6 +19878,83 @@
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/context/CompletedRoutesContext.js",
       "source_location": "L16",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "target": "mobileapp_src_context_authcontext_useauth",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L32",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "target": "mobileapp_src_context_pickupcontext_usepickups",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "target": "mobileapp_src_services_livelocation_cleardriverlatestlocation",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L60",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "target": "mobileapp_src_services_livelocation_normalizegpsfix",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L96",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "target": "mobileapp_src_services_livelocation_shouldrecordlocationhistory",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L123",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "target": "mobileapp_src_services_livelocation_shouldpublishlivelocation",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L124",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_livelocationcontext_livelocationprovider",
+      "target": "mobileapp_src_services_livelocation_publishdriverlocation",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "MobileApp/src/context/LiveLocationContext.js",
+      "source_location": "L135",
       "weight": 1.0
     },
     {
@@ -19665,18 +20196,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L54",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen_mapnavigatescreen",
-      "target": "mobileapp_src_context_authcontext_useauth",
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L55",
+      "source_location": "L40",
       "weight": 1.0
     },
     {
@@ -19687,7 +20207,18 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L56",
+      "source_location": "L41",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_screens_mapnavigatescreen_mapnavigatescreen",
+      "target": "mobileapp_src_context_livelocationcontext_uselivelocation",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
+      "source_location": "L42",
       "weight": 1.0
     },
     {
@@ -19698,7 +20229,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L89",
+      "source_location": "L70",
       "weight": 1.0
     },
     {
@@ -19709,7 +20240,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L89",
+      "source_location": "L70",
       "weight": 1.0
     },
     {
@@ -19720,7 +20251,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L121",
+      "source_location": "L87",
       "weight": 1.0
     },
     {
@@ -19731,7 +20262,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L138",
+      "source_location": "L104",
       "weight": 1.0
     },
     {
@@ -19742,7 +20273,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L139",
+      "source_location": "L105",
       "weight": 1.0
     },
     {
@@ -19753,7 +20284,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L140",
+      "source_location": "L106",
       "weight": 1.0
     },
     {
@@ -19764,51 +20295,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L143",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen_mapnavigatescreen",
-      "target": "mobileapp_src_services_livelocation_normalizegpsfix",
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L186",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen_mapnavigatescreen",
-      "target": "mobileapp_src_services_livelocation_shouldrecordlocationhistory",
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L209",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen_mapnavigatescreen",
-      "target": "mobileapp_src_services_livelocation_shouldpublishlivelocation",
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L210",
-      "weight": 1.0
-    },
-    {
-      "source": "mobileapp_src_screens_mapnavigatescreen_mapnavigatescreen",
-      "target": "mobileapp_src_services_livelocation_publishdriverlocation",
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L222",
+      "source_location": "L109",
       "weight": 1.0
     },
     {
@@ -19819,7 +20306,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L268",
+      "source_location": "L165",
       "weight": 1.0
     },
     {
@@ -19830,7 +20317,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L276",
+      "source_location": "L173",
       "weight": 1.0
     },
     {
@@ -19841,7 +20328,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L278",
+      "source_location": "L175",
       "weight": 1.0
     },
     {
@@ -19852,7 +20339,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L285",
+      "source_location": "L182",
       "weight": 1.0
     },
     {
@@ -19863,7 +20350,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L356",
+      "source_location": "L253",
       "weight": 1.0
     },
     {
@@ -19874,7 +20361,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/screens/MapNavigateScreen.js",
-      "source_location": "L356",
+      "source_location": "L253",
       "weight": 1.0
     },
     {
@@ -20358,7 +20845,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L105",
+      "source_location": "L106",
       "weight": 1.0
     },
     {
@@ -20369,7 +20856,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L106",
+      "source_location": "L107",
       "weight": 1.0
     },
     {
@@ -20380,7 +20867,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L192",
+      "source_location": "L197",
       "weight": 1.0
     },
     {
@@ -20391,7 +20878,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L193",
+      "source_location": "L198",
       "weight": 1.0
     },
     {
@@ -20402,7 +20889,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L235",
+      "source_location": "L240",
       "weight": 1.0
     },
     {
@@ -20413,7 +20900,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L336",
+      "source_location": "L375",
       "weight": 1.0
     },
     {
@@ -20424,7 +20911,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L399",
+      "source_location": "L438",
       "weight": 1.0
     },
     {
@@ -20435,7 +20922,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L408",
+      "source_location": "L447",
       "weight": 1.0
     },
     {
@@ -20501,18 +20988,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L78",
-      "weight": 1.0
-    },
-    {
-      "source": "webapp_src_pages_vehiclemonitoringwithactions_vehiclemonitoringwithactions",
-      "target": "webapp_src_hooks_uselivedata_maplatlngtopoint",
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L182",
+      "source_location": "L71",
       "weight": 1.0
     },
     {
@@ -20523,7 +20999,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L281",
+      "source_location": "L180",
       "weight": 1.0
     },
     {
@@ -20534,18 +21010,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L366",
-      "weight": 1.0
-    },
-    {
-      "source": "webapp_src_pages_vehiclemonitoringwithactions_vehiclemonitoringwithactions",
-      "target": "webapp_src_hooks_uselivedata_formatdatetime",
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L410",
+      "source_location": "L219",
       "weight": 1.0
     },
     {
@@ -20556,7 +21021,18 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
-      "source_location": "L442",
+      "source_location": "L251",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_pages_vehiclemonitoringwithactions_vehiclemonitoringwithactions",
+      "target": "webapp_src_hooks_uselivedata_formatdatetime",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "WebApp/src/pages/VehicleMonitoringWithActions.tsx",
+      "source_location": "L252",
       "weight": 1.0
     },
     {
@@ -20897,7 +21373,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/hooks/useLiveData.ts",
-      "source_location": "L517",
+      "source_location": "L538",
       "weight": 1.0
     },
     {
@@ -20908,7 +21384,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/hooks/useLiveData.ts",
-      "source_location": "L693",
+      "source_location": "L714",
       "weight": 1.0
     },
     {

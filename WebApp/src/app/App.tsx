@@ -96,8 +96,6 @@ function AppShell() {
         return <RoutePlanning onNavigate={navigateWithRoleGuard} />;
       case "vehicle-monitoring":
         return <VehicleMonitoringWithActions 
-          onNavigateToRoutePlanning={() => navigateWithRoleGuard("route-planning")}
-          onNavigateToReports={() => navigateWithRoleGuard("reports")}
           onNavigate={navigateWithRoleGuard}
         />; 
       case "reports":

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Eye, MapPin, Plus, Trash2, X } from "lucide-react";
+import { Bell, Eye, MapPin, Plus, Trash2, X } from "lucide-react";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
+import Toast from "../components/feedback/Toast";
 import RoleIndicator from "../components/layout/RoleIndicator";
 import { formatDistanceKm, formatDurationMinutes } from "../utils/routing/geo";
 import { optimizeMultiStopRouteAsync } from "../utils/routing/optimizeMultiStop";
@@ -102,7 +103,7 @@ interface Driver {
 const DEFAULT_DEPOT = { id: "DEPOT", latitude: 13.6218, longitude: 123.1948 };
 
 export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
-  const { settings } = useLiveData();
+  const { settings, createNotifications } = useLiveData();
   const depotSetting = getSetting(settings, "depot", DEFAULT_DEPOT);
   const DEPOT = useMemo(
     () => ({ id: depotSetting.id ?? "DEPOT", coordinate: { lat: Number(depotSetting.latitude), lng: Number(depotSetting.longitude) } }),
@@ -112,6 +113,11 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
   const [knownBins, setKnownBins] = useState<KnownBin[]>([]);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertRecipient, setAlertRecipient] = useState("all");
+  const [alertError, setAlertError] = useState<string | null>(null);
+  const [showAlertToast, setShowAlertToast] = useState(false);
   const [showRouteDetails, setShowRouteDetails] = useState<Route | null>(null);
   const [showMapModal, setShowMapModal] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
@@ -128,6 +134,15 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
       label: driver.name,
       colorClassName: driver.status === "available" ? "bg-emerald-500" : "bg-amber-500",
     })),
+    [drivers],
+  );
+  const alertRecipientOptions = useMemo(
+    () => [
+      { value: "all", label: "All drivers" },
+      ...drivers
+        .filter((driver) => Boolean(driver.auth_user_id))
+        .map((driver) => ({ value: String(driver.id), label: driver.name })),
+    ],
     [drivers],
   );
 
@@ -331,6 +346,49 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
     }
   };
 
+  const sendFleetAlert = async () => {
+    const message = alertMessage.trim();
+    setAlertError(null);
+    if (!message) {
+      setAlertError("Alert message is required.");
+      return;
+    }
+
+    const linkedDrivers = drivers.filter((driver) => Boolean(driver.auth_user_id));
+    if (linkedDrivers.length === 0) {
+      setAlertError("No truck drivers have an EcoLoop account linked to their profile.");
+      return;
+    }
+
+    const recipients = alertRecipient === "all"
+      ? linkedDrivers
+      : linkedDrivers.filter((driver) => String(driver.id) === alertRecipient);
+    if (recipients.length === 0) {
+      setAlertError("The selected driver does not have a linked EcoLoop account.");
+      return;
+    }
+
+    try {
+      await createNotifications(
+        recipients.map((driver) => ({
+          user_auth_id: String(driver.auth_user_id),
+          title: "Dispatch alert",
+          message,
+          type: "warning",
+          category: "system",
+          source_table: "route_planning",
+          read: false,
+        })),
+      );
+      setAlertMessage("");
+      setAlertRecipient("all");
+      setShowAlertModal(false);
+      setShowAlertToast(true);
+    } catch (error: any) {
+      setAlertError(error?.message ?? "Unable to send alert.");
+    }
+  };
+
   const handleDriverAssignment = async (routeId: string, driverName: string) => {
     const route = routes.find((item) => item.id === routeId);
     if (route && !["pending", "planned"].includes(normalizeStatus(route.status))) {
@@ -440,7 +498,17 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
         </div>
 
         {/* Dispatcher Actions */}
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={() => {
+              setAlertError(null);
+              setShowAlertModal(true);
+            }}
+            className="flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-red-700 transition-colors hover:bg-red-50"
+          >
+            <Bell className="size-4" />
+            Send Alert
+          </button>
           <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
@@ -449,6 +517,50 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
             Create Route
           </button>
         </div>
+
+        {showAlertModal && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 px-4" onClick={() => setShowAlertModal(false)}>
+            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bell className="size-5 text-red-600" />
+                  <h3 className="text-gray-900">Send Alert to Truck Drivers</h3>
+                </div>
+                <button onClick={() => setShowAlertModal(false)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                  <X className="size-5" />
+                </button>
+              </div>
+              <div className="mb-4">
+                <label className="mb-1.5 block text-sm text-gray-700">Send to</label>
+                <CustomSelect
+                  value={alertRecipient}
+                  options={alertRecipientOptions}
+                  onChange={(value) => {
+                    setAlertRecipient(value);
+                    setAlertError(null);
+                  }}
+                  ariaLabel="Choose alert recipient"
+                  buttonClassName="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                />
+              </div>
+              <textarea
+                className="min-h-28 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                placeholder="Alert message"
+                value={alertMessage}
+                onChange={(event) => setAlertMessage(event.target.value)}
+              />
+              {alertError && <p className="mt-2 text-sm text-red-600">{alertError}</p>}
+              <div className="mt-5 flex justify-end gap-3">
+                <button onClick={() => setShowAlertModal(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                  Cancel
+                </button>
+                <button onClick={() => void sendFleetAlert()} className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700">
+                  Send Alert
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Routes Table */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -710,6 +822,7 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
             confirmText="Delete"
           />
         )}
+        {showAlertToast && <Toast message="Alert sent to truck drivers." type="success" onClose={() => setShowAlertToast(false)} />}
       </div>
     </div>
   );
