@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -26,7 +26,7 @@ const DEFAULT_CENTER: Coordinate = { latitude: 13.6218, longitude: 123.1948 };
 const LEAFLET_SCRIPT_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 const LEAFLET_STYLE_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 
-function isValidCoordinate(latitude?: number | null, longitude?: number | null): latitude is number {
+function isValidCoordinate(latitude?: number | null, longitude?: number | null) {
   return (
     Number.isFinite(latitude) &&
     Number.isFinite(longitude) &&
@@ -67,15 +67,15 @@ export default function BinLocationPicker({
   readOnly = false,
   className = "h-[320px] w-full",
 }: BinLocationPickerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
-  const markerRef = useRef<any>(null);
+  const containerRef = useRef(null as HTMLDivElement | null);
+  const mapRef = useRef(null as any);
+  const markerRef = useRef(null as any);
   const onChangeRef = useRef(onChange);
-  const selectedCoordinateRef = useRef<Coordinate | null>(null);
-  const [mapError, setMapError] = useState<string | null>(null);
-  const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim();
+  const selectedCoordinateRef = useRef(null as Coordinate | null);
+  const [mapError, setMapError] = useState(null as string | null);
+  const mapboxToken = ((import.meta as ImportMeta & { env?: { VITE_MAPBOX_ACCESS_TOKEN?: string } }).env?.VITE_MAPBOX_ACCESS_TOKEN ?? "").trim();
 
-  const selectedCoordinate = useMemo<Coordinate | null>(() => {
+  const selectedCoordinate = useMemo((): Coordinate | null => {
     if (!isValidCoordinate(latitude, longitude)) return null;
     return { latitude: Number(latitude), longitude: Number(longitude) };
   }, [latitude, longitude]);

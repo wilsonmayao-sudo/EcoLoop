@@ -1076,11 +1076,19 @@
       "_origin": "ast"
     },
     {
+      "id": "mobileapp_src_context_pickupcontext_isvalidcoordinate",
+      "label": "isValidCoordinate()",
+      "file_type": "code",
+      "source_file": "MobileApp/src/context/PickupContext.js",
+      "source_location": "L11",
+      "_origin": "ast"
+    },
+    {
       "id": "mobileapp_src_context_pickupcontext_usepickups",
       "label": "usePickups()",
       "file_type": "code",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L11",
+      "source_location": "L14",
       "_origin": "ast"
     },
     {
@@ -1088,7 +1096,7 @@
       "label": "mapDeliveryToPickup()",
       "file_type": "code",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L19",
+      "source_location": "L22",
       "_origin": "ast"
     },
     {
@@ -1096,7 +1104,7 @@
       "label": "normalizeRouteStatus()",
       "file_type": "code",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L45",
+      "source_location": "L52",
       "_origin": "ast"
     },
     {
@@ -1104,7 +1112,7 @@
       "label": "updateDriverRouteStatus()",
       "file_type": "code",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L51",
+      "source_location": "L58",
       "_origin": "ast"
     },
     {
@@ -1112,7 +1120,7 @@
       "label": "PickupProvider()",
       "file_type": "code",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L56",
+      "source_location": "L63",
       "_origin": "ast"
     },
     {
@@ -3472,7 +3480,7 @@
       "label": "BinLocations()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/BinLocations.tsx",
-      "source_location": "L25",
+      "source_location": "L26",
       "_origin": "ast"
     },
     {
@@ -3568,7 +3576,7 @@
       "label": "PageType",
       "file_type": "code",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L12",
+      "source_location": "L13",
       "_origin": "ast"
     },
     {
@@ -3576,7 +3584,7 @@
       "label": "ReportsAndIssuesProps",
       "file_type": "code",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L14",
+      "source_location": "L15",
       "_origin": "ast"
     },
     {
@@ -3584,7 +3592,7 @@
       "label": "statusOptions",
       "file_type": "code",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L18",
+      "source_location": "L19",
       "_origin": "ast"
     },
     {
@@ -3592,7 +3600,15 @@
       "label": "StatusFilter",
       "file_type": "code",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L20",
+      "source_location": "L21",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_pages_reportsandissues_dayfilter",
+      "label": "DayFilter",
+      "file_type": "code",
+      "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
+      "source_location": "L22",
       "_origin": "ast"
     },
     {
@@ -3600,7 +3616,15 @@
       "label": "statusFilterOptions",
       "file_type": "code",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L22",
+      "source_location": "L24",
+      "_origin": "ast"
+    },
+    {
+      "id": "webapp_src_pages_reportsandissues_dayfilteroptions",
+      "label": "dayFilterOptions",
+      "file_type": "code",
+      "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
+      "source_location": "L31",
       "_origin": "ast"
     },
     {
@@ -3608,7 +3632,7 @@
       "label": "StatusSelectProps",
       "file_type": "code",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L29",
+      "source_location": "L38",
       "_origin": "ast"
     },
     {
@@ -3616,7 +3640,7 @@
       "label": "displayValue()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L36",
+      "source_location": "L45",
       "_origin": "ast"
     },
     {
@@ -3624,7 +3648,7 @@
       "label": "StatusSelect()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L40",
+      "source_location": "L49",
       "_origin": "ast"
     },
     {
@@ -3632,7 +3656,7 @@
       "label": "isCustomIssueReport()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L133",
+      "source_location": "L142",
       "_origin": "ast"
     },
     {
@@ -3640,7 +3664,7 @@
       "label": "ReportsAndIssues()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L139",
+      "source_location": "L148",
       "_origin": "ast"
     },
     {
@@ -3732,11 +3756,19 @@
       "_origin": "ast"
     },
     {
+      "id": "webapp_src_pages_routeplanning_isvalidroutecoordinate",
+      "label": "isValidRouteCoordinate()",
+      "file_type": "code",
+      "source_file": "WebApp/src/pages/RoutePlanning.tsx",
+      "source_location": "L105",
+      "_origin": "ast"
+    },
+    {
       "id": "webapp_src_pages_routeplanning_routeplanning",
       "label": "RoutePlanning()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L105",
+      "source_location": "L109",
       "_origin": "ast"
     },
     {
@@ -3840,7 +3872,7 @@
       "label": "referenceTabs",
       "file_type": "code",
       "source_file": "WebApp/src/pages/SystemSettings.tsx",
-      "source_location": "L30",
+      "source_location": "L31",
       "_origin": "ast"
     },
     {
@@ -3848,7 +3880,7 @@
       "label": "SystemSettings()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/SystemSettings.tsx",
-      "source_location": "L37",
+      "source_location": "L38",
       "_origin": "ast"
     },
     {
@@ -3856,7 +3888,7 @@
       "label": "SectionHeader()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/SystemSettings.tsx",
-      "source_location": "L244",
+      "source_location": "L272",
       "_origin": "ast"
     },
     {
@@ -3864,7 +3896,7 @@
       "label": "Field()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/SystemSettings.tsx",
-      "source_location": "L256",
+      "source_location": "L284",
       "_origin": "ast"
     },
     {
@@ -3872,7 +3904,7 @@
       "label": "ReferenceRow()",
       "file_type": "code",
       "source_file": "WebApp/src/pages/SystemSettings.tsx",
-      "source_location": "L265",
+      "source_location": "L293",
       "_origin": "ast"
     },
     {
@@ -8133,7 +8165,7 @@
     },
     {
       "source": "mobileapp_src_context_pickupcontext",
-      "target": "mobileapp_src_context_pickupcontext_usepickups",
+      "target": "mobileapp_src_context_pickupcontext_isvalidcoordinate",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/PickupContext.js",
@@ -8142,11 +8174,20 @@
     },
     {
       "source": "mobileapp_src_context_pickupcontext",
+      "target": "mobileapp_src_context_pickupcontext_usepickups",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/PickupContext.js",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_pickupcontext",
       "target": "mobileapp_src_context_pickupcontext_mapdeliverytopickup",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L19",
+      "source_location": "L22",
       "weight": 1.0
     },
     {
@@ -8155,7 +8196,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L45",
+      "source_location": "L52",
       "weight": 1.0
     },
     {
@@ -8164,7 +8205,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L51",
+      "source_location": "L58",
       "weight": 1.0
     },
     {
@@ -8173,7 +8214,17 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L56",
+      "source_location": "L63",
+      "weight": 1.0
+    },
+    {
+      "source": "mobileapp_src_context_pickupcontext_mapdeliverytopickup",
+      "target": "mobileapp_src_context_pickupcontext_isvalidcoordinate",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "MobileApp/src/context/PickupContext.js",
+      "source_location": "L26",
       "weight": 1.0
     },
     {
@@ -8183,7 +8234,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L39",
+      "source_location": "L46",
       "weight": 1.0
     },
     {
@@ -8193,7 +8244,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L139",
+      "source_location": "L146",
       "weight": 1.0
     },
     {
@@ -8203,7 +8254,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L180",
+      "source_location": "L187",
       "weight": 1.0
     },
     {
@@ -8213,7 +8264,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L309",
+      "source_location": "L320",
       "weight": 1.0
     },
     {
@@ -14260,7 +14311,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/BinLocations.tsx",
-      "source_location": "L25",
+      "source_location": "L26",
       "weight": 1.0
     },
     {
@@ -14667,12 +14718,22 @@
     },
     {
       "source": "webapp_src_pages_reportsandissues",
-      "target": "webapp_src_contexts_authcontext",
+      "target": "webapp_src_components_ui_customselect",
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
       "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_pages_reportsandissues",
+      "target": "webapp_src_contexts_authcontext",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
+      "source_location": "L9",
       "weight": 1.0
     },
     {
@@ -14682,7 +14743,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L8",
+      "source_location": "L9",
       "weight": 1.0
     },
     {
@@ -14692,7 +14753,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L9",
+      "source_location": "L10",
       "weight": 1.0
     },
     {
@@ -14702,7 +14763,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L9",
+      "source_location": "L10",
       "weight": 1.0
     },
     {
@@ -14712,7 +14773,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L9",
+      "source_location": "L10",
       "weight": 1.0
     },
     {
@@ -14722,7 +14783,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L9",
+      "source_location": "L10",
       "weight": 1.0
     },
     {
@@ -14732,7 +14793,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L9",
+      "source_location": "L10",
       "weight": 1.0
     },
     {
@@ -14742,7 +14803,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L10",
+      "source_location": "L11",
       "weight": 1.0
     },
     {
@@ -14752,7 +14813,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L10",
+      "source_location": "L11",
       "weight": 1.0
     },
     {
@@ -14762,7 +14823,7 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L10",
+      "source_location": "L11",
       "weight": 1.0
     },
     {
@@ -14771,7 +14832,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L12",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -14780,7 +14841,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L14",
+      "source_location": "L15",
       "weight": 1.0
     },
     {
@@ -14789,7 +14850,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L18",
+      "source_location": "L19",
       "weight": 1.0
     },
     {
@@ -14798,12 +14859,12 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L20",
+      "source_location": "L21",
       "weight": 1.0
     },
     {
       "source": "webapp_src_pages_reportsandissues",
-      "target": "webapp_src_pages_reportsandissues_statusfilteroptions",
+      "target": "webapp_src_pages_reportsandissues_dayfilter",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
@@ -14812,11 +14873,29 @@
     },
     {
       "source": "webapp_src_pages_reportsandissues",
+      "target": "webapp_src_pages_reportsandissues_statusfilteroptions",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_pages_reportsandissues",
+      "target": "webapp_src_pages_reportsandissues_dayfilteroptions",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
+      "source_location": "L31",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_pages_reportsandissues",
       "target": "webapp_src_pages_reportsandissues_statusselectprops",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L29",
+      "source_location": "L38",
       "weight": 1.0
     },
     {
@@ -14825,7 +14904,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L36",
+      "source_location": "L45",
       "weight": 1.0
     },
     {
@@ -14834,7 +14913,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L40",
+      "source_location": "L49",
       "weight": 1.0
     },
     {
@@ -14843,7 +14922,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L133",
+      "source_location": "L142",
       "weight": 1.0
     },
     {
@@ -14852,7 +14931,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L139",
+      "source_location": "L148",
       "weight": 1.0
     },
     {
@@ -14862,7 +14941,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L93",
+      "source_location": "L102",
       "weight": 1.0
     },
     {
@@ -14872,7 +14951,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L237",
+      "source_location": "L262",
       "weight": 1.0
     },
     {
@@ -14882,7 +14961,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L406",
+      "source_location": "L437",
       "weight": 1.0
     },
     {
@@ -15217,11 +15296,30 @@
     },
     {
       "source": "webapp_src_pages_routeplanning",
-      "target": "webapp_src_pages_routeplanning_routeplanning",
+      "target": "webapp_src_pages_routeplanning_isvalidroutecoordinate",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
       "source_location": "L105",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_pages_routeplanning",
+      "target": "webapp_src_pages_routeplanning_routeplanning",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/pages/RoutePlanning.tsx",
+      "source_location": "L109",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_pages_routeplanning_routeplanning",
+      "target": "webapp_src_pages_routeplanning_isvalidroutecoordinate",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/pages/RoutePlanning.tsx",
+      "source_location": "L178",
       "weight": 1.0
     },
     {
@@ -15231,7 +15329,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L322",
+      "source_location": "L343",
       "weight": 1.0
     },
     {
@@ -15241,7 +15339,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L427",
+      "source_location": "L457",
       "weight": 1.0
     },
     {
@@ -15251,7 +15349,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L560",
+      "source_location": "L602",
       "weight": 1.0
     },
     {
@@ -15261,7 +15359,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L711",
+      "source_location": "L753",
       "weight": 1.0
     },
     {
@@ -15600,7 +15698,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/SystemSettings.tsx",
-      "source_location": "L30",
+      "source_location": "L31",
       "weight": 1.0
     },
     {
@@ -15609,7 +15707,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/SystemSettings.tsx",
-      "source_location": "L37",
+      "source_location": "L38",
       "weight": 1.0
     },
     {
@@ -15618,7 +15716,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/SystemSettings.tsx",
-      "source_location": "L244",
+      "source_location": "L272",
       "weight": 1.0
     },
     {
@@ -15627,7 +15725,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/SystemSettings.tsx",
-      "source_location": "L256",
+      "source_location": "L284",
       "weight": 1.0
     },
     {
@@ -15636,7 +15734,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/SystemSettings.tsx",
-      "source_location": "L265",
+      "source_location": "L293",
       "weight": 1.0
     },
     {
@@ -18969,6 +19067,16 @@
       "weight": 1.0
     },
     {
+      "source": "webapp_src_app_app",
+      "target": "webapp_src_pages_users_users",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/app/App.tsx",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
       "source": "webapp_src_features_auth_loginpagefunctional",
       "target": "webapp_src_components_ui_customselect_customselect",
       "relation": "imports",
@@ -19096,6 +19204,16 @@
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
       "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "webapp_src_pages_reportsandissues",
+      "target": "webapp_src_components_ui_customselect_customselect",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -19405,7 +19523,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L197",
+      "source_location": "L217",
       "weight": 1.0
     },
     {
@@ -19415,7 +19533,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L198",
+      "source_location": "L218",
       "weight": 1.0
     },
     {
@@ -19425,7 +19543,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L240",
+      "source_location": "L261",
       "weight": 1.0
     },
     {
@@ -19435,7 +19553,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L249",
+      "source_location": "L270",
       "weight": 1.0
     },
     {
@@ -19445,7 +19563,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L250",
+      "source_location": "L271",
       "weight": 1.0
     },
     {
@@ -19455,7 +19573,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L375",
+      "source_location": "L405",
       "weight": 1.0
     },
     {
@@ -20031,7 +20149,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L57",
+      "source_location": "L64",
       "weight": 1.0
     },
     {
@@ -20042,7 +20160,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L218",
+      "source_location": "L226",
       "weight": 1.0
     },
     {
@@ -20053,7 +20171,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L219",
+      "source_location": "L227",
       "weight": 1.0
     },
     {
@@ -20064,7 +20182,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "MobileApp/src/context/PickupContext.js",
-      "source_location": "L285",
+      "source_location": "L296",
       "weight": 1.0
     },
     {
@@ -20647,7 +20765,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/BinLocations.tsx",
-      "source_location": "L26",
+      "source_location": "L27",
       "weight": 1.0
     },
     {
@@ -20658,7 +20776,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/BinLocations.tsx",
-      "source_location": "L134",
+      "source_location": "L147",
       "weight": 1.0
     },
     {
@@ -20779,7 +20897,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L150",
+      "source_location": "L159",
       "weight": 1.0
     },
     {
@@ -20790,7 +20908,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L157",
+      "source_location": "L167",
       "weight": 1.0
     },
     {
@@ -20801,7 +20919,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L308",
+      "source_location": "L333",
       "weight": 1.0
     },
     {
@@ -20812,7 +20930,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L383",
+      "source_location": "L414",
       "weight": 1.0
     },
     {
@@ -20823,7 +20941,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L384",
+      "source_location": "L415",
       "weight": 1.0
     },
     {
@@ -20834,7 +20952,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/ReportsAndIssues.tsx",
-      "source_location": "L439",
+      "source_location": "L470",
       "weight": 1.0
     },
     {
@@ -20845,7 +20963,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L106",
+      "source_location": "L110",
       "weight": 1.0
     },
     {
@@ -20856,7 +20974,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L107",
+      "source_location": "L111",
       "weight": 1.0
     },
     {
@@ -20867,7 +20985,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L197",
+      "source_location": "L217",
       "weight": 1.0
     },
     {
@@ -20878,7 +20996,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L198",
+      "source_location": "L218",
       "weight": 1.0
     },
     {
@@ -20889,7 +21007,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L240",
+      "source_location": "L261",
       "weight": 1.0
     },
     {
@@ -20900,7 +21018,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L375",
+      "source_location": "L405",
       "weight": 1.0
     },
     {
@@ -20911,7 +21029,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L438",
+      "source_location": "L468",
       "weight": 1.0
     },
     {
@@ -20922,7 +21040,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/RoutePlanning.tsx",
-      "source_location": "L447",
+      "source_location": "L477",
       "weight": 1.0
     },
     {
@@ -20977,7 +21095,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "WebApp/src/pages/SystemSettings.tsx",
-      "source_location": "L48",
+      "source_location": "L49",
       "weight": 1.0
     },
     {

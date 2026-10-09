@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { MapPin, Plus, X, Navigation, Pencil, Trash2 } from "lucide-react";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
 import RoleIndicator from "../components/layout/RoleIndicator";
@@ -21,43 +21,72 @@ const emptyBinForm = {
   lat: String(NAGA_CITY_COORDINATE.latitude),
   lng: String(NAGA_CITY_COORDINATE.longitude),
 };
+const DEFAULT_BIN_TYPE = "collection_site";
 
 export default function BinLocations({ onNavigate }: BinLocationsProps) {
   const { bins, binTypes, loading, error, createBin, updateBin, deleteBin } = useLiveData();
   const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedBin, setSelectedBin] = useState<BinRecord | null>(null);
+  const [selectedBin, setSelectedBin] = useState(null as BinRecord | null);
   const [showMapModal, setShowMapModal] = useState(false);
   const [showMoveLocationModal, setShowMoveLocationModal] = useState(false);
-  const [binToMove, setBinToMove] = useState<BinRecord | null>(null);
-  const [binToDelete, setBinToDelete] = useState<BinRecord | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [binToMove, setBinToMove] = useState(null as BinRecord | null);
+  const [binToDelete, setBinToDelete] = useState(null as BinRecord | null);
+  const [formError, setFormError] = useState(null as string | null);
   const [newBin, setNewBin] = useState(emptyBinForm);
   const [moveForm, setMoveForm] = useState({ location: "", lat: "", lng: "" });
 
-  const activeBinTypes = binTypes.map((type) => type.name);
-  const typeCounts = useMemo(
+  const activeBins = useMemo(() => bins.filter((bin) => (bin.status ?? "active").toLowerCase() === "active").length, [bins]);
+  const mappedBins = useMemo(
     () =>
-      activeBinTypes.reduce<Record<string, number>>((acc, type) => {
-        acc[type] = bins.filter((bin) => bin.type === type).length;
-        return acc;
-      }, {}),
-    [activeBinTypes, bins],
+      bins.filter((bin) => {
+        const latitude = Number(bin.latitude);
+        const longitude = Number(bin.longitude);
+        return Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
+      }).length,
+    [bins],
   );
+  const activeBinTypes = useMemo(() => binTypes.map((type) => type.name), [binTypes]);
 
   const parseCoordinates = (latValue: string, lngValue: string) => {
+    if (!latValue.trim() || !lngValue.trim()) {
+      throw new Error("Select a location on the map or enter latitude and longitude.");
+    }
     const latitude = Number(latValue);
     const longitude = Number(lngValue);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
       throw new Error("Latitude and longitude must be valid numbers.");
     }
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      throw new Error("Latitude must be between -90 and 90, and longitude between -180 and 180.");
+    }
     return { latitude, longitude };
+  };
+
+  const formatCoordinate = (value: number) => value.toFixed(6);
+  const coordinateValue = (value: string) => {
+    if (!value.trim()) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const getTypeColor = (type?: string | null) => {
+    switch (type) {
+      case "residential":
+        return "bg-blue-100 text-blue-700";
+      case "commercial":
+        return "bg-purple-100 text-purple-700";
+      case "industrial":
+        return "bg-amber-100 text-amber-700";
+      default:
+        return "bg-gray-100 text-gray-700";
+    }
   };
 
   const handleAddBin = async () => {
     try {
       setFormError(null);
-      if (!newBin.code.trim() || !newBin.location.trim() || !newBin.type) {
-        setFormError("Code, location, and type are required.");
+      if (!newBin.code.trim() || !newBin.location.trim()) {
+        setFormError("Code and location are required.");
         return;
       }
       const normalizedCode = newBin.code.trim().toLowerCase();
@@ -70,7 +99,7 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
       await createBin({
         code: newBin.code.trim(),
         location: newBin.location.trim(),
-        type: newBin.type,
+        type: newBin.type || DEFAULT_BIN_TYPE,
         latitude: coordinates.latitude,
         longitude: coordinates.longitude,
         status: "active",
@@ -103,22 +132,6 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
     setSelectedBin(bin);
     setShowMapModal(true);
   };
-
-  const formatCoordinate = (value: number) => value.toFixed(7);
-
-  const getTypeColor = (type?: string | null) => {
-    switch (type) {
-      case "residential":
-        return "bg-blue-100 text-blue-700";
-      case "commercial":
-        return "bg-purple-100 text-purple-700";
-      case "industrial":
-        return "bg-amber-100 text-amber-700";
-      default:
-        return "bg-gray-100 text-gray-700";
-    }
-  };
-
   return (
     <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
       <div className="space-y-6">
@@ -139,19 +152,22 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
 
         {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <div className="text-gray-600 text-sm">Total Bins</div>
             <div className="text-gray-900 mt-2">{loading ? "..." : bins.length}</div>
             <div className="text-blue-500 text-sm mt-1">Database records</div>
           </div>
-          {activeBinTypes.slice(0, 3).map((type) => (
-            <div key={type} className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-              <div className="text-gray-600 text-sm capitalize">{type}</div>
-              <div className="text-gray-900 mt-2">{loading ? "..." : typeCounts[type] ?? 0}</div>
-              <div className="text-blue-500 text-sm mt-1">Bin locations</div>
-            </div>
-          ))}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <div className="text-gray-600 text-sm">Active Bins</div>
+            <div className="text-gray-900 mt-2">{loading ? "..." : activeBins}</div>
+            <div className="text-emerald-500 text-sm mt-1">Ready for routing</div>
+          </div>
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <div className="text-gray-600 text-sm">Mapped Coordinates</div>
+            <div className="text-gray-900 mt-2">{loading ? "..." : `${mappedBins}/${bins.length}`}</div>
+            <div className="text-blue-500 text-sm mt-1">Used by routes and navigation</div>
+          </div>
         </div>
 
         <div className="flex items-center justify-between">
@@ -185,9 +201,14 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
                     </div>
                     <div className="flex-1">
                       <h3 className="text-gray-900">{bin.code ?? bin.id}</h3>
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs mt-1 capitalize ${getTypeColor(bin.type)}`}>
-                        {bin.type ?? "untyped"}
-                      </span>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs capitalize ${getTypeColor(bin.type)}`}>
+                          {bin.type ?? "collection_site"}
+                        </span>
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-xs bg-emerald-50 text-emerald-700 capitalize">
+                          {bin.status ?? "active"}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <button className="p-1 text-red-600 hover:bg-red-50 rounded" onClick={() => setBinToDelete(bin)} title="Delete bin">
@@ -240,34 +261,37 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
       </div>
 
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300]" onClick={() => setShowAddModal(false)}>
-          <div className="bg-white p-6 rounded-lg shadow-lg w-[760px] max-h-[90vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
-            <h3 className="text-gray-900 mb-4">Add Bin Location</h3>
-            <div className="space-y-4">
-              <input value={newBin.code} onChange={(event) => setNewBin({ ...newBin, code: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Bin code" />
-              <input value={newBin.location} onChange={(event) => setNewBin({ ...newBin, location: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Location" />
-              <CustomSelect
-                value={newBin.type}
-                onChange={(type) => setNewBin({ ...newBin, type })}
-                options={activeBinTypes.map((type) => ({ value: type, label: type }))}
-                placeholder="Select type"
-                buttonClassName="h-10 px-3 bg-white border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all capitalize"
-                ariaLabel="Bin type"
-              />
-              <BinLocationPicker
-                latitude={Number(newBin.lat)}
-                longitude={Number(newBin.lng)}
-                onChange={(coordinate) => setNewBin((prev) => ({
-                  ...prev,
-                  lat: formatCoordinate(coordinate.latitude),
-                  lng: formatCoordinate(coordinate.longitude),
-                }))}
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <input value={newBin.lat} onChange={(event) => setNewBin({ ...newBin, lat: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Latitude" />
-                <input value={newBin.lng} onChange={(event) => setNewBin({ ...newBin, lng: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Longitude" />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300] p-4" onClick={() => setShowAddModal(false)}>
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
+            <h3 className="text-gray-900 mb-1">Add Bin Location</h3>
+            <p className="text-sm text-gray-600 mb-4">Pin the exact GPS point used by routing and driver navigation.</p>
+            <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5">
+              <div className="space-y-4">
+                <input value={newBin.code} onChange={(event) => setNewBin({ ...newBin, code: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Bin code" />
+                <input value={newBin.location} onChange={(event) => setNewBin({ ...newBin, location: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Location name or address" />
+                <CustomSelect
+                  value={newBin.type}
+                  onChange={(type) => setNewBin({ ...newBin, type })}
+                  options={activeBinTypes.map((type) => ({ value: type, label: type }))}
+                  placeholder="Select type"
+                  buttonClassName="h-10 px-3 bg-white border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all capitalize"
+                  ariaLabel="Bin type"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="number" step="any" value={newBin.lat} onChange={(event) => setNewBin({ ...newBin, lat: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Latitude" />
+                  <input type="number" step="any" value={newBin.lng} onChange={(event) => setNewBin({ ...newBin, lng: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Longitude" />
+                </div>
+                <p className="text-xs text-gray-500">Coordinates update automatically when you click or drag the pin. Manual coordinate edits move the pin in real time.</p>
+                {formError && <p className="text-sm text-red-600">{formError}</p>}
               </div>
-              {formError && <p className="text-sm text-red-600">{formError}</p>}
+              <BinLocationPicker
+                latitude={coordinateValue(newBin.lat)}
+                longitude={coordinateValue(newBin.lng)}
+                onChange={({ latitude, longitude }) =>
+                  setNewBin((prev) => ({ ...prev, lat: formatCoordinate(latitude), lng: formatCoordinate(longitude) }))
+                }
+                className="h-[380px] w-full"
+              />
             </div>
             <div className="flex gap-3 mt-6">
               <button className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50" onClick={() => setShowAddModal(false)}>
@@ -300,25 +324,26 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
             </div>
             <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
               <div className="flex-1 bg-gray-100 relative">
-                <iframe
-                  width="100%"
-                  height="100%"
-                  style={{ border: 0 }}
-                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(selectedBin.longitude) - 0.01},${Number(selectedBin.latitude) - 0.01},${Number(selectedBin.longitude) + 0.01},${Number(selectedBin.latitude) + 0.01}&layer=mapnik&marker=${Number(selectedBin.latitude)},${Number(selectedBin.longitude)}`}
-                  title={`Map location for ${selectedBin.code ?? selectedBin.id}`}
+                <BinLocationPicker
+                  latitude={Number(selectedBin.latitude)}
+                  longitude={Number(selectedBin.longitude)}
+                  readOnly
+                  className="absolute inset-0 h-full w-full rounded-none border-0"
                 />
               </div>
               <div className="w-full md:w-[400px] bg-white border-t md:border-t-0 md:border-l border-gray-200 flex flex-col overflow-y-auto">
                 <div className="p-6 border-b border-gray-200 bg-gray-50">
                   <div className="text-sm text-gray-600 mb-3">Location Details</div>
                   <div className="space-y-2 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Type</span>
-                      <span className={`px-2 py-1 rounded-full text-xs capitalize ${getTypeColor(selectedBin.type)}`}>{selectedBin.type ?? "untyped"}</span>
-                    </div>
                     <div>
                       <div className="text-gray-600 text-xs">Address/Place</div>
                       <div className="text-gray-900">{selectedBin.location}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-600 text-xs">Coordinates</div>
+                      <div className="font-mono text-gray-900">
+                        {Number(selectedBin.latitude).toFixed(6)}, {Number(selectedBin.longitude).toFixed(6)}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -342,8 +367,8 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
       )}
 
       {showMoveLocationModal && binToMove && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300]" onClick={() => setShowMoveLocationModal(false)}>
-          <div className="bg-white rounded-xl shadow-2xl w-[820px] max-h-[90vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300] p-4" onClick={() => setShowMoveLocationModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-orange-100 rounded-lg">
@@ -358,22 +383,24 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
                 <X className="size-6" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
-              <input value={moveForm.location} onChange={(event) => setMoveForm((prev) => ({ ...prev, location: event.target.value }))} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg" placeholder="New location address" />
-              <BinLocationPicker
-                latitude={Number(moveForm.lat)}
-                longitude={Number(moveForm.lng)}
-                onChange={(coordinate) => setMoveForm((prev) => ({
-                  ...prev,
-                  lat: formatCoordinate(coordinate.latitude),
-                  lng: formatCoordinate(coordinate.longitude),
-                }))}
-              />
-              <div className="grid grid-cols-2 gap-4">
-                <input value={moveForm.lat} onChange={(event) => setMoveForm((prev) => ({ ...prev, lat: event.target.value }))} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg" placeholder="Latitude" />
-                <input value={moveForm.lng} onChange={(event) => setMoveForm((prev) => ({ ...prev, lng: event.target.value }))} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg" placeholder="Longitude" />
+            <div className="p-6 grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5">
+              <div className="space-y-4">
+                <input value={moveForm.location} onChange={(event) => setMoveForm((prev) => ({ ...prev, location: event.target.value }))} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg" placeholder="New location address" />
+                <div className="grid grid-cols-2 gap-4">
+                  <input type="number" step="any" value={moveForm.lat} onChange={(event) => setMoveForm((prev) => ({ ...prev, lat: event.target.value }))} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg" placeholder="Latitude" />
+                  <input type="number" step="any" value={moveForm.lng} onChange={(event) => setMoveForm((prev) => ({ ...prev, lng: event.target.value }))} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg" placeholder="Longitude" />
+                </div>
+                <p className="text-xs text-gray-500">The pin starts at the current saved bin location. Drag it or click a new point to relocate the bin.</p>
+                {formError && <p className="text-sm text-red-600">{formError}</p>}
               </div>
-              {formError && <p className="text-sm text-red-600">{formError}</p>}
+              <BinLocationPicker
+                latitude={coordinateValue(moveForm.lat)}
+                longitude={coordinateValue(moveForm.lng)}
+                onChange={({ latitude, longitude }) =>
+                  setMoveForm((prev) => ({ ...prev, lat: formatCoordinate(latitude), lng: formatCoordinate(longitude) }))
+                }
+                className="h-[380px] w-full"
+              />
             </div>
             <div className="flex gap-3 p-6 border-t border-gray-200">
               <button onClick={() => setShowMoveLocationModal(false)} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">

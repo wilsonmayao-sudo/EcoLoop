@@ -88,7 +88,7 @@ interface Route {
 }
 
 interface KnownBin {
-  id: number;
+  id: string | number;
   code: string;
   location: string;
   coordinates: [number, number];
@@ -102,6 +102,10 @@ interface Driver {
 }
 const DEFAULT_DEPOT = { id: "DEPOT", latitude: 13.6218, longitude: 123.1948 };
 
+function isValidRouteCoordinate(latitude: number, longitude: number) {
+  return Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
+}
+
 export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
   const { settings, createNotifications } = useLiveData();
   const depotSetting = getSetting(settings, "depot", DEFAULT_DEPOT);
@@ -109,8 +113,8 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
     () => ({ id: depotSetting.id ?? "DEPOT", coordinate: { lat: Number(depotSetting.latitude), lng: Number(depotSetting.longitude) } }),
     [depotSetting.id, depotSetting.latitude, depotSetting.longitude],
   );
-  const [routes, setRoutes] = useState<Route[]>([]);
-  const [knownBins, setKnownBins] = useState<KnownBin[]>([]);
+  const [routes, setRoutes] = useState([] as Route[]);
+  const [knownBins, setKnownBins] = useState([] as KnownBin[]);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
@@ -168,12 +172,18 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
       }));
       setDrivers(mappedDrivers);
 
-      const mappedBins: KnownBin[] = (binsData ?? []).map((bin) => ({
-        id: bin.id,
-        code: bin.code ?? `BIN-${bin.id}`,
-        location: bin.location,
-        coordinates: [Number(bin.latitude), Number(bin.longitude)],
-      }));
+      const mappedBins: KnownBin[] = (binsData ?? []).reduce<KnownBin[]>((acc, bin) => {
+        const latitude = Number(bin.latitude);
+        const longitude = Number(bin.longitude);
+        if (!isValidRouteCoordinate(latitude, longitude)) return acc;
+        acc.push({
+          id: bin.id,
+          code: bin.code ?? `BIN-${bin.id}`,
+          location: bin.location,
+          coordinates: [latitude, longitude],
+        });
+        return acc;
+      }, []);
       setKnownBins(mappedBins);
 
       const routeIds = (routesData ?? []).map((route) => route.id);
@@ -233,6 +243,7 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
       .channel("dispatcher-sync")
       .on("postgres_changes", { event: "*", schema: "public", table: "routes" }, () => syncFromSupabase())
       .on("postgres_changes", { event: "*", schema: "public", table: "route_stops" }, () => syncFromSupabase())
+      .on("postgres_changes", { event: "*", schema: "public", table: "bins" }, () => syncFromSupabase())
       .on("postgres_changes", { event: "*", schema: "public", table: "drivers" }, () => syncFromSupabase())
       .subscribe();
 
@@ -243,7 +254,7 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
 
   const buildRouteFromBins = async (routeName: string, selectedBins: KnownBin[], assignedDriver: string): Promise<Route | null> => {
     const routeStops: RouteStop[] = selectedBins.map((bin) => ({
-      id: bin.code,
+      id: String(bin.id),
       location: bin.location,
       coordinate: { lat: bin.coordinates[0], lng: bin.coordinates[1] },
     }));
@@ -311,10 +322,10 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
         if (error || !data) throw error ?? new Error("No route id returned.");
         const routeId = (data as { id: string }).id;
 
-        const binsByCode = new Map<string, KnownBin>(knownBins.map((bin) => [bin.code, bin]));
-        const routeStopsPayload = (route.optimizedStops ?? []).map((code, stopOrder) => ({
+        const binsById = new Map<string, KnownBin>(knownBins.map((bin) => [String(bin.id), bin]));
+        const routeStopsPayload = (route.optimizedStops ?? []).map((binId, stopOrder) => ({
           route_id: routeId,
-          bin_id: binsByCode.get(code)?.id,
+          bin_id: binsById.get(binId)?.id,
           stop_order: stopOrder + 1,
         })).filter((stop) => Boolean(stop.bin_id));
         if (routeStopsPayload.length > 0) {
