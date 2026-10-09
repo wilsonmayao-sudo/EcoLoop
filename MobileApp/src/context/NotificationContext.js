@@ -21,8 +21,8 @@ export const useNotifications = () => {
 
 const STORAGE_KEY = "notifications-enabled";
 
-function notificationVisibleToUser(row, authUserId, appRole) {
-  if (!row || row.read) return false;
+function notificationVisibleToUser(row, authUserId, appRole, unreadOnly = false) {
+  if (!row || (unreadOnly && row.read)) return false;
   if (row.user_auth_id) return row.user_auth_id === authUserId;
   if (row.role != null && row.role !== "") return row.role === appRole;
   return false;
@@ -69,7 +69,7 @@ export const NotificationProvider = ({ children }) => {
   }, [enabled]);
 
   const load = useCallback(async () => {
-    if (!enabled || !authUserId) {
+    if (!authUserId) {
       setItems([]);
       setError(null);
       return;
@@ -87,8 +87,8 @@ export const NotificationProvider = ({ children }) => {
       return;
     }
     setError(null);
-    setItems(data ?? []);
-  }, [enabled, authUserId]);
+    setItems((data ?? []).filter((row) => notificationVisibleToUser(row, authUserId, appRole)));
+  }, [authUserId, appRole]);
 
   useEffect(() => {
     void load();
@@ -96,18 +96,18 @@ export const NotificationProvider = ({ children }) => {
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active" && enabled && authUserId) void load();
+      if (state === "active" && authUserId) void load();
     });
     return () => sub.remove();
-  }, [enabled, authUserId, load]);
+  }, [authUserId, load]);
 
   useEffect(() => {
-    if (!enabled || !authUserId) return undefined;
+    if (!authUserId) return undefined;
 
     const handlePayload = async (payload) => {
       if (payload.eventType === "INSERT" && payload.new) {
         const row = payload.new;
-        if (notificationVisibleToUser(row, authUserId, appRole)) {
+        if (enabled && notificationVisibleToUser(row, authUserId, appRole, true)) {
           await presentLocalNotificationWhenAway({
             id: row.id,
             title: row.title,
@@ -150,7 +150,7 @@ export const NotificationProvider = ({ children }) => {
 
   const markRead = useCallback(
     async (id) => {
-      if (!enabled || !id) return;
+      if (!id) return;
       setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
       const { error: uErr } = await supabase.from("notifications").update({ read: true }).eq("id", id);
       if (uErr) {
@@ -158,11 +158,10 @@ export const NotificationProvider = ({ children }) => {
         throw uErr;
       }
     },
-    [enabled, load],
+    [load],
   );
 
   const markAllRead = useCallback(async () => {
-    if (!enabled) return;
     const unreadIds = items.filter((n) => !n.read).map((n) => n.id).filter(Boolean);
     if (unreadIds.length === 0) return;
 

@@ -9,6 +9,7 @@ export type PageType =
   | "reports"
   | "bin-locations"
   | "notifications"
+  | "users"
   | "user-approvals"
   | "supervisor-dashboard"
   | "system-settings";
@@ -156,6 +157,8 @@ export interface ReferenceRecord {
   sort_order?: number;
 }
 
+export type ReferenceTableName = "report_categories" | "maintenance_types" | "service_areas" | "bin_types";
+
 export interface RolePermission {
   role: AppRole;
   page: PageType;
@@ -193,6 +196,8 @@ const LIVE_TABLES = [
   "service_areas",
   "bin_types",
 ];
+
+const REFERENCE_TABLES = new Set<ReferenceTableName>(["report_categories", "maintenance_types", "service_areas", "bin_types"]);
 
 export function formatDateOnly(value?: string | null) {
   if (!value) return "Not recorded";
@@ -384,6 +389,31 @@ export function useLiveData() {
   const [maintenanceTypes, setMaintenanceTypes] = useState<ReferenceRecord[]>([]);
   const [serviceAreas, setServiceAreas] = useState<ReferenceRecord[]>([]);
   const [binTypes, setBinTypes] = useState<ReferenceRecord[]>([]);
+  const [allReportCategories, setAllReportCategories] = useState<ReferenceRecord[]>([]);
+  const [allMaintenanceTypes, setAllMaintenanceTypes] = useState<ReferenceRecord[]>([]);
+  const [allServiceAreas, setAllServiceAreas] = useState<ReferenceRecord[]>([]);
+  const [allBinTypes, setAllBinTypes] = useState<ReferenceRecord[]>([]);
+
+  const refreshVehicleLocations = useCallback(async () => {
+    const [latestResult, gpsLogsResult] = await Promise.all([
+      supabase
+        .from("vehicle_locations_latest")
+        .select("vehicle_id, driver_id, route_id, latitude, longitude, speed_kph, heading_deg, updated_at")
+        .order("updated_at", { ascending: false }),
+      supabase
+        .from("vehicle_gps_logs")
+        .select("id, vehicle_id, driver_id, route_id, latitude, longitude, speed_kph, heading_deg, accuracy_m, recorded_at")
+        .order("recorded_at", { ascending: false })
+        .limit(100),
+    ]);
+
+    if (latestResult.error || gpsLogsResult.error) return;
+    const incoming = mergeVehicleLocationRows(
+      normalizeLocationRows((latestResult.data as VehicleLocationRecord[]) ?? [], "latest"),
+      normalizeLocationRows((gpsLogsResult.data as VehicleLocationRecord[]) ?? [], "gps_log"),
+    );
+    setVehicleLocations((current) => mergeVehicleLocationRows(current, incoming));
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -407,6 +437,10 @@ export function useLiveData() {
       maintenanceTypesResult,
       serviceAreasResult,
       binTypesResult,
+      allReportCategoriesResult,
+      allMaintenanceTypesResult,
+      allServiceAreasResult,
+      allBinTypesResult,
     ] = await Promise.all([
       supabase.from("bins").select("id, code, location, type, status, capacity_percent, latitude, longitude, updated_at").order("id", { ascending: true }),
       supabase.from("drivers").select("id, name, status, auth_user_id, assigned_vehicle_id").order("name", { ascending: true }),
@@ -435,6 +469,10 @@ export function useLiveData() {
       supabase.from("maintenance_types").select("id, name, is_active, sort_order").eq("is_active", true).order("sort_order", { ascending: true }),
       supabase.from("service_areas").select("id, name, is_active, sort_order").eq("is_active", true).order("sort_order", { ascending: true }),
       supabase.from("bin_types").select("id, name, is_active, sort_order").eq("is_active", true).order("sort_order", { ascending: true }),
+      supabase.from("report_categories").select("id, name, is_active, sort_order").order("sort_order", { ascending: true }),
+      supabase.from("maintenance_types").select("id, name, is_active, sort_order").order("sort_order", { ascending: true }),
+      supabase.from("service_areas").select("id, name, is_active, sort_order").order("sort_order", { ascending: true }),
+      supabase.from("bin_types").select("id, name, is_active, sort_order").order("sort_order", { ascending: true }),
     ]);
 
     const firstError = [
@@ -455,6 +493,10 @@ export function useLiveData() {
       tableError(maintenanceTypesResult.error, "maintenance_types"),
       tableError(serviceAreasResult.error, "service_areas"),
       tableError(binTypesResult.error, "bin_types"),
+      tableError(allReportCategoriesResult.error, "all report_categories"),
+      tableError(allMaintenanceTypesResult.error, "all maintenance_types"),
+      tableError(allServiceAreasResult.error, "all service_areas"),
+      tableError(allBinTypesResult.error, "all bin_types"),
     ].find(Boolean);
 
     setBins((binsResult.data as BinRecord[]) ?? []);
@@ -481,6 +523,10 @@ export function useLiveData() {
     setMaintenanceTypes((maintenanceTypesResult.data as ReferenceRecord[]) ?? []);
     setServiceAreas((serviceAreasResult.data as ReferenceRecord[]) ?? []);
     setBinTypes((binTypesResult.data as ReferenceRecord[]) ?? []);
+    setAllReportCategories((allReportCategoriesResult.data as ReferenceRecord[]) ?? []);
+    setAllMaintenanceTypes((allMaintenanceTypesResult.data as ReferenceRecord[]) ?? []);
+    setAllServiceAreas((allServiceAreasResult.data as ReferenceRecord[]) ?? []);
+    setAllBinTypes((allBinTypesResult.data as ReferenceRecord[]) ?? []);
     setError(firstError ?? null);
     setLoading(false);
   }, []);
@@ -664,6 +710,28 @@ export function useLiveData() {
     await load();
   };
 
+  const assertReferenceTable = (table: ReferenceTableName) => {
+    if (!REFERENCE_TABLES.has(table)) throw new Error("Unsupported reference table.");
+  };
+
+  const createReferenceItem = async (table: ReferenceTableName, payload: { name: string; is_active?: boolean; sort_order?: number }) => {
+    assertReferenceTable(table);
+    const { error } = await supabase.from(table).insert({
+      name: payload.name,
+      is_active: payload.is_active ?? true,
+      sort_order: payload.sort_order ?? 100,
+    });
+    if (error) throw error;
+    await load();
+  };
+
+  const updateReferenceItem = async (table: ReferenceTableName, id: string, payload: Partial<Pick<ReferenceRecord, "name" | "is_active" | "sort_order">>) => {
+    assertReferenceTable(table);
+    const { error } = await supabase.from(table).update(payload).eq("id", id);
+    if (error) throw error;
+    await load();
+  };
+
   return {
     loading,
     error,
@@ -683,11 +751,16 @@ export function useLiveData() {
     maintenanceTypes,
     serviceAreas,
     binTypes,
+    allReportCategories,
+    allMaintenanceTypes,
+    allServiceAreas,
+    allBinTypes,
     driverById,
     routeById,
     vehicleById,
     dashboardStats,
     reload: load,
+    refreshVehicleLocations,
     createBin,
     updateBin,
     deleteBin,
@@ -706,5 +779,7 @@ export function useLiveData() {
     recordVehicleLocation,
     createMaintenanceRecord,
     upsertSystemSetting,
+    createReferenceItem,
+    updateReferenceItem,
   };
 }

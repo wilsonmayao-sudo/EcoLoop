@@ -1,4 +1,4 @@
-import React, { type ReactNode, useEffect, useState } from "react";
+import React, { type ReactNode, useState } from "react";
 import ProfessionalDashboard from "../pages/ProfessionalDashboard";
 import RoutePlanning from "../pages/RoutePlanning";
 import BinLocations from "../pages/BinLocations";
@@ -8,43 +8,53 @@ import ReportsAndIssues from "../pages/ReportsAndIssues";
 import VehicleMonitoringWithActions from "../pages/VehicleMonitoringWithActions";
 import WelcomeScreen from "../features/auth/WelcomeScreen";
 import UserApprovals from "../pages/UserApprovals";
+import Users from "../pages/Users";
 import SupervisorDashboard from "../pages/SupervisorDashboard";
 import SystemSettings from "../pages/SystemSettings";
 import { AuthProvider, useAuth, type AppRole } from "../contexts/AuthContext";
 import { useRolePermissions, type PageType } from "../hooks/useLiveData";
 
 const FALLBACK_PAGE_ACCESS: Record<Exclude<AppRole, "truck_driver">, PageType[]> = {
-  admin: ["dashboard", "reports", "bin-locations", "notifications", "user-approvals", "system-settings"],
+  admin: ["dashboard", "reports", "notifications", "users", "user-approvals", "system-settings"],
   dispatcher: ["dashboard", "route-planning", "vehicle-monitoring", "reports", "bin-locations", "notifications"],
   supervisor: ["supervisor-dashboard", "reports", "notifications"],
 };
 
-function getHomePage(role: AppRole, readablePages: PageType[]): PageType {
-  const preferred: PageType[] =
-    role === "dispatcher"
-      ? ["route-planning", "dashboard"]
-      : role === "supervisor"
-        ? ["supervisor-dashboard", "reports"]
-        : ["dashboard", "user-approvals", "system-settings"];
-  return preferred.find((page) => readablePages.includes(page)) ?? readablePages[0] ?? "dashboard";
+/** Matches sidebar menu order — first allowed page is the default on load/refresh. */
+const SIDEBAR_PAGE_ORDER: PageType[] = [
+  "dashboard",
+  "supervisor-dashboard",
+  "route-planning",
+  "vehicle-monitoring",
+  "reports",
+  "bin-locations",
+  "notifications",
+  "users",
+  "user-approvals",
+  "system-settings",
+];
+
+function getDefaultPage(readablePages: PageType[]): PageType {
+  return SIDEBAR_PAGE_ORDER.find((page) => readablePages.includes(page)) ?? readablePages[0] ?? "dashboard";
 }
 
 function AppShell() {
-  const [currentPage, setCurrentPage] = useState<PageType>("dashboard");
+  const [currentPage, setCurrentPage] = useState(null as PageType | null);
+  const [usersInitialFilter, setUsersInitialFilter] = useState<"total" | "active">("total");
   const { loading, session, profile, authError, signOut } = useAuth();
   const { readablePages, loading: permissionsLoading, error: permissionsError } = useRolePermissions(profile?.role);
   const effectiveReadablePages =
     readablePages.length > 0
-      ? readablePages
+      ? profile?.role === "admin" && !readablePages.includes("users")
+        ? [...readablePages, "users"]
+        : readablePages
       : profile?.role && profile.role !== "truck_driver"
         ? FALLBACK_PAGE_ACCESS[profile.role]
         : [];
 
-  useEffect(() => {
-    if (!profile) return;
-    if (effectiveReadablePages.length === 0) return;
-    setCurrentPage(getHomePage(profile.role, effectiveReadablePages));
-  }, [profile?.role, effectiveReadablePages.join("|")]);
+  const defaultPage = getDefaultPage(effectiveReadablePages);
+  const activePage =
+    currentPage && effectiveReadablePages.includes(currentPage) ? currentPage : defaultPage;
 
   if (loading || (profile && permissionsLoading)) {
     return <div className="w-full h-screen flex items-center justify-center bg-gray-50 text-gray-700">Loading…</div>;
@@ -58,29 +68,34 @@ function AppShell() {
   const navigateWithRoleGuard = (page: PageType) => {
     if (!profile) return;
     if (!effectiveReadablePages.includes(page)) {
-      setCurrentPage(getHomePage(profile.role, effectiveReadablePages));
+      setCurrentPage(defaultPage);
       return;
     }
     setCurrentPage(page);
   };
 
+  const navigateToUsers = (filter: "total" | "active") => {
+    setUsersInitialFilter(filter);
+    navigateWithRoleGuard("users");
+  };
+
   const renderPage = () => {
-    const pageToRender = effectiveReadablePages.includes(currentPage) ? currentPage : getHomePage(profile.role, effectiveReadablePages);
+    const pageToRender = activePage;
     switch (pageToRender) {
       case "dashboard":
-        return <ProfessionalDashboard onNavigate={navigateWithRoleGuard} role={profile.role} />;
+        return <ProfessionalDashboard onNavigate={navigateWithRoleGuard} onNavigateUsers={navigateToUsers} role={profile.role} />;
       case "supervisor-dashboard":
         return <SupervisorDashboard onNavigate={navigateWithRoleGuard} />;
       case "user-approvals":
         return <UserApprovals onNavigate={navigateWithRoleGuard} />;
+      case "users":
+        return <Users onNavigate={navigateWithRoleGuard} initialFilter={usersInitialFilter} />;
       case "system-settings":
         return <SystemSettings onNavigate={navigateWithRoleGuard} />;
       case "route-planning":
         return <RoutePlanning onNavigate={navigateWithRoleGuard} />;
       case "vehicle-monitoring":
         return <VehicleMonitoringWithActions 
-          onNavigateToRoutePlanning={() => navigateWithRoleGuard("route-planning")}
-          onNavigateToReports={() => navigateWithRoleGuard("reports")}
           onNavigate={navigateWithRoleGuard}
         />; 
       case "reports":
@@ -103,7 +118,7 @@ function AppShell() {
       )}
       {/* Sidebar */}
       <Sidebar
-        currentPage={currentPage}
+        currentPage={activePage}
         onNavigate={navigateWithRoleGuard}
         onLogout={signOut}
         userName={profile.full_name}

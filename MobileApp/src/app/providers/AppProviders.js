@@ -8,6 +8,7 @@ import { LanguageProvider } from '../../context/LanguageContext';
 import { AuthProvider } from '../../context/AuthContext';
 import { CompletedRoutesProvider } from '../../context/CompletedRoutesContext';
 import { PickupProvider } from '../../context/PickupContext';
+import { LiveLocationProvider } from '../../context/LiveLocationContext';
 
 export default function AppProviders({ children }) {
   return (
@@ -15,13 +16,15 @@ export default function AppProviders({ children }) {
       <LanguageProvider>
         <AuthProvider>
           <PickupProvider>
-            <CompletedRoutesProvider>
-              <AvatarProvider>
-                <NotificationProvider>
-                  <SafeAreaProvider>{children}</SafeAreaProvider>
-                </NotificationProvider>
-              </AvatarProvider>
-            </CompletedRoutesProvider>
+            <LiveLocationProvider>
+              <CompletedRoutesProvider>
+                <AvatarProvider>
+                  <NotificationProvider>
+                    <SafeAreaProvider>{children}</SafeAreaProvider>
+                  </NotificationProvider>
+                </AvatarProvider>
+              </CompletedRoutesProvider>
+            </LiveLocationProvider>
           </PickupProvider>
         </AuthProvider>
       </LanguageProvider>

@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { clearDriverLatestLocation } from "../services/liveLocation";
 
 const AuthContext = createContext(null);
 const APPROVAL_PENDING_MESSAGE = "Your account is still waiting for admin approval.";
@@ -67,7 +68,7 @@ export function AuthProvider({ children }) {
       setDriver(null);
       throw new Error("Driver record not found. Please contact the administrator.");
     }
-    if (data.status === "inactive" || data.status === "suspended") {
+    if (data.status === "suspended") {
       throw new Error("Driver account is not active.");
     }
     setDriver(data);
@@ -130,6 +131,27 @@ export function AuthProvider({ children }) {
       mounted = false;
       authSubscription.subscription.unsubscribe();
     };
+  }, []);
+
+  useEffect(() => {
+    if (!driver?.id) return undefined;
+
+    const channel = supabase
+      .channel(`mobile-driver-status-${driver.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "drivers", filter: `id=eq.${driver.id}` },
+        (payload) => setDriver((current) => (current ? { ...current, ...payload.new } : current)),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [driver?.id]);
+
+  const setDriverStatus = useCallback((status) => {
+    setDriver((current) => (current ? { ...current, status } : current));
   }, []);
 
   const signIn = async ({ email, password }) => {
@@ -199,6 +221,13 @@ export function AuthProvider({ children }) {
 
   const signOut = async () => {
     setAuthError(null);
+    if (driver?.id) {
+      try {
+        await clearDriverLatestLocation({ driverId: driver.id });
+      } catch (error) {
+        console.warn("Unable to clear driver location during sign out:", error?.message);
+      }
+    }
     await supabase.auth.signOut();
   };
 
@@ -212,8 +241,9 @@ export function AuthProvider({ children }) {
       signIn,
       signUp,
       signOut,
+      setDriverStatus,
     }),
-    [session, driver, profile, loading, authError],
+    [session, driver, profile, loading, authError, setDriverStatus],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

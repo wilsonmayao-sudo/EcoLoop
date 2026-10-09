@@ -1,15 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Eye, MapPin, Plus, Trash2, WandSparkles, X } from "lucide-react";
+import { Bell, Eye, MapPin, Plus, Trash2, X } from "lucide-react";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
+import Toast from "../components/feedback/Toast";
+import RoleIndicator from "../components/layout/RoleIndicator";
 import { formatDistanceKm, formatDurationMinutes } from "../utils/routing/geo";
 import { optimizeMultiStopRouteAsync } from "../utils/routing/optimizeMultiStop";
-import { clusterStopsByDepotSweep } from "../utils/routing/clusterStops";
 import type { RouteStop } from "../utils/routing/types";
 import TrafficRouteMapPreview from "../components/maps/TrafficRouteMapPreview";
 import { isMapboxConfigured } from "../services/mapboxMatrix";
 import { supabase } from "../services/supabaseClient";
 import { formatDateOnly, getSetting, normalizeStatus, useLiveData } from "../hooks/useLiveData";
+import CustomSelect from "../components/ui/CustomSelect";
 
 function labelRouteStatus(status: string) {
   const n = (status ?? "").toLowerCase();
@@ -105,7 +107,7 @@ function isValidRouteCoordinate(latitude: number, longitude: number) {
 }
 
 export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
-  const { settings } = useLiveData();
+  const { settings, createNotifications } = useLiveData();
   const depotSetting = getSetting(settings, "depot", DEFAULT_DEPOT);
   const DEPOT = useMemo(
     () => ({ id: depotSetting.id ?? "DEPOT", coordinate: { lat: Number(depotSetting.latitude), lng: Number(depotSetting.longitude) } }),
@@ -115,19 +117,38 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
   const [knownBins, setKnownBins] = useState([] as KnownBin[]);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showRouteDetails, setShowRouteDetails] = useState(null as Route | null);
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertRecipient, setAlertRecipient] = useState("all");
+  const [alertError, setAlertError] = useState<string | null>(null);
+  const [showAlertToast, setShowAlertToast] = useState(false);
+  const [showRouteDetails, setShowRouteDetails] = useState<Route | null>(null);
   const [showMapModal, setShowMapModal] = useState(false);
-  const [selectedRoute, setSelectedRoute] = useState(null as Route | null);
+  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [routeToDelete, setRouteToDelete] = useState(null as string | null);
-  const [optimizationError, setOptimizationError] = useState(null as string | null);
-  const [drivers, setDrivers] = useState([] as Driver[]);
+  const [routeToDelete, setRouteToDelete] = useState<string | null>(null);
+  const [optimizationError, setOptimizationError] = useState<string | null>(null);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [newRoute, setNewRoute] = useState({ name: "", truck: "" });
-  const [selectedBinIds, setSelectedBinIds] = useState([] as string[]);
-
-  const availableDrivers = drivers.filter((driver) => driver.status === "available");
-  const driversById = useMemo(() => new Map(drivers.map((driver) => [String(driver.id), driver])), [drivers]);
+  const [selectedBinIds, setSelectedBinIds] = useState<string[]>([]);
+  const driverOptions = useMemo(
+    () => drivers.map((driver) => ({
+      value: driver.name,
+      label: driver.name,
+      colorClassName: driver.status === "available" ? "bg-emerald-500" : "bg-amber-500",
+    })),
+    [drivers],
+  );
+  const alertRecipientOptions = useMemo(
+    () => [
+      { value: "all", label: "All drivers" },
+      ...drivers
+        .filter((driver) => Boolean(driver.auth_user_id))
+        .map((driver) => ({ value: String(driver.id), label: driver.name })),
+    ],
+    [drivers],
+  );
 
   const syncFromSupabase = async () => {
     setIsLoading(true);
@@ -261,83 +282,6 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
     };
   };
 
-  const handleAutoGenerateRoutes = () => {
-    if (availableDrivers.length === 0) {
-      setOptimizationError("No available drivers. Add availability before auto-generating routes.");
-      return;
-    }
-
-    const bucketedBins = clusterStopsByDepotSweep<KnownBin>(
-      knownBins,
-      DEPOT.coordinate,
-      Math.min(availableDrivers.length, knownBins.length),
-      (bin) => ({ lat: bin.coordinates[0], lng: bin.coordinates[1] }),
-    );
-    if (bucketedBins.length === 0) {
-      setOptimizationError("No bins have valid coordinates for route generation.");
-      return;
-    }
-
-    Promise.all(
-      bucketedBins.map(async (bins, index) => {
-        const driver = availableDrivers[index];
-        const route = await buildRouteFromBins(`Auto Route ${index + 1}`, bins, driver.name);
-        if (!route) throw new Error("Failed to optimize generated route.");
-
-        const { data: createdRoute, error: createRouteError } = await supabase
-          .from("routes")
-          .insert({
-            name: route.name,
-            status: route.status,
-            distance_km: route.distanceKm ?? Number(route.distance.replace(" km", "")),
-            duration_minutes: route.durationMinutes ?? 1,
-            driver_id: driver.id,
-            center_lat: route.coordinates?.[0] ?? DEPOT.coordinate.lat,
-            center_lng: route.coordinates?.[1] ?? DEPOT.coordinate.lng,
-            generated_at: new Date().toISOString(),
-            assignment_updated_at: new Date().toISOString(),
-            optimization_method: route.optimizationMethod,
-            cost_source: route.costSource,
-            used_mapbox_traffic: route.optimizationUsedTraffic === true,
-          })
-          .select("id")
-          .single();
-        if (createRouteError || !createdRoute) throw createRouteError ?? new Error("No route id returned.");
-        const newRouteId = (createdRoute as { id: string }).id;
-
-        const binsById = new Map<string, KnownBin>(knownBins.map((bin) => [String(bin.id), bin]));
-        const routeStopsPayload = (route.optimizedStops ?? []).map((binId, stopOrder) => ({
-          route_id: newRouteId,
-          bin_id: binsById.get(binId)?.id,
-          stop_order: stopOrder + 1,
-        })).filter((stop) => Boolean(stop.bin_id));
-        if (routeStopsPayload.length > 0) {
-          const { error: stopsError } = await supabase.from("route_stops").insert(routeStopsPayload);
-          if (stopsError) throw stopsError;
-        }
-        const deliveriesPayload = routeStopsPayload.map((stop) => ({
-          route_id: newRouteId,
-          bin_id: stop.bin_id,
-          driver_id: driver.id,
-          status: "assigned",
-          eta: null,
-        }));
-        if (deliveriesPayload.length > 0) {
-          const { error: deliveriesError } = await supabase.from("deliveries").insert(deliveriesPayload);
-          if (deliveriesError) throw deliveriesError;
-        }
-        await notifyDriverRouteAssigned({
-          routeId: newRouteId,
-          routeName: route.name,
-          stopCount: routeStopsPayload.length,
-          driverAuthUserId: driver.auth_user_id,
-        });
-      }),
-    )
-      .then(() => setOptimizationError(null))
-      .catch(() => setOptimizationError("Could not auto-generate routes. Check drivers and bins, then try again."));
-  };
-
   const handleCreateRoute = async () => {
     if (newRoute.name && newRoute.truck) {
       const selectedBins = knownBins.filter((bin) => selectedBinIds.includes(String(bin.id)));
@@ -413,7 +357,55 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
     }
   };
 
+  const sendFleetAlert = async () => {
+    const message = alertMessage.trim();
+    setAlertError(null);
+    if (!message) {
+      setAlertError("Alert message is required.");
+      return;
+    }
+
+    const linkedDrivers = drivers.filter((driver) => Boolean(driver.auth_user_id));
+    if (linkedDrivers.length === 0) {
+      setAlertError("No truck drivers have an EcoLoop account linked to their profile.");
+      return;
+    }
+
+    const recipients = alertRecipient === "all"
+      ? linkedDrivers
+      : linkedDrivers.filter((driver) => String(driver.id) === alertRecipient);
+    if (recipients.length === 0) {
+      setAlertError("The selected driver does not have a linked EcoLoop account.");
+      return;
+    }
+
+    try {
+      await createNotifications(
+        recipients.map((driver) => ({
+          user_auth_id: String(driver.auth_user_id),
+          title: "Dispatch alert",
+          message,
+          type: "warning",
+          category: "system",
+          source_table: "route_planning",
+          read: false,
+        })),
+      );
+      setAlertMessage("");
+      setAlertRecipient("all");
+      setShowAlertModal(false);
+      setShowAlertToast(true);
+    } catch (error: any) {
+      setAlertError(error?.message ?? "Unable to send alert.");
+    }
+  };
+
   const handleDriverAssignment = async (routeId: string, driverName: string) => {
+    const route = routes.find((item) => item.id === routeId);
+    if (route && !["pending", "planned"].includes(normalizeStatus(route.status))) {
+      setOptimizationError("This route has already been accepted and cannot be reassigned.");
+      return;
+    }
     const nextDriver = drivers.find((driver) => driver.name === driverName);
     if (!nextDriver) return;
     const driverId = String(nextDriver.id);
@@ -467,6 +459,7 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
   return (
     <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
       <div className="space-y-6">
+        <RoleIndicator />
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -518,11 +511,14 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
         {/* Dispatcher Actions */}
         <div className="flex justify-end gap-3">
           <button
-            onClick={handleAutoGenerateRoutes}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            onClick={() => {
+              setAlertError(null);
+              setShowAlertModal(true);
+            }}
+            className="flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-red-700 transition-colors hover:bg-red-50"
           >
-            <WandSparkles className="size-4" />
-            Auto Generate Routes
+            <Bell className="size-4" />
+            Send Alert
           </button>
           <button
             onClick={() => setShowCreateModal(true)}
@@ -532,6 +528,50 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
             Create Route
           </button>
         </div>
+
+        {showAlertModal && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 px-4" onClick={() => setShowAlertModal(false)}>
+            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bell className="size-5 text-red-600" />
+                  <h3 className="text-gray-900">Send Alert to Truck Drivers</h3>
+                </div>
+                <button onClick={() => setShowAlertModal(false)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                  <X className="size-5" />
+                </button>
+              </div>
+              <div className="mb-4">
+                <label className="mb-1.5 block text-sm text-gray-700">Send to</label>
+                <CustomSelect
+                  value={alertRecipient}
+                  options={alertRecipientOptions}
+                  onChange={(value) => {
+                    setAlertRecipient(value);
+                    setAlertError(null);
+                  }}
+                  ariaLabel="Choose alert recipient"
+                  buttonClassName="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                />
+              </div>
+              <textarea
+                className="min-h-28 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                placeholder="Alert message"
+                value={alertMessage}
+                onChange={(event) => setAlertMessage(event.target.value)}
+              />
+              {alertError && <p className="mt-2 text-sm text-red-600">{alertError}</p>}
+              <div className="mt-5 flex justify-end gap-3">
+                <button onClick={() => setShowAlertModal(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                  Cancel
+                </button>
+                <button onClick={() => void sendFleetAlert()} className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700">
+                  Send Alert
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Routes Table */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -566,18 +606,16 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                     <td className="px-6 py-4 text-sm text-gray-900">{route.distance}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">{route.duration}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      <select
+                      <CustomSelect
                         value={route.truck}
-                        onChange={(e) => void handleDriverAssignment(route.id, e.target.value)}
-                        className="px-2 py-1 border border-gray-300 rounded-md bg-white"
-                      >
-                        <option value="Unassigned">Unassigned</option>
-                        {drivers.map((driver) => (
-                          <option key={driver.id} value={driver.name}>
-                            {driver.name} {driver.status === "available" ? "(Available)" : "(On Route)"}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(driverName) => void handleDriverAssignment(route.id, driverName)}
+                        options={[{ value: "Unassigned", label: "Unassigned" }, ...driverOptions]}
+                        disabled={!["pending", "planned"].includes(normalizeStatus(route.status))}
+                        className="w-40"
+                        buttonClassName="h-8 px-2 py-1 border border-gray-300 rounded-md bg-white text-xs text-gray-800"
+                        menuClassName="text-xs"
+                        ariaLabel="Assigned driver"
+                      />
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex gap-2">
@@ -647,14 +685,14 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">Assign Truck</label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" value={newRoute.truck} onChange={(e) => setNewRoute({ ...newRoute, truck: e.target.value })}>
-                    <option value="">Select driver</option>
-                    {drivers.map((driver) => (
-                      <option key={driver.id} value={driver.name}>
-                        {driver.name} {driver.status === "available" ? "(Available)" : "(On Route)"}
-                      </option>
-                    ))}
-                  </select>
+                  <CustomSelect
+                    value={newRoute.truck}
+                    onChange={(driverName) => setNewRoute({ ...newRoute, truck: driverName })}
+                    options={driverOptions}
+                    placeholder="Select driver"
+                    buttonClassName="h-10 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    ariaLabel="Assign truck"
+                  />
                 </div>
                 <p className="text-xs text-gray-500">New routes are created as <span className="font-medium">Pending</span> until the driver accepts them in the mobile app.</p>
                 <div className="flex gap-3 mt-6">
@@ -795,6 +833,7 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
             confirmText="Delete"
           />
         )}
+        {showAlertToast && <Toast message="Alert sent to truck drivers." type="success" onClose={() => setShowAlertToast(false)} />}
       </div>
     </div>
   );

@@ -211,7 +211,7 @@ function ProfileInfo({ profile, setProfile }) {
 
 function ProfileSettings({ onChangePassword }) {
   const { colors } = useTheme();
-  const { driver } = useAuth();
+  const { driver, setDriverStatus } = useAuth();
   const [isAvailable, setIsAvailable] = useState(true);
 
   const executeQueuedMutation = async (mutation) => {
@@ -241,6 +241,7 @@ function ProfileSettings({ onChangePassword }) {
     setIsAvailable(next);
     if (!driver?.id) return;
     const nextStatus = next ? "available" : "inactive";
+    setDriverStatus(nextStatus);
     const state = await NetInfo.fetch();
     if (!state.isConnected) {
       await enqueueMutation({ type: "SET_DRIVER_STATUS", driverId: driver.id, status: nextStatus });

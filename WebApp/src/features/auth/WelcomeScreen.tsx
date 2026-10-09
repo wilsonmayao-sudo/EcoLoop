@@ -16,7 +16,7 @@ export default function WelcomeScreen({ initialError }: WelcomeScreenProps) {
   // Show welcome screen
   if (screen === "welcome") {
     return (
-      <div className="relative w-full h-screen overflow-hidden bg-gradient-to-br from-emerald-500 via-teal-500 to-blue-500 flex items-center justify-center">
+      <div className="relative w-full h-screen overflow-hidden bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600 flex items-center justify-center">
         {/* Animated Background */}
         <div className="absolute inset-0 overflow-hidden">
           <div className="absolute -top-1/2 -left-1/2 w-full h-full bg-white/10 rounded-full blur-3xl animate-pulse"></div>
@@ -44,10 +44,10 @@ export default function WelcomeScreen({ initialError }: WelcomeScreenProps) {
             ECOLOOP
           </h1>
           <p className="font-['Poppins:Regular',sans-serif] text-2xl text-white/90 mb-4 text-center">
-            Waste collection routing and fleet operations
+            Waste Collection Routing and Fleet Operations
           </p>
           <p className="font-['Poppins:Regular',sans-serif] text-lg text-white/80 mb-16 text-center">
-            Naga City
+           City of Naga
           </p>
 
           {/* Features Grid */}
@@ -89,15 +89,15 @@ export default function WelcomeScreen({ initialError }: WelcomeScreenProps) {
             )}
             <button
               onClick={() => setScreen("login")}
-              className="h-[52px] bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl font-['Poppins:SemiBold',sans-serif] text-base text-white transition-all shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] relative overflow-hidden group"
+              className="h-[52px] bg-white hover:bg-emerald-50 active:bg-emerald-100 rounded-xl font-['Poppins:SemiBold',sans-serif] text-base text-emerald-700 transition-all shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] relative overflow-hidden group"
             >
               <span className="relative z-10">Login to Account</span>
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-emerald-100/70 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
             </button>
             
             <button
               onClick={() => setScreen("register")}
-              className="h-[52px] bg-sky-500 hover:bg-sky-600 active:bg-sky-700 rounded-xl font-['Poppins:SemiBold',sans-serif] text-base text-white transition-all shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] relative overflow-hidden group"
+              className="h-[52px] bg-white/10 hover:bg-white/20 active:bg-white/25 border-2 border-white rounded-xl font-['Poppins:SemiBold',sans-serif] text-base text-white transition-all shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] relative overflow-hidden group"
             >
               <span className="relative z-10">Register New Account</span>
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />

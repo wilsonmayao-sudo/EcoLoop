@@ -10,7 +10,7 @@ import { useTheme } from "../../context/ThemeContext";
  * Expandable list of assigned stops with "mark completed" actions.
  * Used on Home so drivers manage stops without leaving the dashboard.
  */
-export default function PendingPickupsList({ pendingPickups, colors, onCompletePickup }) {
+export default function PendingPickupsList({ pendingPickups, colors, onCompletePickup, canComplete = true }) {
   const { tokens } = useTheme();
   const [expandedIndex, setExpandedIndex] = useState(null);
 
@@ -35,6 +35,8 @@ export default function PendingPickupsList({ pendingPickups, colors, onCompleteP
     );
   }
 
+  const nextOpenIndex = pendingPickups.findIndex((pickup) => pickup.deliveryStatus !== "completed");
+
   return (
     <View>
       {pendingPickups.map((pickup, index) => (
@@ -43,14 +45,16 @@ export default function PendingPickupsList({ pendingPickups, colors, onCompleteP
           <PendingCard
             binId={pickup.binId}
             deliveryId={pickup.deliveryId}
-            isNext={index === 0}
+            isNext={index === nextOpenIndex}
             status={pickup.status}
+            deliveryStatus={pickup.deliveryStatus}
             due={pickup.due}
             tagColor={colors[pickup.tagColor] || colors.primary}
             hasDelay={pickup.hasDelay}
             expanded={expandedIndex === index}
             onToggle={() => setExpandedIndex(expandedIndex === index ? null : index)}
-            onComplete={() => onCompletePickup(pickup.binId)}
+            onComplete={() => onCompletePickup(pickup.deliveryId, pickup.binId)}
+            canComplete={canComplete}
             address={pickup.address}
             street={pickup.street}
             colors={colors}
@@ -62,27 +66,30 @@ export default function PendingPickupsList({ pendingPickups, colors, onCompleteP
 }
 
 const PendingCard = React.memo(
-  ({ isNext, status, due, tagColor, hasDelay, expanded, onToggle, onComplete, address, street, colors }) => {
-    const { tokens } = useTheme();
+  ({ isNext, status, deliveryStatus, due, tagColor, hasDelay, expanded, onToggle, onComplete, canComplete, address, street, colors }) => {
+    const isCompleted = deliveryStatus === "completed";
     return (
       <SurfaceCard
         padding={0}
-        style={isNext ? { borderWidth: 1.5, borderColor: colors.mapNext + "99" } : undefined}
+        style={isNext && !isCompleted ? { borderWidth: 1.5, borderColor: colors.mapNext + "99" } : undefined}
       >
         <TouchableOpacity onPress={onToggle} activeOpacity={0.82}>
           <View style={styles.pendingCardHeader}>
             <View style={styles.pendingCardContent}>
               <View style={styles.pendingCardTitleRow}>
-                <Text style={[styles.pendingCardTitle, { color: colors.textPrimary }]}>{status}</Text>
-                {isNext ? (
-                  <TagChip label="Next" backgroundColor={colors.chipNextBg} textColor={colors.chipNextText} />
-                ) : null}
+                <Text style={[styles.pendingCardTitle, { color: colors.textPrimary }]} numberOfLines={3}>
+                  {status}
+                </Text>
               </View>
               <View style={styles.pendingCardTags}>
+                {isCompleted ? (
+                  <TagChip label="Completed" color={colors.success} />
+                ) : isNext ? (
+                  <TagChip label="Next" backgroundColor={colors.chipNextBg} textColor={colors.chipNextText} />
+                ) : null}
                 <TagChip label={due} color={tagColor} />
                 {hasDelay ? (
                   <>
-                    <View style={{ width: tokens.space.sm }} />
                     <TagChip label="Delays" color={colors.danger} />
                   </>
                 ) : null}
@@ -107,7 +114,19 @@ const PendingCard = React.memo(
                 <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{address}</Text>
               </View>
             </View>
-            <AppButton title="Mark completed" icon="checkmark-circle-outline" onPress={onComplete} />
+            {isCompleted ? (
+              <View style={[styles.completedPill, { backgroundColor: colors.success + "18" }]}>
+                <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                <Text style={[styles.completedPillText, { color: colors.success }]}>Completed</Text>
+              </View>
+            ) : (
+              <AppButton
+                title={canComplete ? "Complete" : "Accept route assignment"}
+                icon="checkmark-circle-outline"
+                onPress={onComplete}
+                disabled={!canComplete}
+              />
+            )}
           </View>
         )}
       </SurfaceCard>
@@ -122,10 +141,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 18,
   },
-  pendingCardContent: { flex: 1, marginRight: 12 },
-  pendingCardTitle: { fontSize: 17, fontWeight: "800", marginBottom: 10, lineHeight: 22, letterSpacing: -0.2 },
+  pendingCardContent: { flex: 1, minWidth: 0, marginRight: 12 },
+  pendingCardTitle: { flexShrink: 1, fontSize: 17, fontWeight: "800", lineHeight: 22 },
   pendingCardTags: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
-  pendingCardTitleRow: { gap: 10 },
+  pendingCardTitleRow: { marginBottom: 10, minWidth: 0 },
   chevronWrap: {
     width: 34,
     height: 34,
@@ -152,6 +171,15 @@ const styles = StyleSheet.create({
   },
   detailValue: { fontSize: 14, lineHeight: 20, fontWeight: "500" },
   locationInfo: { marginBottom: 14, borderRadius: 14, padding: 14 },
+  completedPill: {
+    minHeight: 48,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  completedPillText: { fontSize: 15, fontWeight: "800" },
   emptyState: { alignItems: "center", justifyContent: "center", paddingVertical: 30, paddingHorizontal: 16 },
   emptyIconWrap: {
     width: 64,

@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Trash2, MapPin, AlertTriangle, X, CheckCircle, User, Image as ImageIcon, Route, Navigation } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, X, CheckCircle, User, Image as ImageIcon, Route, Navigation, Trash2, ChevronDown } from "lucide-react";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import Toast from "../components/feedback/Toast";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
+import RoleIndicator from "../components/layout/RoleIndicator";
 import ReportLocationMap from "../components/reports/ReportLocationMap";
+import CustomSelect from "../components/ui/CustomSelect";
 import { useAuth } from "../contexts/AuthContext";
 import { formatDateOnly, formatDateTime, useLiveData, type WasteReportRecord } from "../hooks/useLiveData";
 import { parseReportCoordinate, resolveReportImageUrl } from "../utils/reportMedia";
@@ -16,8 +18,125 @@ interface ReportsAndIssuesProps {
 
 const statusOptions = ["pending", "in_progress", "resolved"];
 
+type StatusFilter = "all" | "pending" | "in_progress" | "resolved";
+type DayFilter = "all" | "today" | "7" | "30";
+
+const statusFilterOptions: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All Reports" },
+  { value: "pending", label: "Pending" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "resolved", label: "Resolved" },
+];
+
+const dayFilterOptions: { value: DayFilter; label: string }[] = [
+  { value: "all", label: "All Days" },
+  { value: "today", label: "Today" },
+  { value: "7", label: "Last 7 Days" },
+  { value: "30", label: "Last 30 Days" },
+];
+
+interface StatusSelectProps {
+  value: string;
+  onChange: (status: string) => void;
+  getStatusColor: (status: string) => string;
+  className?: string;
+}
+
 function displayValue(value?: string | null) {
   return value ? value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Not recorded";
+}
+
+function StatusSelect({ value, onChange, getStatusColor, className = "" }: StatusSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, minWidth: 0 });
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  const updateMenuPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const menuHeight = 104;
+    const gap = 4;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const shouldOpenUp = spaceBelow < menuHeight + gap && rect.top > spaceBelow;
+
+    setMenuPosition({
+      top: shouldOpenUp ? Math.max(gap, rect.top - menuHeight - gap) : rect.bottom + gap,
+      left: Math.max(gap, Math.min(rect.left, window.innerWidth - rect.width - gap)),
+      minWidth: rect.width,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [open, updateMenuPosition]);
+
+  return (
+    <div
+      className={`relative inline-block text-left ${className}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => {
+          updateMenuPosition();
+          setOpen((current) => !current);
+        }}
+        className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-1 text-xs capitalize ${getStatusColor(value)}`}
+      >
+        <span className="truncate">{displayValue(value)}</span>
+        <ChevronDown className={`size-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+      </button>
+
+      {open && (
+        <div
+          className="fixed z-[350] overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg"
+          style={{
+            top: menuPosition.top,
+            left: menuPosition.left,
+            minWidth: menuPosition.minWidth,
+          }}
+        >
+          <div role="listbox" aria-label="Report status" className="max-h-40 overflow-auto">
+            {statusOptions.map((status) => (
+              <button
+                key={status}
+                type="button"
+                role="option"
+                aria-selected={status === value}
+                onClick={() => {
+                  setOpen(false);
+                  onChange(status);
+                }}
+                className={`block w-full whitespace-nowrap px-3 py-1.5 text-left capitalize ${
+                  status === value
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                {displayValue(status)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function isCustomIssueReport(report: WasteReportRecord) {
@@ -40,12 +159,26 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
   } = useLiveData();
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null as WasteReportRecord | null);
+  const [dayFilter, setDayFilter] = useState("all" as DayFilter);
+  const [statusFilter, setStatusFilter] = useState("all" as StatusFilter);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [reportToDelete, setReportToDelete] = useState(null as string | null);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState({ message: "", type: "success" as "success" | "error" | "warning" | "info" });
   const { profile } = useAuth();
-  const canManageReports = profile?.role === "admin" || profile?.role === "supervisor";
+  const canEditReportStatus = profile?.role === "supervisor" || profile?.role === "dispatcher";
+  const canDeleteReports =
+    profile?.role === "admin" || profile?.role === "supervisor" || profile?.role === "dispatcher";
+
+  const openReportDetails = (report: WasteReportRecord) => {
+    setSelectedReport(report);
+    setShowDetailsModal(true);
+  };
+
+  const closeReportDetails = () => {
+    setShowDetailsModal(false);
+    setShowDeleteConfirm(false);
+    setSelectedReport(null);
+  };
 
   useEffect(() => {
     if (!showDetailsModal || !selectedReport?.id) return;
@@ -63,15 +196,35 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
     [reports],
   );
 
+  const filteredReports = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const rangeStart =
+      dayFilter === "today"
+        ? todayStart
+        : dayFilter === "7" || dayFilter === "30"
+          ? new Date(now.getFullYear(), now.getMonth(), now.getDate() - (Number(dayFilter) - 1))
+          : null;
+
+    return reports.filter((report) => {
+      if (statusFilter !== "all" && report.status !== statusFilter) return false;
+      if (!rangeStart) return true;
+
+      const submittedAt = new Date(report.created_at);
+      return !Number.isNaN(submittedAt.getTime()) && submittedAt >= rangeStart;
+    });
+  }, [dayFilter, reports, statusFilter]);
+
+  const activeFilterLabel = statusFilterOptions.find((option) => option.value === statusFilter)?.label ?? "All Reports";
+  const activeDayFilterLabel = dayFilterOptions.find((option) => option.value === dayFilter)?.label ?? "All Days";
+
   const confirmDelete = async () => {
-    const id = reportToDelete;
-    if (!id) return;
+    if (!selectedReport) return;
+    const id = selectedReport.id;
     try {
       await deleteReport(id);
-      if (selectedReport?.id === id) {
-        setSelectedReport(null);
-        setShowDetailsModal(false);
-      }
+      setShowDeleteConfirm(false);
+      closeReportDetails();
       setToastMessage({ message: "Report deleted successfully.", type: "success" });
       setShowToast(true);
     } catch (err: any) {
@@ -85,28 +238,42 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
   const handleMarkAsResolved = async () => {
     if (!selectedReport) return;
     if (selectedReport.status === "resolved") return;
-    await resolveReport(selectedReport.id);
-    await notifyDriverReportStatus(selectedReport, "resolved");
-    setSelectedReport({ ...selectedReport, status: "resolved", resolved_at: new Date().toISOString() });
-    setToastMessage({ message: "Report marked as resolved.", type: "success" });
-    setShowToast(true);
+    try {
+      await resolveReport(selectedReport.id);
+      await notifyDriverReportStatus(selectedReport, "resolved");
+      setSelectedReport({ ...selectedReport, status: "resolved", resolved_at: new Date().toISOString() });
+      setToastMessage({ message: "Report marked as resolved.", type: "success" });
+      setShowToast(true);
+    } catch (err: any) {
+      const msg = err?.message ?? "Could not update report status. You may not have permission.";
+      setToastMessage({ message: msg, type: "error" });
+      setShowToast(true);
+    }
   };
 
   const handleStatusChange = async (report: WasteReportRecord, status: string) => {
     if (report.status === status) return;
-    await updateReport(report.id, {
-      status,
-      resolved_at: status === "resolved" ? new Date().toISOString() : null,
-    });
-    await notifyDriverReportStatus(report, status);
+    try {
+      await updateReport(report.id, {
+        status,
+        resolved_at: status === "resolved" ? new Date().toISOString() : null,
+      });
+      await notifyDriverReportStatus(report, status);
+      setToastMessage({ message: `Report status updated to ${displayValue(status)}.`, type: "success" });
+      setShowToast(true);
+    } catch (err: any) {
+      const msg = err?.message ?? "Could not update report status. You may not have permission.";
+      setToastMessage({ message: msg, type: "error" });
+      setShowToast(true);
+    }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case "pending":
-        return "bg-red-100 text-red-700";
-      case "in_progress":
         return "bg-yellow-100 text-yellow-700";
+      case "in_progress":
+        return "bg-blue-100 text-blue-700";
       case "resolved":
         return "bg-green-100 text-green-700";
       default:
@@ -154,6 +321,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
   return (
     <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
       <div className="space-y-6">
+        <RoleIndicator />
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-gray-900">Reports & Issues</h2>
@@ -179,12 +347,12 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <div className="text-gray-600 text-sm">Pending</div>
             <div className="text-gray-900 mt-2">{loading ? "..." : reportStats.pending}</div>
-            <div className="text-red-500 text-sm mt-1">Needs attention</div>
+            <div className="text-yellow-500 text-sm mt-1">Needs attention</div>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <div className="text-gray-600 text-sm">In Progress</div>
             <div className="text-gray-900 mt-2">{loading ? "..." : reportStats.inProgress}</div>
-            <div className="text-yellow-500 text-sm mt-1">Being handled</div>
+            <div className="text-blue-500 text-sm mt-1">Being handled</div>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <div className="text-gray-600 text-sm">Resolved</div>
@@ -194,8 +362,37 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
         </div>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="p-6 border-b border-gray-200">
-            <h3 className="text-gray-900">All Reports</h3>
+          <div className="flex flex-col gap-4 border-b border-gray-200 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-gray-900">{activeFilterLabel}</h3>
+              {(dayFilter !== "all" || statusFilter !== "all") && (
+                <p className="mt-1 text-sm text-gray-500">
+                  Showing {filteredReports.length} of {reports.length} reports for {activeDayFilterLabel.toLowerCase()}
+                </p>
+              )}
+            </div>
+            <div className="grid w-full grid-cols-2 gap-3 sm:w-auto sm:min-w-[24rem]">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Days</label>
+                <CustomSelect
+                  value={dayFilter}
+                  onChange={(value) => setDayFilter(value as DayFilter)}
+                  options={dayFilterOptions}
+                  buttonClassName="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  ariaLabel="Filter reports by days"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
+                <CustomSelect
+                  value={statusFilter}
+                  onChange={(value) => setStatusFilter(value as StatusFilter)}
+                  options={statusFilterOptions}
+                  buttonClassName="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  ariaLabel="Filter reports by status"
+                />
+              </div>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -210,15 +407,18 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                   <th className="px-4 py-3 text-left text-sm text-gray-600">Status</th>
                   <th className="px-4 py-3 text-left text-sm text-gray-600">Submitted</th>
                   <th className="px-4 py-3 text-left text-sm text-gray-600">Assigned</th>
-                  <th className="px-4 py-3 text-left text-sm text-gray-600">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {reports.map((report) => {
+                {filteredReports.map((report) => {
                   const thumbUrl = resolveReportImageUrl(report.image_url);
                   const hasGps = parseReportCoordinate(report.latitude) != null && parseReportCoordinate(report.longitude) != null;
                   return (
-                  <tr key={report.id} className="hover:bg-gray-50 transition-colors">
+                  <tr
+                    key={report.id}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => openReportDetails(report)}
+                  >
                     <td className="px-4 py-4 text-sm text-gray-900">
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-2">
@@ -260,54 +460,24 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                         <span className="text-xs text-gray-400">None</span>
                       )}
                     </td>
-                    <td className="px-4 py-4">
-                      {canManageReports ? (
-                        <select value={report.status} onChange={(event) => void handleStatusChange(report, event.target.value)} className={`max-w-[9rem] px-2 py-1 rounded-full text-xs border-0 capitalize ${getStatusColor(report.status)}`}>
-                          {statusOptions.map((status) => (
-                            <option key={status} value={status}>
-                              {displayValue(status)}
-                            </option>
-                          ))}
-                        </select>
+                    <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
+                      {canEditReportStatus ? (
+                        <StatusSelect value={report.status} onChange={(status) => void handleStatusChange(report, status)} getStatusColor={getStatusColor} className="max-w-[9rem]" />
                       ) : (
                         <span className={`inline-flex rounded-full px-2 py-1 text-xs capitalize ${getStatusColor(report.status)}`}>{displayValue(report.status)}</span>
                       )}
                     </td>
                     <td className="px-4 py-4 text-sm text-gray-900 whitespace-nowrap">{formatDateTime(report.created_at)}</td>
                     <td className="px-4 py-4 text-sm text-gray-900 max-w-[8rem] truncate">{report.assigned_to ?? "Unassigned"}</td>
-                    <td className="px-4 py-4">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedReport(report);
-                            setShowDetailsModal(true);
-                          }}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                          title="View full report"
-                        >
-                          <MapPin className="size-4" />
-                        </button>
-                        {canManageReports && (
-                          <button
-                            onClick={() => {
-                              setReportToDelete(report.id);
-                              setShowDeleteConfirm(true);
-                            }}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                            title="Delete Report"
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
                   </tr>
                   );
                 })}
-                {!loading && reports.length === 0 && (
+                {!loading && filteredReports.length === 0 && (
                   <tr>
-                    <td className="px-6 py-8 text-center text-gray-500" colSpan={10}>
-                      No reports found yet.
+                    <td className="px-6 py-8 text-center text-gray-500" colSpan={9}>
+                      {reports.length === 0
+                        ? "No reports found yet."
+                        : `No ${activeFilterLabel.toLowerCase()} found.`}
                     </td>
                   </tr>
                 )}
@@ -317,7 +487,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
         </div>
 
         {showDetailsModal && selectedReport && (
-          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-3 md:p-6" onClick={() => setShowDetailsModal(false)}>
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-3 md:p-6" onClick={closeReportDetails}>
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
               <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-4 md:px-6">
                 <div className="min-w-0">
@@ -332,7 +502,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                     )}
                   </p>
                 </div>
-                <button type="button" className="shrink-0 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700" onClick={() => setShowDetailsModal(false)} aria-label="Close">
+                <button type="button" className="shrink-0 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700" onClick={closeReportDetails} aria-label="Close">
                   <X className="size-5" />
                 </button>
               </div>
@@ -366,8 +536,12 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                         ) : selectedReport.report_type?.trim() && selectedReport.type && selectedReport.report_type.trim() !== selectedReport.type && (
                           <p className="text-xs text-gray-500 mt-1">Internal type: {selectedReport.type}</p>
                         )}
-                        <div className="mt-2">
-                          <span className={`inline-flex px-2 py-1 rounded-full text-xs capitalize ${getStatusColor(selectedReport.status)}`}>{displayValue(selectedReport.status)}</span>
+                        <div className="mt-2" onClick={(event) => event.stopPropagation()}>
+                          {canEditReportStatus ? (
+                            <StatusSelect value={selectedReport.status} onChange={(status) => void handleStatusChange(selectedReport, status)} getStatusColor={getStatusColor} className="max-w-full" />
+                          ) : (
+                            <span className={`inline-flex px-2 py-1 rounded-full text-xs capitalize ${getStatusColor(selectedReport.status)}`}>{displayValue(selectedReport.status)}</span>
+                          )}
                         </div>
                       </div>
                       <div className="rounded-lg border border-gray-100 bg-gray-50/80 p-4 sm:col-span-2 lg:col-span-1">
@@ -449,10 +623,20 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
               })()}
 
               <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-gray-200 bg-white p-4 sm:flex-row sm:gap-3 md:px-6">
-                <button type="button" onClick={() => setShowDetailsModal(false)} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                {canDeleteReports && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 sm:mr-auto"
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                    Delete Report
+                  </button>
+                )}
+                <button type="button" onClick={closeReportDetails} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
                   Close
                 </button>
-                {canManageReports && selectedReport.status !== "resolved" && (
+                {canEditReportStatus && selectedReport.status !== "resolved" && (
                   <button type="button" onClick={() => void handleMarkAsResolved()} className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
                     Mark as Resolved
                   </button>
@@ -464,10 +648,7 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
 
         <ConfirmModal
           isOpen={showDeleteConfirm}
-          onClose={() => {
-            setShowDeleteConfirm(false);
-            setReportToDelete(null);
-          }}
+          onClose={() => setShowDeleteConfirm(false)}
           onConfirm={() => confirmDelete()}
           title="Delete Report"
           message="Are you sure you want to delete this report? This action cannot be undone."

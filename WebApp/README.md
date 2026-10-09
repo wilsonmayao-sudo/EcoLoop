@@ -22,7 +22,7 @@ VITE_MAPBOX_ACCESS_TOKEN=
 
 **What it does in this app:**
 
-- **Route Planning:** stop order for new/auto routes uses the [Directions Matrix API](https://docs.mapbox.com/api/navigation/matrix/) profile `driving-traffic` (pairwise **durations**), up to **25** coordinates per request; larger routes fall back to haversine distances.
+- **Route Planning:** stop order for new routes uses the [Directions Matrix API](https://docs.mapbox.com/api/navigation/matrix/) profile `driving-traffic` (pairwise **durations**), up to **25** coordinates per request; larger routes fall back to haversine distances.
 - **Route map modal:** shows a Mapbox **navigation-day** style map (traffic). Without a token, the modal falls back to an OpenStreetMap embed.
 
 Install and run:

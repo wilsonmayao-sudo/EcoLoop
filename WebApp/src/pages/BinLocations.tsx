@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { MapPin, Plus, X, Navigation, Pencil, Trash2 } from "lucide-react";
 import NotificationDropdown from "../components/feedback/NotificationDropdown";
+import RoleIndicator from "../components/layout/RoleIndicator";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import { formatDateOnly, useLiveData, type BinRecord } from "../hooks/useLiveData";
 import BinLocationPicker from "../components/maps/BinLocationPicker";
+import CustomSelect from "../components/ui/CustomSelect";
 
 type PageType = "dashboard" | "route-planning" | "vehicle-monitoring" | "reports" | "bin-locations" | "notifications";
 
@@ -11,11 +13,18 @@ interface BinLocationsProps {
   onNavigate?: (page: PageType) => void;
 }
 
-const emptyBinForm = { code: "", location: "", lat: "", lng: "" };
+const NAGA_CITY_COORDINATE = { latitude: 13.6218, longitude: 123.1948 };
+const emptyBinForm = {
+  code: "",
+  location: "",
+  type: "",
+  lat: String(NAGA_CITY_COORDINATE.latitude),
+  lng: String(NAGA_CITY_COORDINATE.longitude),
+};
 const DEFAULT_BIN_TYPE = "collection_site";
 
 export default function BinLocations({ onNavigate }: BinLocationsProps) {
-  const { bins, loading, error, createBin, updateBin, deleteBin } = useLiveData();
+  const { bins, binTypes, loading, error, createBin, updateBin, deleteBin } = useLiveData();
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedBin, setSelectedBin] = useState(null as BinRecord | null);
   const [showMapModal, setShowMapModal] = useState(false);
@@ -36,6 +45,7 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
       }).length,
     [bins],
   );
+  const activeBinTypes = useMemo(() => binTypes.map((type) => type.name), [binTypes]);
 
   const parseCoordinates = (latValue: string, lngValue: string) => {
     if (!latValue.trim() || !lngValue.trim()) {
@@ -59,6 +69,19 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
     return Number.isFinite(parsed) ? parsed : null;
   };
 
+  const getTypeColor = (type?: string | null) => {
+    switch (type) {
+      case "residential":
+        return "bg-blue-100 text-blue-700";
+      case "commercial":
+        return "bg-purple-100 text-purple-700";
+      case "industrial":
+        return "bg-amber-100 text-amber-700";
+      default:
+        return "bg-gray-100 text-gray-700";
+    }
+  };
+
   const handleAddBin = async () => {
     try {
       setFormError(null);
@@ -66,11 +89,17 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
         setFormError("Code and location are required.");
         return;
       }
+      const normalizedCode = newBin.code.trim().toLowerCase();
+      const duplicateCode = bins.some((bin) => (bin.code ?? "").trim().toLowerCase() === normalizedCode);
+      if (duplicateCode) {
+        setFormError("Bin code already exists.");
+        return;
+      }
       const coordinates = parseCoordinates(newBin.lat, newBin.lng);
       await createBin({
         code: newBin.code.trim(),
         location: newBin.location.trim(),
-        type: DEFAULT_BIN_TYPE,
+        type: newBin.type || DEFAULT_BIN_TYPE,
         latitude: coordinates.latitude,
         longitude: coordinates.longitude,
         status: "active",
@@ -103,10 +132,10 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
     setSelectedBin(bin);
     setShowMapModal(true);
   };
-
   return (
     <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
       <div className="space-y-6">
+        <RoleIndicator />
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-gray-900">Bin Locations</h2>
@@ -149,6 +178,7 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
           <button
             className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg"
             onClick={() => {
+              setNewBin(emptyBinForm);
               setFormError(null);
               setShowAddModal(true);
             }}
@@ -171,9 +201,14 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
                     </div>
                     <div className="flex-1">
                       <h3 className="text-gray-900">{bin.code ?? bin.id}</h3>
-                      <span className="inline-flex px-2 py-0.5 rounded-full text-xs mt-1 bg-emerald-50 text-emerald-700 capitalize">
-                        {bin.status ?? "active"}
-                      </span>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs capitalize ${getTypeColor(bin.type)}`}>
+                          {bin.type ?? "collection_site"}
+                        </span>
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-xs bg-emerald-50 text-emerald-700 capitalize">
+                          {bin.status ?? "active"}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <button className="p-1 text-red-600 hover:bg-red-50 rounded" onClick={() => setBinToDelete(bin)} title="Delete bin">
@@ -234,6 +269,14 @@ export default function BinLocations({ onNavigate }: BinLocationsProps) {
               <div className="space-y-4">
                 <input value={newBin.code} onChange={(event) => setNewBin({ ...newBin, code: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Bin code" />
                 <input value={newBin.location} onChange={(event) => setNewBin({ ...newBin, location: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Location name or address" />
+                <CustomSelect
+                  value={newBin.type}
+                  onChange={(type) => setNewBin({ ...newBin, type })}
+                  options={activeBinTypes.map((type) => ({ value: type, label: type }))}
+                  placeholder="Select type"
+                  buttonClassName="h-10 px-3 bg-white border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all capitalize"
+                  ariaLabel="Bin type"
+                />
                 <div className="grid grid-cols-2 gap-3">
                   <input type="number" step="any" value={newBin.lat} onChange={(event) => setNewBin({ ...newBin, lat: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Latitude" />
                   <input type="number" step="any" value={newBin.lng} onChange={(event) => setNewBin({ ...newBin, lng: event.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Longitude" />

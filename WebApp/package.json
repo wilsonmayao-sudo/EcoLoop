@@ -5,6 +5,8 @@
   "type": "module",
   "dependencies": {
     "@supabase/supabase-js": "^2.105.3",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.487.0",
     "mapbox-gl": "^3.23.1",
     "react": "^18.3.1",
