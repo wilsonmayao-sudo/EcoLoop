@@ -1,9 +1,23 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
 import { supabase } from "../lib/supabase";
 import { clearDriverLatestLocation } from "../services/liveLocation";
 
 const AuthContext = createContext(null);
 const APPROVAL_PENDING_MESSAGE = "Your account is still waiting for admin approval.";
+
+function isInvalidRefreshTokenError(error) {
+  const msg = String(error?.message ?? error ?? "");
+  return /invalid refresh token|refresh token not found/i.test(msg);
+}
+
+async function clearStaleLocalSession() {
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+  } catch {
+    // Ignore local cleanup errors
+  }
+}
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
@@ -93,16 +107,35 @@ export function AuthProvider({ children }) {
     let mounted = true;
     supabase.auth.getSession().then(async ({ data, error }) => {
       if (!mounted) return;
-      if (error) console.warn("Failed loading session:", error.message);
+      if (error) {
+        if (isInvalidRefreshTokenError(error)) {
+          await clearStaleLocalSession();
+          setSession(null);
+          setProfile(null);
+          setDriver(null);
+          setAuthError(null);
+          setLoading(false);
+          return;
+        }
+        console.warn("Failed loading session:", error.message);
+      }
       const currentSession = data?.session ?? null;
       try {
         setAuthError(null);
         await refreshAccount(currentSession);
       } catch (driverError) {
-        setAuthError(driverError.message);
-        await supabase.auth.signOut();
+        if (isInvalidRefreshTokenError(driverError)) {
+          await clearStaleLocalSession();
+          setAuthError(null);
+        } else {
+          setAuthError(driverError.message);
+          await clearStaleLocalSession();
+        }
+        setSession(null);
+        setProfile(null);
+        setDriver(null);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     });
 
@@ -113,7 +146,7 @@ export function AuthProvider({ children }) {
         setProfile(null);
         setDriver(null);
         if (nextSession?.user?.id) {
-          await supabase.auth.signOut();
+          await clearStaleLocalSession();
         }
         return;
       }
@@ -122,8 +155,16 @@ export function AuthProvider({ children }) {
         setAuthError(null);
         await refreshAccount(nextSession);
       } catch (driverError) {
-        setAuthError(driverError.message);
-        await supabase.auth.signOut();
+        if (isInvalidRefreshTokenError(driverError)) {
+          await clearStaleLocalSession();
+          setAuthError(null);
+        } else {
+          setAuthError(driverError.message);
+          await clearStaleLocalSession();
+        }
+        setSession(null);
+        setProfile(null);
+        setDriver(null);
       }
     });
 
@@ -147,6 +188,35 @@ export function AuthProvider({ children }) {
 
     return () => {
       supabase.removeChannel(channel);
+    };
+  }, [driver?.id]);
+
+  useEffect(() => {
+    if (!driver?.id) return undefined;
+
+    const touchLastSeen = async () => {
+      try {
+        await supabase
+          .from("drivers")
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq("id", driver.id);
+      } catch {
+        /* non-fatal network error */
+      }
+    };
+
+    if (AppState.currentState === "active") {
+      void touchLastSeen();
+    }
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void touchLastSeen();
+      }
+    });
+
+    return () => {
+      subscription.remove();
     };
   }, [driver?.id]);
 
@@ -224,6 +294,11 @@ export function AuthProvider({ children }) {
     if (driver?.id) {
       try {
         await clearDriverLatestLocation({ driverId: driver.id });
+        const presenceChannel = supabase.channel("drivers-presence", {
+          config: { presence: { key: String(driver.id) } },
+        });
+        await presenceChannel.untrack();
+        supabase.removeChannel(presenceChannel);
       } catch (error) {
         console.warn("Unable to clear driver location during sign out:", error?.message);
       }

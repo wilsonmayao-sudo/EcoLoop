@@ -29,13 +29,17 @@ function readEnvValueFromFile(filePath, key) {
 
 module.exports = ({ config }) => {
   const baseExpo = appJson.expo ?? {};
-  const plugins = [...(config.plugins ?? []), ...(baseExpo.plugins ?? []), 'expo-notifications'];
-  const mobileRoot = __dirname;
-  const mobileEnv = path.join(mobileRoot, '.env');
-  const mobileEnvLocal = path.join(mobileRoot, '.env.local');
-  const webEnvLocal = path.join(mobileRoot, '..', 'WebApp', '.env.local');
-
   const baseExtra = { ...(config.extra || {}), ...(baseExpo.extra || {}) };
+  const pluginName = (entry) => (Array.isArray(entry) ? entry[0] : entry);
+  const rawPlugins = [...(config.plugins ?? []), ...(baseExpo.plugins ?? []), 'expo-notifications'];
+  const seenPlugins = new Set();
+  const plugins = [];
+  for (const entry of rawPlugins) {
+    const name = pluginName(entry);
+    if (!name || seenPlugins.has(name)) continue;
+    seenPlugins.add(name);
+    plugins.push(entry);
+  }
 
   /**
    * Mapbox public token (pk.*). If the map is blank in the app but overlays work, the token may have
@@ -63,7 +67,6 @@ module.exports = ({ config }) => {
     plugins,
     extra: {
       ...baseExtra,
-      openRouteApiKey: process.env.OPENROUTE_API_KEY || readEnvValueFromFile(mobileEnv, 'OPENROUTE_API_KEY') || readEnvValueFromFile(mobileEnvLocal, 'OPENROUTE_API_KEY') || baseExtra.openRouteApiKey || '',
       mapboxAccessToken,
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || readEnvValueFromFile(mobileEnv, 'EXPO_PUBLIC_SUPABASE_URL') || readEnvValueFromFile(mobileEnvLocal, 'EXPO_PUBLIC_SUPABASE_URL') || readEnvValueFromFile(webEnvLocal, 'VITE_SUPABASE_URL') || baseExtra.supabaseUrl || '',
       supabaseAnonKey:

@@ -39,7 +39,7 @@ export const NotificationProvider = ({ children }) => {
 
   useEffect(() => {
     configureNotificationHandler();
-    void ensureAndroidRoutingChannel();
+    void ensureAndroidRoutingChannel().catch(() => {});
   }, []);
 
   useEffect(() => {

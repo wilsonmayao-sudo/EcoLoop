@@ -15,20 +15,25 @@ export const useCompletedRoutes = () => {
 export const CompletedRoutesProvider = ({ children }) => {
   const { driver } = useAuth();
   const [completedRoutes, setCompletedRoutes] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const loadCompletedRoutes = useCallback(async () => {
     if (!driver?.id) {
       setCompletedRoutes([]);
+      setError(null);
+      setIsLoading(false);
       return;
     }
+    setIsLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error: qErr } = await supabase
         .from("routes")
-        .select("id, name, distance_km, duration_minutes, completed_at, deliveries!inner(id)")
+        .select("id, name, distance_km, duration_minutes, completed_at, deliveries(id)")
         .eq("driver_id", driver.id)
         .eq("status", "completed")
         .order("completed_at", { ascending: false });
-      if (error) throw error;
+      if (qErr) throw qErr;
       const mapped = (data ?? []).map((route) => ({
         id: route.id,
         name: route.name,
@@ -38,8 +43,12 @@ export const CompletedRoutesProvider = ({ children }) => {
         timeTaken: `${Math.max(1, Number(route.duration_minutes ?? 0))}m`,
       }));
       setCompletedRoutes(mapped);
-    } catch (error) {
-      console.error("Error loading completed routes:", error);
+      setError(null);
+    } catch (err) {
+      console.error("Error loading completed routes:", err);
+      setError(err?.message ?? "Error loading completed routes");
+    } finally {
+      setIsLoading(false);
     }
   }, [driver?.id]);
 
@@ -70,7 +79,10 @@ export const CompletedRoutesProvider = ({ children }) => {
   const value = useMemo(() => ({
     completedRoutes,
     addCompletedRoute,
-  }), [completedRoutes, addCompletedRoute]);
+    isLoading,
+    error,
+    reloadCompletedRoutes: loadCompletedRoutes,
+  }), [completedRoutes, addCompletedRoute, isLoading, error, loadCompletedRoutes]);
 
   return <CompletedRoutesContext.Provider value={value}>{children}</CompletedRoutesContext.Provider>;
 };

@@ -1,11 +1,24 @@
 import { AppState, Platform } from "react-native";
-import Constants from "expo-constants";
+import { isRunningInExpoGo } from "expo";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 
 const ANDROID_CHANNEL_ID = "ecoloop-routing";
 
 /** In Expo Go, `expo-notifications` triggers native init errors on Android (SDK 53+). Skip loading the module. */
-function isExpoGo() {
-  return Constants.appOwnership === "expo";
+export function isExpoGo() {
+  try {
+    if (typeof isRunningInExpoGo === "function" && isRunningInExpoGo()) {
+      return true;
+    }
+  } catch {
+    /* fallback to Constants */
+  }
+  return (
+    Constants.appOwnership === "expo" ||
+    Constants.executionEnvironment === "storeClient" ||
+    Constants.executionEnvironment === ExecutionEnvironment?.StoreClient ||
+    Boolean(Constants.expoVersion)
+  );
 }
 
 let notificationsImportPromise = null;
@@ -13,7 +26,10 @@ let notificationsImportPromise = null;
 async function getNotifications() {
   if (isExpoGo()) return null;
   if (!notificationsImportPromise) {
-    notificationsImportPromise = import("expo-notifications");
+    notificationsImportPromise = import("expo-notifications").catch((error) => {
+      console.warn("Failed to import expo-notifications:", error?.message || error);
+      return null;
+    });
   }
   return notificationsImportPromise;
 }
@@ -25,41 +41,55 @@ export function configureNotificationHandler() {
   if (handlerConfigured) return;
   handlerConfigured = true;
   if (isExpoGo()) return;
-  void getNotifications().then((Notifications) => {
-    if (!Notifications) return;
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: false,
-        shouldSetBadge: true,
-      }),
+  void getNotifications()
+    .then((Notifications) => {
+      if (!Notifications || typeof Notifications.setNotificationHandler !== "function") return;
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: false,
+          shouldSetBadge: true,
+        }),
+      });
+    })
+    .catch((error) => {
+      console.warn("Unable to configure notification handler:", error?.message || error);
     });
-  });
 }
 
 export async function ensureAndroidRoutingChannel() {
   if (Platform.OS !== "android" || isExpoGo()) return;
-  const Notifications = await getNotifications();
-  if (!Notifications) return;
-  await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
-    name: "Route assignments",
-    importance: Notifications.AndroidImportance.DEFAULT,
-    lightColor: "#38A65C",
-  });
+  try {
+    const Notifications = await getNotifications();
+    if (!Notifications || typeof Notifications.setNotificationChannelAsync !== "function") return;
+    const importance = Notifications.AndroidImportance?.DEFAULT ?? 5;
+    await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
+      name: "Route assignments",
+      importance,
+      lightColor: "#38A65C",
+    });
+  } catch (error) {
+    console.warn("Unable to configure Android notification channel:", error?.message || error);
+  }
 }
 
 export async function requestExpoNotificationPermissions() {
   if (isExpoGo()) {
     return true;
   }
-  const Notifications = await getNotifications();
-  if (!Notifications) return false;
-  const existing = await Notifications.getPermissionsAsync();
-  if (existing.granted || existing.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL) {
-    return true;
+  try {
+    const Notifications = await getNotifications();
+    if (!Notifications || typeof Notifications.getPermissionsAsync !== "function") return false;
+    const existing = await Notifications.getPermissionsAsync();
+    if (existing?.granted || existing?.ios?.status === Notifications.IosAuthorizationStatus?.PROVISIONAL) {
+      return true;
+    }
+    const next = await Notifications.requestPermissionsAsync();
+    return Boolean(next?.granted || next?.ios?.status === Notifications.IosAuthorizationStatus?.PROVISIONAL);
+  } catch (error) {
+    console.warn("Unable to request notification permissions:", error?.message || error);
+    return false;
   }
-  const next = await Notifications.requestPermissionsAsync();
-  return Boolean(next.granted || next.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL);
 }
 
 const seenLocalIds = new Set();
@@ -88,24 +118,28 @@ export async function presentLocalNotificationWhenAway({ id, title, body, data }
   const state = AppState.currentState;
   if (state === "active") return;
 
-  const ok = await requestExpoNotificationPermissions();
-  if (!ok) return;
+  try {
+    const ok = await requestExpoNotificationPermissions();
+    if (!ok) return;
 
-  const Notifications = await getNotifications();
-  if (!Notifications) return;
+    const Notifications = await getNotifications();
+    if (!Notifications || typeof Notifications.scheduleNotificationAsync !== "function") return;
 
-  markScheduledLocally(id);
-  await ensureAndroidRoutingChannel();
+    markScheduledLocally(id);
+    await ensureAndroidRoutingChannel();
 
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: title || "EcoLoop",
-      body: body || "",
-      data: data ?? {},
-      ...(Platform.OS === "android" ? { channelId: ANDROID_CHANNEL_ID } : {}),
-    },
-    trigger: null,
-  });
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: title || "EcoLoop",
+        body: body || "",
+        data: data ?? {},
+        ...(Platform.OS === "android" ? { channelId: ANDROID_CHANNEL_ID } : {}),
+      },
+      trigger: null,
+    });
+  } catch (error) {
+    console.warn("Unable to present local notification:", error?.message || error);
+  }
 }
 
 export async function setIosBadgeCount(count) {

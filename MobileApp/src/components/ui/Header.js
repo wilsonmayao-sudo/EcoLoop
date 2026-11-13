@@ -3,27 +3,49 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../context/ThemeContext";
 
-export default function Header({ title, subtitle = "City of Naga", rightIcons, rightButton }) {
+export default function Header({ title, subtitle = "City of Naga", onBack, rightIcons, rightButton }) {
   const { colors } = useTheme();
 
   return (
     <View style={[styles.container, { backgroundColor: colors.headerBg }]}>
-      <View style={styles.leftSection}>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.subtitle}>{subtitle}</Text>
+      <View style={styles.leftRow}>
+        {typeof onBack === "function" && (
+          <TouchableOpacity
+            style={styles.backTouch}
+            onPress={onBack}
+            activeOpacity={0.76}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
+        <View style={styles.leftSection}>
+          <Text style={styles.title} numberOfLines={1}>
+            {title}
+          </Text>
+          {Boolean(subtitle) && (
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {subtitle}
+            </Text>
+          )}
+        </View>
       </View>
       {rightIcons && (
         <View style={styles.rightIcons}>
           {rightIcons.map((iconItem, index) => {
             const item = typeof iconItem === "string" ? { name: iconItem } : iconItem;
-            const { name, onPress, active, badge } = item;
+            const { name, onPress, active, badge, accessibilityLabel } = item;
             return (
               <TouchableOpacity
                 key={`${name}-${index}`}
                 style={[index > 0 && styles.iconSpacing, styles.iconTouch]}
                 onPress={onPress}
                 activeOpacity={0.76}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                accessibilityRole="button"
+                accessibilityLabel={accessibilityLabel || name.replace(/-/g, " ")}
               >
                 <Ionicons name={name} size={20} color="#FFFFFF" style={active ? styles.activeIcon : styles.inactiveIcon} />
                 {badge ? (
@@ -52,9 +74,24 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  leftRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingRight: 8,
+  },
+  backTouch: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 8,
+    marginLeft: -6,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+  },
   leftSection: {
     flex: 1,
-    paddingRight: 8,
   },
   title: {
     color: "#FFFFFF",
@@ -79,9 +116,9 @@ const styles = StyleSheet.create({
   },
   iconTouch: {
     position: "relative",
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
   },

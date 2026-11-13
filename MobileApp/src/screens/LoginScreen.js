@@ -125,7 +125,7 @@ export default function LoginScreen({ onLogin, onSignup, authError }) {
                   onChangeText={setName}
                   placeholder="Full name"
                   placeholderTextColor={colors.textSecondary + '66'}
-                  style={[styles.input, { borderColor: colors.textSecondary + '33', color: colors.textPrimary }]}
+                  style={[styles.input, { borderColor: colors.borderSubtle, color: colors.textPrimary }]}
                   autoCapitalize="words"
                   textContentType="name"
                 />
@@ -136,7 +136,7 @@ export default function LoginScreen({ onLogin, onSignup, authError }) {
                   onChangeText={setPhoneNumber}
                   placeholder="+63 9XX XXX XXXX"
                   placeholderTextColor={colors.textSecondary + '66'}
-                  style={[styles.input, { borderColor: colors.textSecondary + '33', color: colors.textPrimary }]}
+                  style={[styles.input, { borderColor: colors.borderSubtle, color: colors.textPrimary }]}
                   keyboardType="phone-pad"
                   textContentType="telephoneNumber"
                 />
@@ -178,7 +178,13 @@ export default function LoginScreen({ onLogin, onSignup, authError }) {
                 textContentType={isSignup ? 'newPassword' : 'password'}
                 autoCapitalize="none"
               />
-              <TouchableOpacity style={styles.passwordToggle} onPress={() => setShowPassword((prev) => !prev)} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={styles.passwordToggle}
+                onPress={() => setShowPassword((prev) => !prev)}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+              >
                 <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -200,7 +206,13 @@ export default function LoginScreen({ onLogin, onSignup, authError }) {
                     textContentType="newPassword"
                     autoCapitalize="none"
                   />
-                  <TouchableOpacity style={styles.passwordToggle} onPress={() => setShowConfirmPassword((prev) => !prev)} activeOpacity={0.8}>
+                  <TouchableOpacity
+                    style={styles.passwordToggle}
+                    onPress={() => setShowConfirmPassword((prev) => !prev)}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                  >
                     <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textSecondary} />
                   </TouchableOpacity>
                 </View>
@@ -211,14 +223,14 @@ export default function LoginScreen({ onLogin, onSignup, authError }) {
             {successMessage ? <Text style={[styles.error, { color: colors.success ?? colors.primary }]}>{successMessage}</Text> : null}
 
             <AppButton
-              title={isSubmitting ? (isSignup ? "Creating account…" : "Signing in…") : isSignup ? "Sign up" : "Log in"}
+              title={isSubmitting ? (isSignup ? "Creating account…" : "Signing in…") : isSignup ? "Sign Up" : "Log In"}
               onPress={handleSubmit}
               disabled={isSubmitting}
               loading={isSubmitting}
             />
 
             <AppButton
-              title={isSignup ? "Have an account? Log in" : "Need an account? Sign up"}
+              title={isSignup ? "Have an account? Log In" : "Need an account? Sign Up"}
               variant="outline"
               onPress={() => {
                 setError("");
@@ -294,15 +306,19 @@ const styles = StyleSheet.create({
   },
   passwordField: {
     position: "relative",
+    justifyContent: "center",
   },
   passwordInput: {
-    paddingRight: 44,
+    paddingRight: 48,
   },
   passwordToggle: {
     position: "absolute",
-    right: 12,
-    top: 12,
-    padding: 4,
+    right: 4,
+    top: 0,
+    bottom: 0,
+    width: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   error: {
     fontSize: 13,

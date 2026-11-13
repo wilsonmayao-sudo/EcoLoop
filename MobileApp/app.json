@@ -5,10 +5,16 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#38A65C"
-    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#38A65C",
+          "resizeMode": "contain"
+        }
+      ],
+      "expo-status-bar"
+    ],
     "assetBundlePatterns": [
       "**/*"
     ],

@@ -16,6 +16,7 @@ import SurfaceCard from "../components/ui/SurfaceCard";
 import AppButton from "../components/ui/AppButton";
 import { useTheme } from "../context/ThemeContext";
 import { useNotifications } from "../context/NotificationContext";
+import { useLanguage } from "../context/LanguageContext";
 
 function relativeTime(value) {
   const date = value ? new Date(value) : null;
@@ -59,6 +60,7 @@ function getTypeMeta(type, colors) {
 
 export default function NotificationsScreen({ navigation }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
   const {
     enabled,
     toggle,
@@ -90,7 +92,10 @@ export default function NotificationsScreen({ navigation }) {
     try {
       await markRead(notification.id);
     } catch (err) {
-      Alert.alert("Could not update notification", err?.message ?? "Please try again.");
+      Alert.alert(
+        t("notif_err_update_one", "Could not update notification"),
+        err?.message ?? t("err_try_again", "Please try again."),
+      );
     }
   };
 
@@ -98,15 +103,18 @@ export default function NotificationsScreen({ navigation }) {
     try {
       await markAllRead();
     } catch (err) {
-      Alert.alert("Could not update notifications", err?.message ?? "Please try again.");
+      Alert.alert(
+        t("notif_err_update_all", "Could Not Update Notifications"),
+        err?.message ?? t("err_try_again", "Please try again."),
+      );
     }
   };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <Header
-        title="Notifications"
-        subtitle="Route alerts & updates"
+        title={t("notif_title", "Notifications")}
+        subtitle={t("notif_sub", "Route alerts & updates")}
         rightIcons={[{ name: "close-outline", onPress: () => navigation?.goBack?.() }]}
       />
       <ScrollView
@@ -121,19 +129,26 @@ export default function NotificationsScreen({ navigation }) {
             </View>
             <View style={styles.summaryText}>
               <Text style={[styles.summaryTitle, { color: colors.textPrimary }]}>
-                {enabled ? `${unreadCount} unread` : `${unreadCount} unread - silent`}
+                {enabled
+                  ? t("notif_unread_count", "{count} unread", { count: unreadCount })
+                  : t("notif_unread_silent", "{count} unread - silent", { count: unreadCount })}
               </Text>
               <Text style={[styles.summarySubtitle, { color: colors.textSecondary }]}>
                 {enabled
-                  ? `${items.length} total notifications - ${readCount} read`
-                  : `${items.length} total notifications - alerts and badges are off.`}
+                  ? t("notif_total_read", "{total} total notifications - {read} read", {
+                      total: items.length,
+                      read: readCount,
+                    })
+                  : t("notif_total_off", "{total} total notifications - alerts and badges are off.", {
+                      total: items.length,
+                    })}
               </Text>
             </View>
           </View>
 
           {unreadCount > 0 ? (
             <AppButton
-              title="Mark all read"
+              title={t("notif_mark_all_read", "Mark All Read")}
               icon="checkmark-done-outline"
               variant="outline"
               onPress={handleMarkAllRead}
@@ -143,7 +158,7 @@ export default function NotificationsScreen({ navigation }) {
 
           {!enabled ? (
             <AppButton
-              title="Turn alerts on"
+              title={t("notif_turn_alerts_on", "Turn Alerts On")}
               icon="notifications-outline"
               onPress={toggle}
               style={styles.summaryButton}
@@ -154,21 +169,25 @@ export default function NotificationsScreen({ navigation }) {
         {error ? (
           <SurfaceCard elevated={false} style={[styles.stateCard, { borderColor: colors.danger + "55" }]}>
             <Ionicons name="alert-circle-outline" size={26} color={colors.danger} />
-            <Text style={[styles.stateTitle, { color: colors.textPrimary }]}>Unable to load notifications</Text>
+            <Text style={[styles.stateTitle, { color: colors.textPrimary }]}>
+              {t("notif_unable_load", "Unable to Load Notifications")}
+            </Text>
             <Text style={[styles.stateText, { color: colors.textSecondary }]}>{error}</Text>
           </SurfaceCard>
         ) : null}
 
         <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Recent notifications</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            {t("notif_recent", "Recent Notifications")}
+          </Text>
           {loading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
         </View>
 
         {!loading && items.length === 0 ? (
           <EmptyState
             icon="notifications-outline"
-            title="No notifications yet"
-            message="Route assignments, updates, and alerts will appear here."
+            title={t("notif_empty_title", "No Notifications Yet")}
+            message={t("notif_empty_msg", "Route assignments, updates, and alerts will appear here.")}
           />
         ) : (
           <SurfaceCard style={styles.list}>
@@ -177,6 +196,7 @@ export default function NotificationsScreen({ navigation }) {
                 key={notification.id}
                 notification={notification}
                 colors={colors}
+                t={t}
                 onPress={() => handleMarkRead(notification)}
                 showDivider={index < items.length - 1}
               />
@@ -188,12 +208,18 @@ export default function NotificationsScreen({ navigation }) {
   );
 }
 
-function NotificationItem({ notification, colors, onPress, showDivider }) {
+function NotificationItem({ notification, colors, t, onPress, showDivider }) {
   const meta = getTypeMeta(notification.type, colors);
 
   return (
     <>
-      <TouchableOpacity activeOpacity={0.84} onPress={onPress} style={styles.notificationItem}>
+      <TouchableOpacity
+        activeOpacity={0.84}
+        onPress={onPress}
+        style={styles.notificationItem}
+        accessibilityRole="button"
+        accessibilityLabel={`${notification.title ?? "Notification"}, ${notification.read ? "Read" : "Unread"}`}
+      >
         <View style={styles.notificationRow}>
           <View style={[styles.notificationIcon, { backgroundColor: meta.color + "18" }]}>
             <Ionicons name={meta.icon} size={20} color={meta.color} />
@@ -220,7 +246,7 @@ function NotificationItem({ notification, colors, onPress, showDivider }) {
               {!notification.read ? (
                 <>
                   <Text style={[styles.metaDot, { color: colors.textSecondary }]}>•</Text>
-                  <Text style={[styles.newText, { color: colors.success }]}>New</Text>
+                  <Text style={[styles.newText, { color: colors.success }]}>{t ? t("notif_new", "New") : "New"}</Text>
                 </>
               ) : null}
             </View>

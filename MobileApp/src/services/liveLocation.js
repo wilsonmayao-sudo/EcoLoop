@@ -14,6 +14,12 @@ export function normalizeNumericId(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+export function normalizeId(value) {
+  if (value == null) return null;
+  const str = String(value).trim();
+  return str === "" ? null : str;
+}
+
 export function normalizeGpsFix(loc) {
   if (!loc?.coords) return null;
   const latitude = Number(loc.coords.latitude);
@@ -56,11 +62,23 @@ export function shouldRecordLocationHistory(current, lastHistory) {
 }
 
 export async function publishDriverLocation({ driverId, vehicleId, routeId, location, includeHistory = false }) {
-  const normalizedDriverId = normalizeNumericId(driverId);
-  const normalizedVehicleId = normalizeNumericId(vehicleId);
-  const normalizedRouteId = normalizeNumericId(routeId);
+  const normalizedDriverId = normalizeNumericId(driverId) ?? normalizeId(driverId);
+  let normalizedVehicleId = normalizeNumericId(vehicleId) ?? normalizeId(vehicleId);
+  const normalizedRouteId = normalizeId(routeId);
 
   if (!normalizedDriverId || !location) return;
+
+  if (!normalizedVehicleId) {
+    const { data: linkedVehicle } = await supabase
+      .from("vehicles")
+      .select("id")
+      .eq("driver_id", String(normalizedDriverId))
+      .limit(1)
+      .maybeSingle();
+    if (linkedVehicle?.id != null) {
+      normalizedVehicleId = normalizeNumericId(linkedVehicle.id) ?? normalizeId(linkedVehicle.id);
+    }
+  }
 
   const recordedAt = new Date(location.ts ?? Date.now()).toISOString();
   const payload = {
@@ -73,30 +91,54 @@ export async function publishDriverLocation({ driverId, vehicleId, routeId, loca
   };
 
   if (includeHistory) {
-    const { error } = await supabase.from("vehicle_gps_logs").insert({
+    void supabase
+      .from("drivers")
+      .update({ last_seen_at: recordedAt })
+      .eq("id", normalizedDriverId)
+      .then(() => null)
+      .catch(() => null);
+
+    const historyPayload = {
       ...payload,
       vehicle_id: normalizedVehicleId,
       accuracy_m: location.accuracy == null ? null : Number(location.accuracy.toFixed(1)),
       recorded_at: recordedAt,
-    });
+    };
+    let { error } = await supabase.from("vehicle_gps_logs").insert(historyPayload);
+    // Schema-compatibility fallback: if remote database route_id column is legacy bigint and routeId is UUID
+    if (error && error.code === "22P02" && normalizedRouteId) {
+      const fallback = { ...historyPayload, route_id: null };
+      const fallbackRes = await supabase.from("vehicle_gps_logs").insert(fallback);
+      error = fallbackRes.error;
+    }
     if (error) throw error;
   }
 
   if (!normalizedVehicleId) return;
 
-  const { error } = await supabase.from("vehicle_locations_latest").upsert(
-    {
-      ...payload,
-      vehicle_id: normalizedVehicleId,
-      updated_at: recordedAt,
-    },
+  const latestPayload = {
+    ...payload,
+    vehicle_id: normalizedVehicleId,
+    updated_at: recordedAt,
+  };
+  let { error } = await supabase.from("vehicle_locations_latest").upsert(
+    latestPayload,
     { onConflict: "vehicle_id" },
   );
+  // Schema-compatibility fallback: if remote database route_id column is legacy bigint and routeId is UUID
+  if (error && error.code === "22P02" && normalizedRouteId) {
+    const fallback = { ...latestPayload, route_id: null };
+    const fallbackRes = await supabase.from("vehicle_locations_latest").upsert(
+      fallback,
+      { onConflict: "vehicle_id" },
+    );
+    error = fallbackRes.error;
+  }
   if (error) throw error;
 }
 
 export async function clearDriverLatestLocation({ driverId }) {
-  const normalizedDriverId = normalizeNumericId(driverId);
+  const normalizedDriverId = normalizeNumericId(driverId) ?? normalizeId(driverId);
   if (!normalizedDriverId) return;
 
   const { error } = await supabase

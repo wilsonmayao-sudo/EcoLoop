@@ -10,10 +10,10 @@ const translations = {
     title: 'Privacy & Security',
     privacyPolicy: 'Privacy Policy',
     securityStatement: 'Security Statement',
-    lastUpdated: 'Last Updated: January 2024',
+    lastUpdated: 'Last Updated: 2026',
     dataCollectionTitle: 'Data Collection',
     dataCollectionContent:
-      'Ecoloop collects the following types of data:\n\n' +
+      'EcoLoop collects the following types of data:\n\n' +
       '• Personal Information: Name, email address, and user ID\n' +
       '• Location Data: GPS coordinates and route information for navigation purposes\n' +
       '• Usage Data: App interactions, feature usage, and performance metrics\n' +
@@ -30,7 +30,7 @@ const translations = {
       'We do not sell, rent, or share your personal data with third parties for marketing purposes.',
     dataProtectionTitle: 'Data Protection',
     dataProtectionContent:
-      'Ecoloop implements industry-standard security measures to protect your data:\n\n' +
+      'EcoLoop implements industry-standard security measures to protect your data:\n\n' +
       '• Encryption: All data transmitted between your device and our servers is encrypted using SSL/TLS protocols\n' +
       '• Secure Storage: Personal data is stored in secure, encrypted databases\n' +
       '• Access Controls: Only authorized personnel have access to user data\n' +
@@ -43,10 +43,10 @@ const translations = {
     title: 'Privacy at Seguridad',
     privacyPolicy: 'Patakaran sa Privacy',
     securityStatement: 'Pahayag sa Seguridad',
-    lastUpdated: 'Huling Na-update: Enero 2024',
+    lastUpdated: 'Huling Na-update: 2026',
     dataCollectionTitle: 'Pagkolekta ng Data',
     dataCollectionContent:
-      'Ang Ecoloop ay nangongolekta ng mga sumusunod na uri ng data:\n\n' +
+      'Ang EcoLoop ay nangongolekta ng mga sumusunod na uri ng data:\n\n' +
       '• Personal na Impormasyon: Pangalan, email address, at user ID\n' +
       '• Location Data: GPS coordinates at route information para sa navigation\n' +
       '• Usage Data: App interactions, feature usage, at performance metrics\n' +
@@ -63,7 +63,7 @@ const translations = {
       'Hindi namin ibinebenta, inuupahan, o ibinabahagi ang iyong personal data sa third parties para sa marketing purposes.',
     dataProtectionTitle: 'Proteksyon ng Data',
     dataProtectionContent:
-      'Ang Ecoloop ay nagpapatupad ng industry-standard security measures para protektahan ang iyong data:\n\n' +
+      'Ang EcoLoop ay nagpapatupad ng industry-standard security measures para protektahan ang iyong data:\n\n' +
       '• Encryption: Lahat ng data na ipinapadala sa pagitan ng iyong device at aming servers ay naka-encrypt gamit ang SSL/TLS protocols\n' +
       '• Secure Storage: Ang personal data ay naka-store sa secure, encrypted databases\n' +
       '• Access Controls: Tanging authorized personnel lamang ang may access sa user data\n' +
@@ -82,7 +82,7 @@ export default function PrivacySecurityScreen({ navigation }) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top']}>
-      <Header title={t.title} />
+      <Header title={t.title} onBack={() => navigation.goBack()} />
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* Privacy Policy Section */}
         <View style={[styles.card, { backgroundColor: colors.card }]}>
@@ -171,13 +171,15 @@ const styles = StyleSheet.create({
     height: 16,
   },
   card: {
-    borderRadius: 14,
+    borderRadius: 18,
     padding: 16,
-    shadowColor: '#000',
+    borderWidth: 1,
+    borderColor: 'rgba(15, 23, 42, 0.08)',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
 });
 

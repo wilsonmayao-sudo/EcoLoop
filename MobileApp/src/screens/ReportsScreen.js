@@ -10,8 +10,10 @@ import { decode as decodeBase64 } from "base64-arraybuffer";
 import Header from "../components/ui/Header";
 import TagChip from "../components/ui/TagChip";
 import AppButton from "../components/ui/AppButton";
+import AppDropdown from "../components/ui/AppDropdown";
 import SurfaceCard from "../components/ui/SurfaceCard";
 import { useTheme } from "../context/ThemeContext";
+import { useLanguage } from "../context/LanguageContext";
 import { useCompletedRoutes } from "../context/CompletedRoutesContext";
 import { usePickups } from "../context/PickupContext";
 import { useAuth } from "../context/AuthContext";
@@ -97,6 +99,7 @@ function userFriendlyError(error) {
 
 export default function ReportsScreen() {
   const { colors, tokens } = useTheme();
+  const { t } = useLanguage();
   const { driver } = useAuth();
   const { completedRoutes } = useCompletedRoutes();
   const { pendingPickups, getCompletedPickups, getRemainingPickups, getTotalPickups } = usePickups();
@@ -109,7 +112,6 @@ export default function ReportsScreen() {
   const [reports, setReports] = useState([]);
 
   const [showCreate, setShowCreate] = useState(false);
-  const [showTypeOptions, setShowTypeOptions] = useState(false);
   const [newType, setNewType] = useState("");
   const [newCustomType, setNewCustomType] = useState("");
   const [newLocation, setNewLocation] = useState("");
@@ -136,7 +138,6 @@ export default function ReportsScreen() {
 
   const resetCreateForm = useCallback(() => {
     setShowCreate(false);
-    setShowTypeOptions(false);
     setNewType("");
     setNewCustomType("");
     setNewDescription("");
@@ -203,7 +204,10 @@ export default function ReportsScreen() {
   const captureCurrentLocation = useCallback(async () => {
     const permission = await Location.requestForegroundPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("Permission required", "Enable location permissions to capture GPS.");
+      Alert.alert(
+        t("alert_perm_req", "Permission Required"),
+        t("alert_gps_perm_msg", "Enable location permissions to capture GPS."),
+      );
       return;
     }
     const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
@@ -219,12 +223,15 @@ export default function ReportsScreen() {
         if (label) setNewLocation(label);
       }
     } catch {}
-  }, []);
+  }, [t]);
 
   const pickPhoto = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("Permission required", "Enable media permission to attach images.");
+      Alert.alert(
+        t("alert_perm_req", "Permission Required"),
+        t("alert_media_perm_msg", "Enable media permission to attach images."),
+      );
       return;
     }
     const picked = await ImagePicker.launchImageLibraryAsync({
@@ -234,7 +241,7 @@ export default function ReportsScreen() {
       aspect: [4, 3],
     });
     if (!picked.canceled && picked.assets?.[0]?.uri) setPhotoUri(picked.assets[0].uri);
-  }, []);
+  }, [t]);
 
   const uploadImage = useCallback(async () => {
     if (!photoUri || !driver?.id) return null;
@@ -294,11 +301,17 @@ export default function ReportsScreen() {
   const submit = useCallback(async () => {
     if (!driver?.id) return;
     if (!newType.trim() || !newDescription.trim()) {
-      Alert.alert("Missing fields", "Problem type and notes are required.");
+      Alert.alert(
+        t("alert_missing_fields_title", "Missing Fields"),
+        t("alert_missing_fields_msg", "Problem type and notes are required."),
+      );
       return;
     }
     if (isOtherProblemType(newType) && !newCustomType.trim()) {
-      Alert.alert("Missing custom issue", "Please describe the custom problem before submitting.");
+      Alert.alert(
+        t("alert_missing_custom_title", "Missing Custom Issue"),
+        t("alert_missing_custom_msg", "Please describe the custom problem before submitting."),
+      );
       return;
     }
     setLoading(true);
@@ -329,7 +342,10 @@ export default function ReportsScreen() {
           payload,
           photoUri: photoUri || null,
         });
-        Alert.alert("Saved offline", "Report queued. It will be submitted when internet is available.");
+        Alert.alert(
+          t("alert_saved_offline_title", "Saved Offline"),
+          t("alert_saved_offline_msg", "Report queued. It will be submitted when internet is available."),
+        );
       } else {
         let imageUrl = null;
         if (photoUri) imageUrl = await uploadImage();
@@ -351,7 +367,10 @@ export default function ReportsScreen() {
       resetCreateForm();
       await load();
       if (netState.isConnected) {
-        Alert.alert("Submitted", "Report successfully saved.");
+        Alert.alert(
+          t("alert_report_saved_title", "Report Submitted"),
+          t("alert_report_saved_msg", "Report successfully saved."),
+        );
       }
     } catch (e) {
       const friendly = userFriendlyError(e);
@@ -360,19 +379,24 @@ export default function ReportsScreen() {
         details: e,
       });
       setError(friendly);
-      Alert.alert("Submit failed", friendly);
+      Alert.alert(t("alert_submit_failed_title", "Submit Failed"), friendly);
     } finally {
       setLoading(false);
     }
-  }, [driver?.id, driver?.name, load, newCustomType, newDescription, newLat, newLng, newLocation, newType, pendingPickups, resetCreateForm, uploadImage]);
+  }, [driver?.id, driver?.name, load, newCustomType, newDescription, newLat, newLng, newLocation, newType, pendingPickups, photoUri, resetCreateForm, t, uploadImage]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <Header
-        title="Overall Report"
+        title={t("field_reports_title", "Field Reports")}
         rightIcons={[
-          { name: showSearch ? "close" : "search", onPress: () => setShowSearch((prev) => !prev), active: showSearch },
-          { name: "refresh", onPress: () => void load() },
+          {
+            name: showSearch ? "close" : "search",
+            onPress: () => setShowSearch((prev) => !prev),
+            active: showSearch,
+            accessibilityLabel: showSearch ? "Close search" : "Search reports",
+          },
+          { name: "refresh", onPress: () => void load(), accessibilityLabel: "Refresh reports" },
         ]}
       />
 
@@ -383,7 +407,7 @@ export default function ReportsScreen() {
             style={[styles.searchInput, { color: colors.textPrimary }]}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search reports..."
+            placeholder={t("search_reports_ph", "Search reports...")}
             placeholderTextColor={colors.textSecondary + "88"}
           />
         </View>
@@ -391,20 +415,24 @@ export default function ReportsScreen() {
 
       <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, { gap: tokens.space.lg }]}>
         <SurfaceCard elevated={false}>
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary, marginBottom: tokens.space.md }]}>Daily collection summary</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary, marginBottom: tokens.space.md }]}>
+            {t("daily_collection_summary", "Daily Collection Summary")}
+          </Text>
           <View style={styles.statsRow}>
-            <StatMini label="Pickups" value={stats.pickups} colors={colors} />
-            <StatMini label="Remaining" value={stats.remaining} colors={colors} />
-            <StatMini label="Pending reports" value={stats.pendingReports} colors={colors} />
-            <StatMini label="Routes done" value={stats.completedRoutes} colors={colors} />
+            <StatMini label={t("pickups_label", "Pickups")} value={stats.pickups} colors={colors} />
+            <StatMini label={t("stat_remaining", "Remaining")} value={stats.remaining} colors={colors} />
+            <StatMini label={t("pending_reports_label", "Pending Reports")} value={stats.pendingReports} colors={colors} />
+            <StatMini label={t("routes_done_label", "Routes Done")} value={stats.completedRoutes} colors={colors} />
           </View>
         </SurfaceCard>
 
         <SurfaceCard elevated={false}>
           <View style={[styles.rowBetween, { marginBottom: tokens.space.md }]}>
-            <Text style={[styles.sectionTitle, { color: colors.textPrimary, flex: 1, marginRight: 8, marginBottom: 0 }]}>Operational reports</Text>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary, flex: 1, marginRight: 8, marginBottom: 0 }]}>
+              {t("operational_reports", "Operational Reports")}
+            </Text>
             <AppButton
-              title="New"
+              title={t("new_btn", "New")}
               icon="add"
               onPress={() => {
                 setNewType(problemTypeOptions[0] ?? "Truck breakdown");
@@ -416,7 +444,9 @@ export default function ReportsScreen() {
             />
           </View>
 
-          {filteredReports.length === 0 ? <Text style={[styles.helper, { color: colors.textSecondary }]}>No reports yet.</Text> : null}
+          {filteredReports.length === 0 ? (
+            <Text style={[styles.helper, { color: colors.textSecondary }]}>{t("no_reports_yet", "No reports yet.")}</Text>
+          ) : null}
           {filteredReports.map((item, index) => (
             <View
               key={item.id}
@@ -429,7 +459,7 @@ export default function ReportsScreen() {
               <View style={styles.rowBetween}>
                 <Text style={[styles.reportTitle, { color: colors.textPrimary }]}>{item.report_id ?? item.report_number ?? "Report"}</Text>
                 <TagChip
-                  label={normalizeStatus(item.status) === "resolved" ? "Resolved" : "Pending"}
+                  label={normalizeStatus(item.status) === "resolved" ? t("status_resolved", "Resolved") : t("status_pending", "Pending")}
                   color={normalizeStatus(item.status) === "resolved" ? colors.pillGreen : colors.pillBlue}
                 />
               </View>
@@ -450,8 +480,16 @@ export default function ReportsScreen() {
         <View style={[styles.modalOverlay, { backgroundColor: "#00000066" }]}>
           <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
             <View style={styles.rowBetween}>
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Submit Overall Report</Text>
-              <TouchableOpacity onPress={resetCreateForm}>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary, marginBottom: 0 }]}>
+                {t("submit_field_report", "Submit Field Report")}
+              </Text>
+              <TouchableOpacity
+                onPress={resetCreateForm}
+                style={styles.modalCloseBtn}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                accessibilityRole="button"
+                accessibilityLabel="Close report form"
+              >
                 <Ionicons name="close" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -462,59 +500,52 @@ export default function ReportsScreen() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Problem Type</Text>
-              <TouchableOpacity style={[styles.input, styles.dropdown, { borderColor: colors.textSecondary + "33" }]} onPress={() => setShowTypeOptions((v) => !v)}>
-                <Text style={{ color: colors.textPrimary, flex: 1 }}>{newType || "Select type"}</Text>
-                <Ionicons name={showTypeOptions ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
-              </TouchableOpacity>
-              {showTypeOptions ? (
-                <View style={[styles.dropdownList, { borderColor: colors.textSecondary + "33", backgroundColor: colors.surface }]}>
-                  {problemTypeOptions.map((cat) => (
-                    <TouchableOpacity
-                      key={cat}
-                      style={styles.dropdownItem}
-                      onPress={() => {
-                        setNewType(cat);
-                        if (!isOtherProblemType(cat)) setNewCustomType("");
-                        setShowTypeOptions(false);
-                      }}
-                    >
-                      <Text style={{ color: colors.textPrimary }}>{cat}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : null}
+              <Text style={[styles.label, { color: colors.textSecondary }]}>{t("problem_type", "Problem Type")}</Text>
+              <AppDropdown
+                label={t("problem_type", "Problem Type")}
+                value={newType}
+                options={problemTypeOptions}
+                placeholder={t("select_type_ph", "Select type")}
+                onSelect={(cat) => {
+                  setNewType(cat);
+                  if (!isOtherProblemType(cat)) setNewCustomType("");
+                }}
+              />
 
               {isCustomProblemType ? (
                 <View style={styles.customIssueBox}>
-                  <Text style={[styles.label, { color: colors.textSecondary }]}>Custom problem</Text>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>
+                    {t("custom_problem_label", "Custom Problem")}
+                  </Text>
                   <TextInput
                     style={[styles.input, styles.inputMultiline, styles.customIssueInput, { borderColor: colors.textSecondary + "33", color: colors.textPrimary }]}
                     value={newCustomType}
                     onChangeText={setNewCustomType}
-                    placeholder="Describe the problem type..."
+                    placeholder={t("custom_problem_ph", "Describe the problem type...")}
                     placeholderTextColor={colors.textSecondary + "88"}
                     multiline
                   />
-                  <Text style={[styles.helper, { color: colors.textSecondary }]}>This will appear as the report category for staff.</Text>
+                  <Text style={[styles.helper, { color: colors.textSecondary }]}>
+                    {t("custom_problem_help", "This will appear as the report category for staff.")}
+                  </Text>
                 </View>
               ) : null}
 
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Current location / GPS</Text>
-              <AppButton title="Use current location" variant="outline" onPress={() => void captureCurrentLocation()} />
+              <Text style={[styles.label, { color: colors.textSecondary }]}>{t("current_location_gps", "Current Location / GPS")}</Text>
+              <AppButton title={t("use_current_location", "Use Current Location")} variant="outline" onPress={() => void captureCurrentLocation()} />
               <TextInput
                 style={[styles.input, { borderColor: colors.textSecondary + "33", color: colors.textPrimary }]}
                 value={newLocation}
                 onChangeText={setNewLocation}
-                placeholder="Location details"
+                placeholder={t("location_details_ph", "Location details")}
                 placeholderTextColor={colors.textSecondary + "88"}
               />
               {newLat != null && newLng != null ? <Text style={[styles.helper, { color: colors.textSecondary }]}>GPS: {newLat.toFixed(6)}, {newLng.toFixed(6)}</Text> : null}
 
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Photo attachment</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>{t("photo_attachment", "Photo Attachment")}</Text>
               <View style={[styles.rowBetween, { alignItems: "stretch" }]}>
                 <AppButton
-                  title={photoUri ? "Change photo" : "Upload photo"}
+                  title={photoUri ? t("change_photo", "Change Photo") : t("upload_photo", "Upload Photo")}
                   variant="outline"
                   onPress={() => void pickPhoto()}
                   fullWidth={false}
@@ -522,7 +553,7 @@ export default function ReportsScreen() {
                 />
                 {photoUri ? (
                   <AppButton
-                    title="Remove"
+                    title={t("remove_photo", "Remove")}
                     variant="outline"
                     onPress={() => setPhotoUri("")}
                     fullWidth={false}
@@ -533,21 +564,21 @@ export default function ReportsScreen() {
               </View>
               {photoUri ? <Image source={{ uri: photoUri }} style={styles.previewImage} /> : null}
 
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Reporting Details / Notes</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>{t("reporting_details", "Reporting Details / Notes")}</Text>
               <TextInput
                 style={[styles.input, styles.inputMultiline, { borderColor: colors.textSecondary + "33", color: colors.textPrimary }]}
                 value={newDescription}
                 onChangeText={setNewDescription}
-                placeholder="Describe issue and notes..."
+                placeholder={t("describe_issue_ph", "Describe issue and notes...")}
                 placeholderTextColor={colors.textSecondary + "88"}
                 multiline
               />
             </ScrollView>
 
             <View style={styles.modalActions}>
-              <AppButton title="Cancel" variant="outline" onPress={resetCreateForm} fullWidth={false} style={styles.modalActionButton} />
+              <AppButton title={t("cancel", "Cancel")} variant="outline" onPress={resetCreateForm} fullWidth={false} style={styles.modalActionButton} />
               <AppButton
-                title={loading ? "Submitting…" : "Submit report"}
+                title={loading ? t("submitting_report", "Submitting…") : t("submit_report", "Submit Report")}
                 onPress={() => void submit()}
                 disabled={loading}
                 loading={loading}
@@ -613,6 +644,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14 },
   modalOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", padding: 16 },
   modalCard: { borderRadius: 16, padding: 16, maxHeight: "92%" },
+  modalCloseBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
   modalBody: { marginTop: 10, flexShrink: 1 },
   modalBodyContent: { gap: 10, paddingBottom: 4 },
   modalActions: { flexDirection: "row", alignItems: "stretch", gap: 10, marginTop: 12 },
@@ -622,9 +654,6 @@ const styles = StyleSheet.create({
   inputMultiline: { minHeight: 90, textAlignVertical: "top" },
   customIssueBox: { gap: 6 },
   customIssueInput: { minHeight: 74 },
-  dropdown: { flexDirection: "row", alignItems: "center" },
-  dropdownList: { borderWidth: 1, borderRadius: 10, overflow: "hidden" },
-  dropdownItem: { paddingHorizontal: 10, paddingVertical: 9 },
   errorBox: { position: "absolute", left: 16, right: 16, bottom: 16, borderWidth: 1, borderRadius: 10, padding: 10 },
 });
 

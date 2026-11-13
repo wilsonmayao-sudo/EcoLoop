@@ -44,7 +44,7 @@ export default function LanguageScreen({ navigation }) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top']}>
-      <Header title={t.title} />
+      <Header title={t.title} onBack={() => navigation.goBack()} />
       <View style={styles.content}>
         <Text style={[dynamicStyles.subtitle, { color: colors.textSecondary }]}>{t.subtitle}</Text>
         <View style={styles.spacing} />

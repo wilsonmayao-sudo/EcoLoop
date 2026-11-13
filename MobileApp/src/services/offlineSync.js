@@ -17,8 +17,20 @@ async function writeQueue(items) {
   await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items));
 }
 
+let isFlushing = false;
+
 export async function enqueueMutation(mutation) {
+  if (!mutation) return;
   const queue = await readQueue();
+  const isDuplicate = queue.some((item) => {
+    if (item.type !== mutation.type) return false;
+    if (mutation.type === "COMPLETE_DELIVERY") {
+      return String(item.deliveryId) === String(mutation.deliveryId);
+    }
+    return false;
+  });
+  if (isDuplicate) return;
+
   const payload = {
     ...mutation,
     localId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -29,29 +41,49 @@ export async function enqueueMutation(mutation) {
 }
 
 export async function flushOfflineQueue(executeMutation) {
+  if (isFlushing) return 0;
   const state = await NetInfo.fetch();
-  if (!state.isConnected) return;
+  if (!state.isConnected) return 0;
 
-  const queue = await readQueue();
-  if (queue.length === 0) return;
+  isFlushing = true;
+  let processedCount = 0;
+  try {
+    const queue = await readQueue();
+    if (queue.length === 0) return 0;
 
-  const remaining = [];
-  for (const mutation of queue) {
-    try {
-      await executeMutation(mutation);
-    } catch (error) {
-      remaining.push(mutation);
-      console.warn("Offline sync retry kept in queue:", error?.message ?? error);
+    const remaining = [];
+    for (const mutation of queue) {
+      try {
+        await executeMutation(mutation);
+        processedCount += 1;
+      } catch (error) {
+        remaining.push(mutation);
+        console.warn("Offline sync retry kept in queue:", error?.message ?? error);
+      }
     }
+    await writeQueue(remaining);
+    return processedCount;
+  } finally {
+    isFlushing = false;
   }
-  await writeQueue(remaining);
 }
 
-export function subscribeConnectivity(executeMutation) {
+export function subscribeConnectivity(executeMutation, onFlushed) {
   return NetInfo.addEventListener(async (state) => {
     if (state.isConnected) {
-      await flushOfflineQueue(executeMutation);
+      const count = await flushOfflineQueue(executeMutation);
+      if (count > 0 && typeof onFlushed === "function") {
+        onFlushed();
+      }
     }
   });
+}
+
+export async function getOfflineQueue() {
+  return readQueue();
+}
+
+export async function clearOfflineQueue() {
+  await writeQueue([]);
 }
 

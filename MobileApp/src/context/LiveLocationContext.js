@@ -65,19 +65,18 @@ export function LiveLocationProvider({ children }) {
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
       setAppState(nextState);
-      if (nextState !== "active") clearLatestLocation();
     });
     return () => subscription.remove();
-  }, [clearLatestLocation]);
+  }, []);
 
   useEffect(() => {
-    if (trackingEnabled && appState === "active") return;
+    if (trackingEnabled) return;
     setLocation(null);
     clearLatestLocation();
-  }, [appState, clearLatestLocation, trackingEnabled]);
+  }, [clearLatestLocation, trackingEnabled]);
 
   useEffect(() => {
-    if (!trackingEnabled || appState !== "active") return undefined;
+    if (!trackingEnabled) return undefined;
 
     let cancelled = false;
     let subscription;
@@ -91,6 +90,9 @@ export function LiveLocationProvider({ children }) {
       }
 
       setLocationPermission(true);
+      await Location.requestBackgroundPermissionsAsync().catch(() => null);
+      if (cancelled) return;
+
       try {
         const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         const fix = normalizeGpsFix(current);
@@ -113,10 +115,10 @@ export function LiveLocationProvider({ children }) {
       cancelled = true;
       subscription?.remove();
     };
-  }, [appState, clearLatestLocation, trackingEnabled]);
+  }, [clearLatestLocation, trackingEnabled]);
 
   useEffect(() => {
-    if (!trackingEnabled || appState !== "active" || !driver?.id || !location) return undefined;
+    if (!trackingEnabled || !driver?.id || !location) return undefined;
 
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -146,7 +148,7 @@ export function LiveLocationProvider({ children }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [appState, driver?.id, location, routeId, statusKey, trackingEnabled, vehicleId]);
+  }, [driver?.id, location, routeId, statusKey, trackingEnabled, vehicleId]);
 
   useEffect(() => () => clearLatestLocation(), [clearLatestLocation]);
 
