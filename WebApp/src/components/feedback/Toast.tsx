@@ -51,24 +51,30 @@ export default function Toast({ isOpen = true, onClose, message, type = "success
   const config = configs[type];
 
   return (
-    <div className="fixed top-6 right-6 z-[500] animate-slideIn">
-      <div className={`flex items-center gap-3 ${config.bg} border rounded-lg shadow-lg p-4 pr-3 min-w-[320px] max-w-[420px]`}>
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed top-4 right-4 left-4 sm:left-auto sm:right-6 sm:top-6 z-[500] animate-slideIn"
+    >
+      <div className={`flex items-center gap-3 ${config.bg} border rounded-xl shadow-lg p-4 pr-3 min-w-0 sm:min-w-[320px] max-w-full sm:max-w-[420px]`}>
         <div className="flex-shrink-0">
           {config.icon}
         </div>
-        <p className={`flex-1 font-['Poppins:Medium',sans-serif] text-sm ${config.text}`}>
+        <p className={`flex-1 font-medium text-sm ${config.text}`}>
           {message}
         </p>
         <button
+          type="button"
           onClick={onClose}
-          className={`flex-shrink-0 ${config.text} hover:opacity-70 transition-opacity`}
+          aria-label="Close notification"
+          className={`flex-shrink-0 p-1 rounded-lg ${config.text} hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current transition-all`}
         >
           <X className="size-4" />
         </button>
       </div>
       {/* Progress bar */}
       {duration > 0 && (
-        <div className="h-1 bg-gray-200 rounded-b-lg overflow-hidden mt-[-4px]">
+        <div className="h-1 bg-gray-200/80 rounded-b-xl overflow-hidden mt-[-4px]">
           <div 
             className={`h-full ${config.progress} animate-shrink`}
             style={{ animationDuration: `${duration}ms` }}

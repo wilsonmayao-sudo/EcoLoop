@@ -1,16 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, X, CheckCircle, User, Image as ImageIcon, Route, Navigation, Trash2, ChevronDown } from "lucide-react";
+import { AlertTriangle, X, Check, CheckCircle, User, Image as ImageIcon, Route, Navigation, Trash2, ChevronDown } from "lucide-react";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import Toast from "../components/feedback/Toast";
-import NotificationDropdown from "../components/feedback/NotificationDropdown";
-import RoleIndicator from "../components/layout/RoleIndicator";
+import PageHeader from "../components/layout/PageHeader";
 import ReportLocationMap from "../components/reports/ReportLocationMap";
 import CustomSelect from "../components/ui/CustomSelect";
 import { useAuth } from "../contexts/AuthContext";
-import { formatDateOnly, formatDateTime, useLiveData, type WasteReportRecord } from "../hooks/useLiveData";
+import { formatDateOnly, formatDateTime, useLiveData, type PageType, type WasteReportRecord } from "../hooks/useLiveData";
 import { parseReportCoordinate, resolveReportImageUrl } from "../utils/reportMedia";
-
-type PageType = "dashboard" | "route-planning" | "vehicle-monitoring" | "reports" | "bin-locations" | "notifications";
 
 interface ReportsAndIssuesProps {
   onNavigate?: (page: PageType) => void;
@@ -113,25 +110,29 @@ function StatusSelect({ value, onChange, getStatusColor, className = "" }: Statu
           }}
         >
           <div role="listbox" aria-label="Report status" className="max-h-40 overflow-auto">
-            {statusOptions.map((status) => (
-              <button
-                key={status}
-                type="button"
-                role="option"
-                aria-selected={status === value}
-                onClick={() => {
-                  setOpen(false);
-                  onChange(status);
-                }}
-                className={`block w-full whitespace-nowrap px-3 py-1.5 text-left capitalize ${
-                  status === value
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                {displayValue(status)}
-              </button>
-            ))}
+            {statusOptions.map((status) => {
+              const selected = status === value;
+              return (
+                <button
+                  key={status}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => {
+                    setOpen(false);
+                    onChange(status);
+                  }}
+                  className={`flex w-full items-center justify-between gap-2 whitespace-nowrap px-3 py-2 text-left capitalize transition-colors ${
+                    selected
+                      ? "bg-emerald-50 font-semibold text-emerald-800"
+                      : "font-normal text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                  }`}
+                >
+                  <span>{displayValue(status)}</span>
+                  {selected && <Check className="size-3.5 shrink-0 text-emerald-600" aria-hidden="true" />}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -318,53 +319,53 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
     }
   };
 
+  useEffect(() => {
+    if (!showDetailsModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeReportDetails();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showDetailsModal]);
+
   return (
-    <div className="absolute left-[256px] top-0 right-0 bottom-0 bg-gray-50 overflow-auto p-6">
-      <div className="space-y-6">
-        <RoleIndicator />
-        <div className="flex items-center justify-between">
+    <div className="space-y-6 max-w-7xl mx-auto">
+      <PageHeader
+        title="Reports & Issues"
+        subtitle="Field incident reports, GPS coordinates, and resolution tracking"
+        icon={<AlertTriangle className="size-5" aria-hidden="true" />}
+        onNavigate={onNavigate as any}
+      />
+
+      {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-xl border border-gray-200">
+          <div className="text-xs font-semibold tracking-wide uppercase text-gray-500">Total Reports</div>
+          <div className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight tabular-nums mt-1.5">{loading ? "..." : reportStats.total}</div>
+          <div className="text-blue-700 font-medium text-xs mt-1">Database records</div>
+        </div>
+        <div className="bg-white p-5 rounded-xl border border-gray-200">
+          <div className="text-xs font-semibold tracking-wide uppercase text-gray-500">Pending</div>
+          <div className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight tabular-nums mt-1.5">{loading ? "..." : reportStats.pending}</div>
+          <div className="text-amber-800 font-medium text-xs mt-1">Needs attention</div>
+        </div>
+        <div className="bg-white p-5 rounded-xl border border-gray-200">
+          <div className="text-xs font-semibold tracking-wide uppercase text-gray-500">In Progress</div>
+          <div className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight tabular-nums mt-1.5">{loading ? "..." : reportStats.inProgress}</div>
+          <div className="text-blue-700 font-medium text-xs mt-1">Being handled</div>
+        </div>
+        <div className="bg-white p-5 rounded-xl border border-gray-200">
+          <div className="text-xs font-semibold tracking-wide uppercase text-gray-500">Resolved</div>
+          <div className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight tabular-nums mt-1.5">{loading ? "..." : reportStats.resolved}</div>
+          <div className="text-emerald-700 font-medium text-xs mt-1">Completed</div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="flex flex-col gap-4 border-b border-gray-200 p-5 sm:p-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-gray-900">Reports & Issues</h2>
-            <p className="text-gray-600">Naga City Waste Collection Management</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <div className="text-sm text-gray-900">Today</div>
-              <div className="text-xs text-gray-500">{formatDateOnly(new Date().toISOString())}</div>
-            </div>
-            {onNavigate && <NotificationDropdown onViewAll={() => onNavigate("notifications")} />}
-          </div>
-        </div>
-
-        {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <div className="text-gray-600 text-sm">Total Reports</div>
-            <div className="text-gray-900 mt-2">{loading ? "..." : reportStats.total}</div>
-            <div className="text-blue-500 text-sm mt-1">Database records</div>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <div className="text-gray-600 text-sm">Pending</div>
-            <div className="text-gray-900 mt-2">{loading ? "..." : reportStats.pending}</div>
-            <div className="text-yellow-500 text-sm mt-1">Needs attention</div>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <div className="text-gray-600 text-sm">In Progress</div>
-            <div className="text-gray-900 mt-2">{loading ? "..." : reportStats.inProgress}</div>
-            <div className="text-blue-500 text-sm mt-1">Being handled</div>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <div className="text-gray-600 text-sm">Resolved</div>
-            <div className="text-gray-900 mt-2">{loading ? "..." : reportStats.resolved}</div>
-            <div className="text-green-500 text-sm mt-1">Completed</div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="flex flex-col gap-4 border-b border-gray-200 p-6 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-gray-900">{activeFilterLabel}</h3>
+            <h2 className="text-base font-semibold text-gray-900">{activeFilterLabel}</h2>
               {(dayFilter !== "all" || statusFilter !== "all") && (
                 <p className="mt-1 text-sm text-gray-500">
                   Showing {filteredReports.length} of {reports.length} reports for {activeDayFilterLabel.toLowerCase()}
@@ -378,7 +379,6 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                   value={dayFilter}
                   onChange={(value) => setDayFilter(value as DayFilter)}
                   options={dayFilterOptions}
-                  buttonClassName="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   ariaLabel="Filter reports by days"
                 />
               </div>
@@ -388,7 +388,6 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
                   value={statusFilter}
                   onChange={(value) => setStatusFilter(value as StatusFilter)}
                   options={statusFilterOptions}
-                  buttonClassName="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   ariaLabel="Filter reports by status"
                 />
               </div>
@@ -487,22 +486,33 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
         </div>
 
         {showDetailsModal && selectedReport && (
-          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-3 md:p-6" onClick={closeReportDetails}>
+          <div
+            className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 backdrop-blur-xs p-3 md:p-6"
+            onClick={closeReportDetails}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-modal-title"
+          >
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
               <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-4 md:px-6">
                 <div className="min-w-0">
-                  <h3 className="text-gray-900 text-lg font-semibold flex flex-wrap items-center gap-2">
+                  <h3 id="report-modal-title" className="text-gray-900 text-base sm:text-lg font-semibold flex flex-wrap items-center gap-2">
                     Truck driver report
                     {selectedReport.status === "resolved" && <CheckCircle className="size-5 shrink-0 text-emerald-600" aria-hidden />}
                   </h3>
-                  <p className="text-sm text-gray-600 mt-1">
+                  <p className="text-xs sm:text-sm text-gray-600 mt-1">
                     <span className="font-medium text-gray-800">{selectedReport.report_number}</span>
                     {selectedReport.report_id && selectedReport.report_id !== selectedReport.report_number && (
                       <span className="text-gray-500"> · {selectedReport.report_id}</span>
                     )}
                   </p>
                 </div>
-                <button type="button" className="shrink-0 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700" onClick={closeReportDetails} aria-label="Close">
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                  onClick={closeReportDetails}
+                  aria-label="Close report details"
+                >
                   <X className="size-5" />
                 </button>
               </div>
@@ -657,7 +667,6 @@ export default function ReportsAndIssues({ onNavigate }: ReportsAndIssuesProps) 
         />
 
         {showToast && <Toast message={toastMessage.message} type={toastMessage.type} onClose={() => setShowToast(false)} />}
-      </div>
     </div>
   );
 }

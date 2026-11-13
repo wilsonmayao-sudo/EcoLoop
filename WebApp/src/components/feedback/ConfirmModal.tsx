@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertCircle, X } from "lucide-react";
 
 interface ConfirmModalProps {
@@ -12,70 +12,112 @@ interface ConfirmModalProps {
   variant?: "danger" | "warning" | "info";
 }
 
-export default function ConfirmModal({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
-  title, 
-  message, 
+export default function ConfirmModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  title,
+  message,
   confirmText = "Confirm",
   cancelText = "Cancel",
-  variant = "warning"
+  variant = "warning",
 }: ConfirmModalProps) {
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    if (isOpen) setConfirmBusy(false);
+    if (isOpen) {
+      setConfirmBusy(false);
+      previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      requestAnimationFrame(() => cancelBtnRef.current?.focus());
+    } else if (previousFocusRef.current) {
+      previousFocusRef.current.focus();
+      previousFocusRef.current = null;
+    }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !confirmBusy) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, confirmBusy, onClose]);
 
   if (!isOpen) return null;
 
   const colors = {
     danger: {
-      bg: "bg-red-100",
-      text: "text-red-600",
-      button: "from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 shadow-red-500/30"
+      bg: "bg-red-50 border border-red-200",
+      text: "text-red-700",
+      button: "bg-red-600 hover:bg-red-700 focus-visible:ring-red-600",
     },
     warning: {
-      bg: "bg-amber-100",
-      text: "text-amber-600",
-      button: "from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 shadow-amber-500/30"
+      bg: "bg-amber-50 border border-amber-200",
+      text: "text-amber-800",
+      button: "bg-amber-600 hover:bg-amber-700 focus-visible:ring-amber-600",
     },
     info: {
-      bg: "bg-blue-100",
-      text: "text-blue-600",
-      button: "from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 shadow-blue-500/30"
-    }
+      bg: "bg-emerald-50 border border-emerald-200",
+      text: "text-emerald-700",
+      button: "bg-emerald-600 hover:bg-emerald-700 focus-visible:ring-emerald-600",
+    },
   };
 
   const currentColor = colors[variant];
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[400]" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-[480px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+    <div
+      className="fixed inset-0 z-[400] flex items-center justify-center bg-black/50 p-4 overscroll-contain"
+      onClick={() => {
+        if (!confirmBusy) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-modal-title"
+      aria-describedby="confirm-modal-desc"
+    >
+      <div
+        className="w-[460px] max-w-[95vw] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className={`p-2 ${currentColor.bg} rounded-full`}>
-              <AlertCircle className={`size-6 ${currentColor.text}`} />
+            <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${currentColor.bg}`}>
+              <AlertCircle className={`size-5 ${currentColor.text}`} aria-hidden="true" />
             </div>
-            <h3 className="font-['Poppins:SemiBold',sans-serif] text-gray-900">{title}</h3>
+            <h2 id="confirm-modal-title" className="text-base font-semibold text-gray-900 sm:text-lg">
+              {title}
+            </h2>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
-            <X className="size-5" />
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={confirmBusy}
+            className="inline-flex size-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:opacity-50"
+            aria-label="Close dialog"
+          >
+            <X className="size-5" aria-hidden="true" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6">
-          <p className="font-['Poppins:Regular',sans-serif] text-gray-700">{message}</p>
+        <div className="p-5 sm:p-6">
+          <p id="confirm-modal-desc" className="text-sm leading-relaxed text-gray-700">
+            {message}
+          </p>
         </div>
 
-        {/* Footer */}
-        <div className="flex gap-3 p-6 border-t border-gray-200">
+        <div className="flex flex-col-reverse gap-3 border-t border-gray-200 bg-gray-50 px-5 py-4 sm:flex-row">
           <button
+            ref={cancelBtnRef}
+            type="button"
             onClick={onClose}
-            className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-['Poppins:Medium',sans-serif] transition-all"
+            disabled={confirmBusy}
+            className="min-h-[44px] flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 disabled:opacity-50"
           >
             {cancelText}
           </button>
@@ -95,7 +137,7 @@ export default function ConfirmModal({
                 }
               })();
             }}
-            className={`flex-1 px-4 py-2.5 bg-gradient-to-r text-white rounded-lg font-['Poppins:Medium',sans-serif] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed ${currentColor.button}`}
+            className={`min-h-[44px] flex-1 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${currentColor.button}`}
           >
             {confirmBusy ? "Please wait…" : confirmText}
           </button>

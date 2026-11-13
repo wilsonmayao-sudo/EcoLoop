@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import {
+  getMapboxStyleUrl,
+  getRuntimeSystemSettings,
+  subscribeRuntimeSettings,
+} from "../../utils/systemSettings";
 
 type Coordinate = {
   latitude: number;
@@ -80,7 +85,19 @@ export default function BinLocationPicker({
     return { latitude: Number(latitude), longitude: Number(longitude) };
   }, [latitude, longitude]);
 
-  const center = selectedCoordinate ?? DEFAULT_CENTER;
+  const [mapDefaults, setMapDefaults] = useState(() => getRuntimeSystemSettings().mapDefaults);
+
+  useEffect(() => {
+    return subscribeRuntimeSettings(() => {
+      setMapDefaults(getRuntimeSystemSettings().mapDefaults);
+    });
+  }, []);
+
+  const center = selectedCoordinate ?? {
+    latitude: mapDefaults.centerLatitude ?? DEFAULT_CENTER.latitude,
+    longitude: mapDefaults.centerLongitude ?? DEFAULT_CENTER.longitude,
+  };
+  const pickerZoom = selectedCoordinate ? Math.max(14, mapDefaults.defaultZoom) : mapDefaults.defaultZoom;
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -101,9 +118,10 @@ export default function BinLocationPicker({
       mapboxgl.accessToken = mapboxToken;
       const map = new mapboxgl.Map({
         container,
-        style: "mapbox://styles/mapbox/navigation-day-v1",
+        style: getMapboxStyleUrl(mapDefaults.mapboxStyle),
         center: [center.longitude, center.latitude],
-        zoom: 14,
+        zoom: pickerZoom,
+        cooperativeGestures: true,
       });
       map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
@@ -145,7 +163,10 @@ export default function BinLocationPicker({
       .then((L) => {
         if (cancelled || !containerRef.current) return;
 
-        const map = L.map(containerRef.current).setView([center.latitude, center.longitude], 14);
+        const map = L.map(containerRef.current, {
+          scrollWheelZoom: false,
+          touchZoom: false,
+        }).setView([center.latitude, center.longitude], pickerZoom);
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         }).addTo(map);
@@ -185,7 +206,7 @@ export default function BinLocationPicker({
       mapRef.current = null;
       markerRef.current = null;
     };
-  }, [mapboxToken, readOnly]);
+  }, [mapboxToken, readOnly, mapDefaults.mapboxStyle, mapDefaults.defaultZoom, mapDefaults.centerLatitude, mapDefaults.centerLongitude]);
 
   useEffect(() => {
     if (!selectedCoordinate || !mapRef.current || !markerRef.current) return;
@@ -201,7 +222,7 @@ export default function BinLocationPicker({
   }, [mapboxToken, selectedCoordinate]);
 
   return (
-    <div className={`relative overflow-hidden rounded-xl border border-gray-200 bg-gray-100 ${className}`}>
+    <div className={`relative overflow-hidden rounded-xl border border-gray-200 bg-gray-100 ${className}`} style={{ touchAction: "pan-y" }}>
       <div ref={containerRef} className="h-full w-full" />
       <div className="absolute left-3 top-3 max-w-[calc(100%-1.5rem)] rounded-lg bg-white/95 px-3 py-2 text-xs text-gray-700 shadow">
         {readOnly ? "Current saved bin position" : "Click the map or drag the pin to set the bin coordinates."}

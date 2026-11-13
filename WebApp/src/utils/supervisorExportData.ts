@@ -136,7 +136,7 @@ export async function fetchSupervisorExportData(): Promise<SupervisorExportData>
   const organization = (settingsResult.data?.value as { name?: string } | null) ?? {};
 
   return {
-    organizationName: organization.name?.trim() || "ECOLOOP",
+    organizationName: organization.name?.trim() || "EcoLoop",
     routes: (routesResult.data as SupervisorExportRoute[]) ?? [],
     drivers: (driversResult.data as SupervisorExportDriver[]) ?? [],
     deliveries: (deliveriesResult.data as SupervisorExportDelivery[]) ?? [],

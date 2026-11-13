@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../services/supabaseClient";
+import { getRuntimeSystemSettings, subscribeRuntimeSettings } from "../utils/systemSettings";
 
 export type AppRole = "admin" | "dispatcher" | "supervisor" | "truck_driver";
 export type AccountStatus = "pending_approval" | "active" | "suspended" | "inactive";
@@ -18,13 +19,6 @@ interface AuthContextValue {
   profile: UserProfile | null;
   authError: string | null;
   signIn: (params: { email: string; password: string; role?: "admin" | "dispatcher" | "supervisor" }) => Promise<void>;
-  signUp: (params: {
-    fullName: string;
-    contactNumber: string;
-    email: string;
-    password: string;
-    role: "admin" | "dispatcher" | "supervisor";
-  }) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -50,23 +44,29 @@ function roleAllowedForWeb(role: AppRole) {
   return role === "admin" || role === "dispatcher" || role === "supervisor";
 }
 
-const WEB_SIGNUP_ROLES: Array<"admin" | "dispatcher" | "supervisor"> = ["admin", "dispatcher", "supervisor"];
-
 export function AuthProvider({ children }: { children: any }) {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null as any | null);
   const [profile, setProfile] = useState(null as UserProfile | null);
   const [authError, setAuthError] = useState(null as string | null);
+  const pendingLogoutReasonRef = useRef<string | null>(null);
+  const [idleTimeoutMinutes, setIdleTimeoutMinutes] = useState<number>(
+    () => getRuntimeSystemSettings().securityConfig.idleTimeoutMinutes,
+  );
 
   const refresh = async (nextSession: any | null) => {
     setSession(nextSession);
-    setAuthError(null);
 
     if (!nextSession?.user?.id) {
+      const reason = pendingLogoutReasonRef.current;
+      pendingLogoutReasonRef.current = null;
+      setAuthError(reason);
       setProfile(null);
       setLoading(false);
       return;
     }
+
+    setAuthError(null);
 
     try {
       const prof = await fetchProfile(nextSession.user.id);
@@ -118,6 +118,41 @@ export function AuthProvider({ children }: { children: any }) {
     };
   }, []);
 
+  useEffect(() => {
+    return subscribeRuntimeSettings(() => {
+      setIdleTimeoutMinutes(getRuntimeSystemSettings().securityConfig.idleTimeoutMinutes);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!session?.user?.id || !profile?.auth_user_id || idleTimeoutMinutes <= 0) {
+      return undefined;
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const timeoutMs = idleTimeoutMinutes * 60 * 1000;
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        pendingLogoutReasonRef.current = `Signed out automatically after ${idleTimeoutMinutes} minutes of inactivity.`;
+        void supabase.auth.signOut().catch(() => {
+          setAuthError(pendingLogoutReasonRef.current);
+          pendingLogoutReasonRef.current = null;
+        });
+      }, timeoutMs);
+    };
+
+    const events: Array<keyof WindowEventMap> = ["pointerdown", "keydown", "scroll", "touchstart", "focus"];
+    events.forEach((evt) => window.addEventListener(evt, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      events.forEach((evt) => window.removeEventListener(evt, resetTimer));
+    };
+  }, [idleTimeoutMinutes, profile?.auth_user_id, session?.user?.id]);
+
   const signIn = async ({
     email,
     password,
@@ -153,53 +188,7 @@ export function AuthProvider({ children }: { children: any }) {
         setAuthError(webRoleError.message);
         throw webRoleError;
       }
-      if (role && prof.role !== role) {
-        const roleError = new Error(`This account is registered as ${prof.role.replace("_", " ")}, not ${role}.`);
-        await supabase.auth.signOut();
-        setAuthError(roleError.message);
-        throw roleError;
-      }
     }
-  };
-
-  const signUp = async ({
-    fullName,
-    contactNumber,
-    email,
-    password,
-    role,
-  }: {
-    fullName: string;
-    contactNumber: string;
-    email: string;
-    password: string;
-    role: "admin" | "dispatcher" | "supervisor";
-  }) => {
-    if (!WEB_SIGNUP_ROLES.includes(role)) {
-      const invalidRoleError = new Error("Invalid role selected for web registration.");
-      setAuthError(invalidRoleError.message);
-      throw invalidRoleError;
-    }
-    setAuthError(null);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName, contact_number: contactNumber, role } },
-    });
-    if (error) {
-      setAuthError(error.message);
-      throw error;
-    }
-
-    // Profile row is created in Postgres by trigger public.handle_new_auth_user()
-    // on auth.users. Client upsert fails when email confirmation is on because
-    // there is often no JWT yet (auth.uid() is null under RLS).
-    if (data.session) {
-      await supabase.auth.signOut();
-    }
-    setSession(null);
-    setProfile(null);
-    setAuthError(null);
   };
 
   const signOut = async () => {
@@ -208,7 +197,7 @@ export function AuthProvider({ children }: { children: any }) {
   };
 
   const value = useMemo(
-    () => ({ loading, session, profile, authError, signIn, signUp, signOut }) as AuthContextValue,
+    () => ({ loading, session, profile, authError, signIn, signOut }) as AuthContextValue,
     [loading, session, profile, authError],
   );
 
