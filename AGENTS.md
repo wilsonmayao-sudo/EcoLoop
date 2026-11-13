@@ -79,3 +79,12 @@ When reviewing code:
 - Ask questions only when critical information is missing.
 - If information is uncertain, say so directly.
 - Prefer precision over verbosity.
+
+## Autonomous Workflow & Execution
+
+- **Autonomous Execution**: Automatically run necessary commands, install dependencies, execute builds, run tests, and perform code changes without requesting step-by-step confirmation for routine tasks.
+- **Project Scope**: Restrict all operations to this repository directory. Do not alter unrelated files, system paths, or other projects.
+- **Self-Correction**: Upon command or build failure, analyze error output, locate the root cause, and implement a targeted fix before asking the user.
+- **Verification**: Automatically run builds and checks (`npm run build` for WebApp, syntax/type checks, tests) after making changes. Review and fix issues immediately.
+- **Safety Boundaries**: Never execute destructive commands (`rm -rf /`, force git clean/reset, force push, disk wipe). Never expose secrets, credentials, or modify security configurations.
+- **Minimal Interruptions**: Prompt the user only for missing requirements, irreversible actions, or critical design choices. Keep reporting concise and factual.

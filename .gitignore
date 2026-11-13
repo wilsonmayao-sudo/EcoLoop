@@ -30,3 +30,22 @@ Thumbs.db
 # Coverage
 coverage/
 
+# Supabase local CLI state & caches
+supabase/.temp/
+supabase/.branches/
+supabase/schemas/
+
+# Graphify local AST/stat caches
+graphify-out/cache/
+
+# Local IDE/CLI launchers & signing keys
+scripts/launch-agy.ps1
+*.jks
+*.keystore
+
+# Local reference documents & audit artifacts (not tracked in repo)
+CODEBASE_AUDIT_REPORT.md
+Garbage Collector Schedule/
+database/official_schedule_seed.sql
+scripts/generate-schedule-sql.mjs
+

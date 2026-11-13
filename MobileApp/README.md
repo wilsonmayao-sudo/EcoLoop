@@ -4,12 +4,11 @@ A React Native mobile application for waste management route tracking and report
 
 ## Features
 
-- **Home Screen**: Today's route overview, quick actions, and recent activity
-- **Navigate Screen**: Route visualization with turn-by-turn directions and pending pickups
-- **Map Screen**: Interactive map view with Leaflet/OpenStreetMap integration
-- **Reports Screen**: Statistics dashboard, waste generation data, and issue reporting
-- **Profile Screen**: User profile management, statistics, and availability settings
-- **Settings Screen**: App preferences, theme switching, and notification controls
+- **Home Screen**: Today's route overview, driver-reported load/overflow controls, and pending pickups
+- **Map & Navigate Screen**: Turn-by-turn navigation, street geometry, and SWMO landfill guidance
+- **Reports Screen**: Waste collection history and issue reporting
+- **Notifications Screen**: Route assignment and overflow notifications
+- **Profile, Language, Privacy & Help Screens**: Driver account details, preferences, and support information
 - **Login Screen**: Authentication interface for drivers
 
 ## Getting Started
@@ -41,53 +40,46 @@ npm start
 
 ### Environment Setup
 
-For route API functionality, set the OpenRouteService API key in your environment:
-```bash
-export OPENROUTE_API_KEY=your_api_key_here
-```
+Copy [`.env.example`](.env.example) to `.env` and fill in your client configuration:
 
-Or add it to `app.config.js` for Expo configuration.
+```bash
+EXPO_PUBLIC_SUPABASE_URL=
+EXPO_PUBLIC_SUPABASE_ANON_KEY=
+EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN=
+```
 
 ## Project Structure
 
 ```
-PhoneApp/
+MobileApp/
 ├── App.js                 # Expo entry point
-├── app.json               # Expo configuration
-├── app.config.js          # Dynamic Expo config with environment variables
-├── babel.config.js        # Babel configuration
+├── app.json               # Expo static configuration
+├── app.config.js          # Dynamic Expo config reading environment variables
 ├── package.json           # Dependencies and scripts
 ├── src/
 │   ├── app/               # Providers, navigation, and error boundary
 │   ├── theme.js           # Color scheme and theme constants (light/dark)
-│   ├── screens/           # All screen components
-│   │   ├── HomeScreen.js
-│   │   ├── MapNavigateScreen.js
-│   │   ├── ReportsScreen.js
-│   │   ├── ProfileScreen.js
-│   │   ├── SettingsScreen.js
-│   │   └── LoginScreen.js
+│   ├── screens/           # Home, MapNavigate, Reports, Notifications, Profile, Login, and info screens
 │   ├── components/
-│   │   └── ui/            # Reusable UI components
-│   │       ├── Header.js
-│   │       ├── TagChip.js
-│   │       ├── StatCard.js
-│   │       └── ActionPill.js
-│   ├── context/           # React Context providers
+│   │   └── ui/            # Reusable UI components (AppButton, AppDropdown, Header, SurfaceCard, TagChip)
+│   ├── context/           # React Context providers (Auth, Pickup, Notifications, Settings, Theme)
 │   ├── lib/               # Supabase client
-│   └── services/          # Offline sync and service helpers
+│   ├── services/          # Live location, local notifications, and offline sync
+│   └── utils/             # Route geometry, geo navigation, Mapbox WebView, and schema fallback helpers
 └── README.md
 ```
 
 ## Technologies Used
 
-- **React Native** (0.81): Mobile app framework
-- **Expo** (54): Development platform and tooling
+- **React Native** (0.88): Mobile app framework
+- **Expo** (SDK 58): Development platform and tooling
 - **React Navigation**: Navigation library (bottom tabs + stack)
 - **@expo/vector-icons**: Icon library (Ionicons)
 - **React Native Safe Area Context**: Safe area handling
-- **React Native WebView**: For map rendering with Leaflet
+- **React Native WebView**: Interactive map rendering with Mapbox / Leaflet
 - **@react-native-async-storage/async-storage**: Local data persistence
+- **expo-location**: Foreground/background route GPS telemetry
+- **expo-notifications**: Dev/production local route notifications (guarded in Expo Go)
 - **expo-image-picker**: Image selection for profile and reports
 - **expo-constants**: Access to app configuration
 
@@ -127,8 +119,8 @@ PhoneApp/
 ## Development Notes
 
 - The app uses Supabase Auth and live database tables for driver accounts and assigned pickups
-- Map functionality uses WebView with Leaflet for cross-platform compatibility
-- Route API integration requires OpenRouteService API key
+- Map functionality uses WebView with Mapbox GL JS / Leaflet for cross-platform compatibility
+- Street routing uses Mapbox Directions API with keyless public OSRM and cached polyline fallbacks
 - AsyncStorage is used for preferences, avatar cache, and offline mutation queue
 - Error boundaries are implemented for graceful error handling
 
