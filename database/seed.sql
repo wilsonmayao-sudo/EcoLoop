@@ -1,6 +1,7 @@
 insert into public.system_settings (key, value, description)
 values
   ('depot', '{"id":"DEPOT","latitude":13.6218,"longitude":123.1948}'::jsonb, 'Default dispatch depot for route optimization'),
+  ('landfill', '{"id":"SWMO_LANDFILL","name":"SWMO - Sanitary Landfill","latitude":13.6212151,"longitude":123.2576126,"google_maps_url":"https://www.google.com/maps/place/SWMO+-+SANITARY+LANDFILL/@13.6212151,123.2576126,17z"}'::jsonb, 'Sanitary Landfill destination for waste collection trucks'),
   ('organization', '{"name":"ECOLOOP","city":"Naga City"}'::jsonb, 'Displayed organization identity')
 on conflict (key) do nothing;
 
@@ -24,16 +25,6 @@ values
   ('Other', 100)
 on conflict (name) do nothing;
 
-insert into public.service_areas (name, sort_order)
-values
-  ('Downtown District', 10),
-  ('Residential Area A', 20),
-  ('Residential Area B', 30),
-  ('Industrial Zone', 40),
-  ('Market District', 50),
-  ('Commercial Zone', 60)
-on conflict (name) do nothing;
-
 insert into public.bin_types (name, sort_order)
 values
   ('residential', 10),
@@ -44,18 +35,22 @@ on conflict (name) do nothing;
 insert into public.role_permissions (role, page, can_read, can_create, can_update, can_delete)
 values
   ('admin', 'dashboard', true, false, false, false),
+  ('admin', 'live-monitoring', true, true, true, false),
+  ('admin', 'area-management', true, true, true, true),
+  ('admin', 'route-planning', true, true, true, true),
   ('admin', 'reports', true, true, false, true),
-  ('admin', 'bin-locations', true, true, true, true),
   ('admin', 'notifications', true, true, true, true),
-  ('admin', 'user-approvals', true, false, true, false),
+  ('admin', 'users', true, true, true, true),
   ('admin', 'system-settings', true, true, true, false),
   ('dispatcher', 'dashboard', true, false, false, false),
+  ('dispatcher', 'live-monitoring', true, true, true, false),
+  ('dispatcher', 'area-management', true, true, true, true),
   ('dispatcher', 'route-planning', true, true, true, true),
-  ('dispatcher', 'vehicle-monitoring', true, true, true, false),
-  ('dispatcher', 'bin-locations', true, true, true, true),
   ('dispatcher', 'notifications', true, true, true, true),
   ('dispatcher', 'reports', true, false, true, true),
-  ('supervisor', 'supervisor-dashboard', true, false, false, false),
+  ('supervisor', 'dashboard', true, false, false, false),
+  ('supervisor', 'live-monitoring', true, false, false, false),
+  ('supervisor', 'area-management', true, false, false, false),
   ('supervisor', 'reports', true, false, true, false),
   ('supervisor', 'notifications', true, false, true, false)
 on conflict (role, page) do nothing;
