@@ -5,7 +5,8 @@ import CustomSelect from "../components/ui/CustomSelect";
 import { formatDateOnly, getRouteProgress, isBinActive, normalizeStatus, relativeTime, useLiveData, type PageType } from "../hooks/useLiveData";
 import { supabase } from "../services/supabaseClient";
 import { useAuth, type AppRole } from "../contexts/AuthContext";
-import { doesBinMatchScheduleDay, doesScheduleMatchDay } from "../utils/scheduleDays";
+import { doesBinMatchScheduleDay, doesScheduleMatchDay, SCHEDULE_DAY_CODES, SCHEDULE_DAY_LABELS } from "../utils/scheduleDays";
+import { cleanCollectionAreaTitle } from "../utils/areaDisplay";
 import {
   fetchAdminUserProfiles,
   formatAccountRoleLabel,
@@ -14,6 +15,7 @@ import {
 } from "../utils/userProfiles";
 import { resolveReportImageUrl } from "../utils/reportMedia";
 import type { ReportPeriod } from "../utils/reportDateRange";
+import type { DispatcherPdfReportType } from "../utils/supervisorPdfExport";
 
 function labelRouteStatus(status: string) {
   const n = normalizeStatus(status);
@@ -37,10 +39,15 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
   const isAdmin = role === "admin";
   const canManageRoutes = role === "dispatcher";
   const canExportDriverPdf = role === "supervisor" || role === "dispatcher";
+  const [exportReportType, setExportReportType] = useState<DispatcherPdfReportType>("driver");
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("today");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
-  const [selectedDriverId, setSelectedDriverId] = useState("");
+  const [selectedDriverId, setSelectedDriverId] = useState("ALL");
+  const [exportAreaCode, setExportAreaCode] = useState("ALL");
+  const [exportScheduleDay, setExportScheduleDay] = useState("ALL");
+  const [exportRouteStatus, setExportRouteStatus] = useState("ALL");
+  const [exportFleetStatus, setExportFleetStatus] = useState("ALL");
   const [showExportModal, setShowExportModal] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -52,19 +59,68 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
       }),
     [drivers],
   );
-  const driverOptions = useMemo(() => activeDrivers.map((driver) => ({ value: String(driver.id), label: driver.name })), [activeDrivers]);
+  const driverOptions = useMemo(
+    () => [
+      { value: "ALL", label: `All Active Drivers (${activeDrivers.length})` },
+      ...activeDrivers.map((driver) => ({ value: String(driver.id), label: driver.name })),
+    ],
+    [activeDrivers],
+  );
+  const reportTypeOptions = [
+    { value: "driver", label: "Driver Operational Report" },
+    { value: "route", label: "Route Operations Report" },
+    { value: "fleet", label: "Fleet & Live Monitoring Report" },
+    { value: "activity", label: "Collection Activity & Schedule Report" },
+  ];
   const reportPeriodOptions = [
     { value: "today", label: "Today" },
     { value: "week", label: "This Week" },
     { value: "month", label: "This Month" },
     { value: "custom", label: "Custom Range" },
   ];
-
-  useEffect(() => {
-    if (!selectedDriverId && drivers.length > 0) {
-      setSelectedDriverId(String(drivers[0].id));
-    }
-  }, [drivers, selectedDriverId]);
+  const areaFilterOptions = useMemo(() => {
+    const areaMap = new Map<string, string>();
+    collectionSchedules.forEach((row) => {
+      const code = row.area_code?.trim();
+      if (!code) return;
+      if (!areaMap.has(code)) {
+        areaMap.set(code, cleanCollectionAreaTitle(code, row.area_name));
+      }
+    });
+    bins.forEach((bin) => {
+      const code = bin.area_code?.trim();
+      if (code && !areaMap.has(code)) {
+        areaMap.set(code, cleanCollectionAreaTitle(code));
+      }
+    });
+    const sorted = Array.from(areaMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+      .map(([value, label]) => ({ value, label }));
+    return [{ value: "ALL", label: "All Collection Areas" }, ...sorted];
+  }, [bins, collectionSchedules]);
+  const scheduleDayFilterOptions = useMemo(
+    () => [
+      { value: "ALL", label: "All Scheduled Days" },
+      ...SCHEDULE_DAY_CODES.map((day) => ({ value: day, label: SCHEDULE_DAY_LABELS[day] })),
+    ],
+    [],
+  );
+  const routeStatusFilterOptions = [
+    { value: "ALL", label: "All Route Statuses" },
+    { value: "pending", label: "Pending" },
+    { value: "active", label: "Active" },
+    { value: "completed", label: "Completed" },
+    { value: "cancelled", label: "Cancelled" },
+  ];
+  const fleetStatusFilterOptions = [
+    { value: "ALL", label: "All Fleet Units" },
+    { value: "ONLINE", label: "Online Units" },
+    { value: "OFFLINE", label: "Offline Units" },
+    { value: "ON_ROUTE", label: "On Route" },
+    { value: "LANDFILL", label: "Returning to Landfill" },
+    { value: "STOPPED", label: "Stopped / Delayed GPS" },
+    { value: "AVAILABLE", label: "Available" },
+  ];
 
   useEffect(() => {
     if (!showExportModal) return;
@@ -77,11 +133,11 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
 
   const handleExportPdf = async () => {
     if (!canExportDriverPdf) return;
-    if (!selectedDriverId) {
-      setExportError("Select a driver before exporting.");
+    if (exportReportType === "driver" && !selectedDriverId) {
+      setExportError("Select a driver scope before exporting.");
       return;
     }
-    if (reportPeriod === "custom" && (!customStart || !customEnd)) {
+    if (exportReportType !== "fleet" && reportPeriod === "custom" && (!customStart || !customEnd)) {
       setExportError("Select both start and end dates for a custom range.");
       return;
     }
@@ -91,11 +147,17 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
     try {
       const { exportSupervisorPdf } = await import("../utils/supervisorPdfExport");
       await exportSupervisorPdf({
+        reportType: exportReportType,
         supervisorName: profile?.full_name ?? profile?.email ?? (role === "supervisor" ? "Supervisor" : "Dispatcher"),
-        driverId: selectedDriverId,
+        supervisorRoleLabel: role === "supervisor" ? "SWMO Supervisor" : "SWMO Dispatcher",
+        driverId: selectedDriverId || "ALL",
         period: reportPeriod,
         customStart: reportPeriod === "custom" ? customStart : undefined,
         customEnd: reportPeriod === "custom" ? customEnd : undefined,
+        areaCode: exportAreaCode,
+        scheduleDay: exportScheduleDay,
+        routeStatus: exportRouteStatus,
+        fleetStatus: exportFleetStatus,
       });
       setShowExportModal(false);
     } catch (exportErr) {
@@ -480,7 +542,7 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
                 setExportError(null);
                 setShowExportModal(true);
               }}
-              disabled={drivers.length === 0}
+              disabled={loading}
               className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
             >
               <FileDown className="size-4" aria-hidden="true" />
@@ -500,11 +562,11 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
             if (!exporting) setShowExportModal(false);
           }}
         >
-          <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden" onClick={(event) => event.stopPropagation()}>
+          <div className="flex max-h-[90vh] w-full max-w-xl flex-col rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 bg-gray-50/70">
               <div>
-                <h2 id="export-dialog-title" className="text-base sm:text-lg font-semibold text-gray-900">Export Driver PDF</h2>
-                <p className="mt-1 text-xs sm:text-sm text-gray-600">Select the driver and date range for the operational report.</p>
+                <h2 id="export-dialog-title" className="text-base sm:text-lg font-semibold text-gray-900">Export Official SWMO PDF</h2>
+                <p className="mt-1 text-xs sm:text-sm text-gray-600">Select report category and operational filters for the Naga City SWMO document.</p>
               </div>
               <button
                 type="button"
@@ -516,28 +578,53 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
                 <X className="size-5" aria-hidden="true" />
               </button>
             </div>
-            <div className="space-y-4 px-5 py-5">
+            <div className="space-y-4 overflow-y-auto px-5 py-5">
               {exportError && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{exportError}</div>}
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Driver</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Report Type</label>
                 <CustomSelect
-                  value={selectedDriverId}
-                  onChange={setSelectedDriverId}
-                  options={driverOptions}
-                  placeholder="Select driver"
-                  ariaLabel="Driver"
+                  value={exportReportType}
+                  onChange={(value) => {
+                    setExportReportType(value as DispatcherPdfReportType);
+                    setExportError(null);
+                  }}
+                  options={reportTypeOptions}
+                  ariaLabel="Report Type"
                 />
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Date range</label>
-                <CustomSelect
-                  value={reportPeriod}
-                  onChange={(period) => setReportPeriod(period as ReportPeriod)}
-                  options={reportPeriodOptions}
-                  ariaLabel="Date range"
-                />
-              </div>
-              {reportPeriod === "custom" && (
+
+              {(exportReportType === "driver" || exportReportType === "route") && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    {exportReportType === "driver" ? "Driver Scope" : "Assigned Driver Filter"}
+                  </label>
+                  <CustomSelect
+                    value={selectedDriverId}
+                    onChange={setSelectedDriverId}
+                    options={driverOptions}
+                    placeholder="Select driver"
+                    ariaLabel="Driver Scope"
+                  />
+                </div>
+              )}
+
+              {exportReportType === "fleet" ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2.5 text-xs text-emerald-900">
+                  Exports the live fleet monitoring snapshot in Philippine Time (PHT), including truck type, driver assignment, online/offline state, last GPS update, and current route.
+                </div>
+              ) : (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Date range</label>
+                  <CustomSelect
+                    value={reportPeriod}
+                    onChange={(period) => setReportPeriod(period as ReportPeriod)}
+                    options={reportPeriodOptions}
+                    ariaLabel="Date range"
+                  />
+                </div>
+              )}
+
+              {exportReportType !== "fleet" && reportPeriod === "custom" && (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="driver-export-start">Start date</label>
@@ -561,6 +648,52 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
                   </div>
                 </div>
               )}
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Collection Area</label>
+                  <CustomSelect
+                    value={exportAreaCode}
+                    onChange={setExportAreaCode}
+                    options={areaFilterOptions}
+                    ariaLabel="Collection Area"
+                  />
+                </div>
+
+                {exportReportType === "fleet" ? (
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Fleet / Connectivity Status</label>
+                    <CustomSelect
+                      value={exportFleetStatus}
+                      onChange={setExportFleetStatus}
+                      options={fleetStatusFilterOptions}
+                      ariaLabel="Fleet Status"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Collection Day</label>
+                    <CustomSelect
+                      value={exportScheduleDay}
+                      onChange={setExportScheduleDay}
+                      options={scheduleDayFilterOptions}
+                      ariaLabel="Collection Day"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {(exportReportType === "driver" || exportReportType === "route") && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Route Status Filter</label>
+                  <CustomSelect
+                    value={exportRouteStatus}
+                    onChange={setExportRouteStatus}
+                    options={routeStatusFilterOptions}
+                    ariaLabel="Route Status"
+                  />
+                </div>
+              )}
             </div>
             <div className="flex flex-col-reverse gap-2 border-t border-gray-200 px-5 py-4 sm:flex-row sm:justify-end">
               <button
@@ -574,7 +707,7 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
               <button
                 type="button"
                 onClick={() => void handleExportPdf()}
-                disabled={exporting || !selectedDriverId}
+                disabled={exporting || (exportReportType === "driver" && !selectedDriverId)}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
               >
                 <FileDown className="size-4" />

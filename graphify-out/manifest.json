@@ -125,8 +125,8 @@
     "semantic_hash": ""
   },
   "MobileApp/src/screens/HomeScreen.js": {
-    "mtime": 1794654732.1358533,
-    "ast_hash": "704986ce92756e10a968d59eea3c2ed2",
+    "mtime": 1794663142.7331736,
+    "ast_hash": "58ae9e8e3331a7b18696b77759d6cc5f",
     "semantic_hash": ""
   },
   "MobileApp/src/screens/LanguageScreen.js": {
@@ -280,8 +280,8 @@
     "semantic_hash": ""
   },
   "WebApp/src/hooks/useLiveData.ts": {
-    "mtime": 1794656274.586502,
-    "ast_hash": "2c590dd32597d3bc948fe3d03aa4af91",
+    "mtime": 1794662728.4494743,
+    "ast_hash": "e2e4ef55803f7ff3d74a78edd789a66f",
     "semantic_hash": ""
   },
   "WebApp/src/pages/Notifications.tsx": {
@@ -290,8 +290,8 @@
     "semantic_hash": ""
   },
   "WebApp/src/pages/ProfessionalDashboard.tsx": {
-    "mtime": 1794655709.234249,
-    "ast_hash": "7419604e77124393186b6d85f0c221f2",
+    "mtime": 1794659395.9380045,
+    "ast_hash": "d3894d9724337e4007c9700d87214578",
     "semantic_hash": ""
   },
   "WebApp/src/pages/ReportsAndIssues.tsx": {
@@ -320,8 +320,8 @@
     "semantic_hash": ""
   },
   "WebApp/src/utils/reportDateRange.ts": {
-    "mtime": 1791550931.1318407,
-    "ast_hash": "f285a5733ec6bf1e940c003bd2be05b0",
+    "mtime": 1794659138.8464758,
+    "ast_hash": "48be2b69cd86e620751597d33454c272",
     "semantic_hash": ""
   },
   "WebApp/src/utils/reportMedia.ts": {
@@ -340,13 +340,13 @@
     "semantic_hash": ""
   },
   "WebApp/src/utils/supervisorExportData.ts": {
-    "mtime": 1794562155.635706,
-    "ast_hash": "83d37ac00cfcf10e3853b30c3563a1a0",
+    "mtime": 1794661080.0924003,
+    "ast_hash": "bfc48d21e8f7ab408cae0dd965227824",
     "semantic_hash": ""
   },
   "WebApp/src/utils/supervisorPdfExport.ts": {
-    "mtime": 1794586891.5461078,
-    "ast_hash": "0fb00b93871b913a755d4293ab61a6e9",
+    "mtime": 1794659667.212398,
+    "ast_hash": "c17d68e6ad390ad2fb1da4c5823f4fac",
     "semantic_hash": ""
   },
   "WebApp/src/vite-env.d.ts": {
@@ -420,8 +420,8 @@
     "semantic_hash": ""
   },
   "WebApp/src/hooks/useOverflowDispatch.ts": {
-    "mtime": 1794646338.3330219,
-    "ast_hash": "b59161639bbb0e3679e1dd763c16d9cd",
+    "mtime": 1794662803.8601654,
+    "ast_hash": "2a83cbf89722ca4f81235eef16211a74",
     "semantic_hash": ""
   },
   "database/overflow_events.sql": {
@@ -430,8 +430,8 @@
     "semantic_hash": ""
   },
   "database/overflow_acceptance.sql": {
-    "mtime": 1794646361.0322201,
-    "ast_hash": "efe739e0d139b47d2c41bd47fa0511b0",
+    "mtime": 1794663297.4057431,
+    "ast_hash": "0ee63f34d0730686751117929bcde1b5",
     "semantic_hash": ""
   },
   "scripts/verify-fixes.mjs": {
@@ -445,8 +445,8 @@
     "semantic_hash": ""
   },
   "WebApp/src/utils/routing/dynamicReassignment.ts": {
-    "mtime": 1794554890.9980328,
-    "ast_hash": "cfcda5fbe511d8fc527a2c175692db0c",
+    "mtime": 1794662709.2468412,
+    "ast_hash": "89ff620d06ca69c51a9d3f2710bc7df6",
     "semantic_hash": ""
   },
   "database/dynamic_reassignment_schema.sql": {
@@ -460,8 +460,8 @@
     "semantic_hash": ""
   },
   "scripts/verify-dynamic-reassignment.mjs": {
-    "mtime": 1794555003.0311952,
-    "ast_hash": "ee03d4180790d3bb17f7309bb1d1e13e",
+    "mtime": 1794663375.0580964,
+    "ast_hash": "e6da64c6d2090307223ae0f319a6adce",
     "semantic_hash": ""
   },
   "database/official_schedule_migration.sql": {
@@ -480,8 +480,8 @@
     "semantic_hash": ""
   },
   "WebApp/src/pages/LiveMonitoring.tsx": {
-    "mtime": 1794655741.243602,
-    "ast_hash": "db6235b24d21ab467e50b51016f0bbcb",
+    "mtime": 1794662894.183191,
+    "ast_hash": "ee4daffca0e48aa726f78df0ff4dc8f1",
     "semantic_hash": ""
   },
   "WebApp/src/services/streetRouteService.ts": {
@@ -495,8 +495,8 @@
     "semantic_hash": ""
   },
   "MobileApp/src/utils/schemaFallback.js": {
-    "mtime": 1794646249.6464562,
-    "ast_hash": "721526ec19ad41563fbb5bec15008904",
+    "mtime": 1794662959.2296176,
+    "ast_hash": "49b78309a379c382abf15a25ac5a91d7",
     "semantic_hash": ""
   },
   "WebApp/src/components/layout/PageHeader.tsx": {
@@ -607,6 +607,16 @@
   "supabase/migrations/20261114200000_fix_auth_suspend_delete.sql": {
     "mtime": 1794656941.3093312,
     "ast_hash": "c66b63e1582520cba155a67ab3c3cff6",
+    "semantic_hash": ""
+  },
+  "MobileApp/src/utils/dynamicReassignment.js": {
+    "mtime": 1794663052.6638274,
+    "ast_hash": "9c5a64047e48bd1f8daba136eef49b91",
+    "semantic_hash": ""
+  },
+  "supabase/migrations/20261114213000_dynamic_overflow_reassignment.sql": {
+    "mtime": 1794663239.6146858,
+    "ast_hash": "c94ce948e724fa533814fe04d8136017",
     "semantic_hash": ""
   }
 }

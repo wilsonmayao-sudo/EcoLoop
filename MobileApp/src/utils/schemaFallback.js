@@ -79,14 +79,18 @@ export async function selectCandidateVehiclesWithFallback(supabaseClient, vehicl
   if (!Array.isArray(vehicleIds) || vehicleIds.length === 0) {
     return { data: [], error: null };
   }
+  const fullColumns =
+    "id, label, load_percent, status, is_active, route_id, capacity_liters, capacity_kg, latitude, longitude, last_seen_at";
+  const fallbackColumns =
+    "id, label, status, is_active, route_id, capacity_liters, capacity_kg, latitude, longitude, last_seen_at";
   const res = await supabaseClient
     .from("vehicles")
-    .select("id, label, load_percent, status")
+    .select(fullColumns)
     .in("id", vehicleIds);
   if (res?.error && isMissingColumnSchemaError(res.error, "load_percent")) {
     return supabaseClient
       .from("vehicles")
-      .select("id, label, status")
+      .select(fallbackColumns)
       .in("id", vehicleIds);
   }
   return res;

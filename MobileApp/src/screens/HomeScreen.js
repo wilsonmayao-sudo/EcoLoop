@@ -24,7 +24,10 @@ import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../lib/supabase";
 import { SWMO_LANDFILL } from "../utils/navigationRoute";
-import { haversineMeters } from "../utils/geoNav";
+import {
+  evaluateMultiCriteriaReassignment,
+  SWMO_LANDFILL_DISPOSAL_SITE,
+} from "../utils/dynamicReassignment";
 import {
   SCHEDULE_DAY_CODES,
   doesScheduleMatchDay,
@@ -409,84 +412,214 @@ export default function HomeScreen() {
         location: p.street || p.address || "Collection Stop",
       }));
 
-      // 2. Query available vehicles with drivers & live GPS to evaluate candidate capacity and real distance
-      let targetVehicleId = null;
-      let targetDriverId = null;
-      let distanceKm = null;
+      const uncollectedStops = uncollectedPickups.map((p, idx) => ({
+        id: String(p.binId ?? idx + 1),
+        binId: p.binId,
+        coordinate: { lat: Number(p.lat), lng: Number(p.lng) },
+        stopOrder: p.stopOrder ?? idx + 1,
+        location: p.street || p.address || "Collection Stop",
+      }));
 
-      const [driverRes, locRes] = await Promise.all([
+      // 2. Query active drivers, live GPS, and open overflow locks for Dynamic Reassignment Engine
+      const MAX_OFFLINE_SECONDS = 90;
+      const nowMs = Date.now();
+      const [driverRes, locRes, openEventsRes] = await Promise.all([
         supabase
           .from("drivers")
-          .select("id, name, status, assigned_vehicle_id")
+          .select("id, name, status, assigned_vehicle_id, last_seen_at")
           .neq("id", driver.id)
           .in("status", ["available", "on_route"]),
         supabase
           .from("vehicle_locations_latest")
           .select("vehicle_id, driver_id, latitude, longitude, updated_at"),
+        supabase
+          .from("overflow_events")
+          .select("source_vehicle_id, target_vehicle_id, target_driver_id, status")
+          .in("status", ["pending", "dispatched", "accepted"]),
       ]);
 
       if (driverRes.error) throw driverRes.error;
       const activeDrivers = driverRes.data || [];
       const latestLocations = locRes.data || [];
+      const openOverflowEvents = openEventsRes?.error ? [] : openEventsRes?.data || [];
 
-      const firstStop = overflowBins.find((b) => Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng)));
-      const sourceLoc = latestLocations.find(
-        (l) => String(l.driver_id) === String(driver.id) || (vehicleId && String(l.vehicle_id) === String(vehicleId)),
-      );
-      const originPoint = sourceLoc && Number.isFinite(Number(sourceLoc.latitude)) && Number.isFinite(Number(sourceLoc.longitude))
-        ? { lat: Number(sourceLoc.latitude), lng: Number(sourceLoc.longitude) }
-        : firstStop
-          ? { lat: Number(firstStop.lat), lng: Number(firstStop.lng) }
-          : { lat: Number(currentRoute?.center_lat) || 13.6218, lng: Number(currentRoute?.center_lng) || 123.1948 };
+      const busySourceVehicleIds = new Set();
+      const busyTargetVehicleIds = new Set();
+      const busyTargetDriverIds = new Set();
+      openOverflowEvents.forEach((ev) => {
+        const sNorm = String(ev.status || "").toLowerCase();
+        if (sNorm === "pending" && ev.source_vehicle_id != null) {
+          busySourceVehicleIds.add(String(ev.source_vehicle_id));
+        }
+        if (sNorm === "dispatched" || sNorm === "accepted") {
+          if (ev.source_vehicle_id != null) busySourceVehicleIds.add(String(ev.source_vehicle_id));
+          if (ev.target_vehicle_id != null) busyTargetVehicleIds.add(String(ev.target_vehicle_id));
+          if (ev.target_driver_id != null) busyTargetDriverIds.add(String(ev.target_driver_id));
+        }
+      });
 
+      const candidateInputs = [];
       if (activeDrivers.length > 0) {
-        const candidateVehicleIds = activeDrivers.map((d) => d.assigned_vehicle_id).filter(Boolean);
+        const candidateVehicleIds = [
+          ...new Set(
+            activeDrivers
+              .map((d) => normalizeNonEmptyId(d.assigned_vehicle_id))
+              .filter((vId) => vId && String(vId) !== String(vehicleId)),
+          ),
+        ];
+
         let candidateVehicles = [];
         if (candidateVehicleIds.length > 0) {
           const { data: vehData } = await selectCandidateVehiclesWithFallback(supabase, candidateVehicleIds);
           candidateVehicles = vehData || [];
         }
 
-        const scoredCandidates = activeDrivers
-          .map((cand) => {
-            const veh = candidateVehicles.find((v) => String(v.id) === String(cand.assigned_vehicle_id));
-            const loadPct = Number(veh?.load_percent) || 0;
-            if (loadPct >= 90) return null;
-            const candLoc = latestLocations.find(
-              (l) =>
-                String(l.driver_id) === String(cand.id) ||
-                (cand.assigned_vehicle_id && String(l.vehicle_id) === String(cand.assigned_vehicle_id)),
-            );
-            const candDistKm =
-              candLoc && Number.isFinite(Number(candLoc.latitude)) && Number.isFinite(Number(candLoc.longitude))
-                ? Number(
-                    (
-                      haversineMeters(originPoint, {
-                        lat: Number(candLoc.latitude),
-                        lng: Number(candLoc.longitude),
-                      }) / 1000
-                    ).toFixed(2),
-                  )
-                : null;
-            const distScore = candDistKm != null ? Math.max(0, 100 - candDistKm * 10) : 50;
-            const capScore = 100 - loadPct;
-            const totalScore = capScore * 0.55 + distScore * 0.45;
-            return {
-              driver: cand,
-              distanceKm: candDistKm,
-              totalScore,
-            };
-          })
-          .filter(Boolean)
-          .sort((a, b) => b.totalScore - a.totalScore);
+        const candidateRouteIds = [
+          ...new Set(candidateVehicles.map((v) => normalizeNonEmptyId(v.route_id)).filter(Boolean)),
+        ];
+        const unroutedDriverIds = [
+          ...new Set(
+            candidateVehicles
+              .filter((v) => !normalizeNonEmptyId(v.route_id))
+              .map((v) => activeDrivers.find((d) => String(d.assigned_vehicle_id) === String(v.id))?.id)
+              .filter(Boolean),
+          ),
+        ];
 
-        if (scoredCandidates.length > 0) {
-          const best = scoredCandidates[0];
-          targetDriverId = best.driver.id;
-          targetVehicleId = best.driver.assigned_vehicle_id;
-          distanceKm = best.distanceKm;
-        }
+        const [routeDelRes, driverDelRes] = await Promise.all([
+          candidateRouteIds.length > 0
+            ? supabase
+                .from("deliveries")
+                .select("route_id, driver_id, bin_id, status, bins(latitude, longitude)")
+                .in("route_id", candidateRouteIds)
+            : Promise.resolve({ data: [] }),
+          unroutedDriverIds.length > 0
+            ? supabase
+                .from("deliveries")
+                .select("route_id, driver_id, bin_id, status, bins(latitude, longitude)")
+                .in("driver_id", unroutedDriverIds)
+                .not("status", "in", "(completed,cancelled)")
+            : Promise.resolve({ data: [] }),
+        ]);
+
+        const candidateDeliveries = [
+          ...(Array.isArray(routeDelRes?.data) ? routeDelRes.data : []),
+          ...(Array.isArray(driverDelRes?.data) ? driverDelRes.data : []),
+        ];
+
+        candidateVehicles.forEach((veh) => {
+          const candDriver =
+            activeDrivers.find((d) => String(d.assigned_vehicle_id) === String(veh.id)) ?? null;
+          const candLoc = latestLocations.find(
+            (l) =>
+              (l.vehicle_id != null && String(l.vehicle_id) === String(veh.id)) ||
+              (candDriver?.id != null && l.driver_id != null && String(l.driver_id) === String(candDriver.id)),
+          );
+
+          const rawLat = candLoc?.latitude ?? veh?.latitude;
+          const rawLng = candLoc?.longitude ?? veh?.longitude;
+          const latNum = rawLat != null && rawLat !== "" ? Number(rawLat) : NaN;
+          const lngNum = rawLng != null && rawLng !== "" ? Number(rawLng) : NaN;
+          const hasValidCoords =
+            Number.isFinite(latNum) &&
+            Number.isFinite(lngNum) &&
+            latNum >= -90 &&
+            latNum <= 90 &&
+            lngNum >= -180 &&
+            lngNum <= 180 &&
+            !(Math.abs(latNum) < 1e-6 && Math.abs(lngNum) < 1e-6);
+          const currentLocation = hasValidCoords ? { lat: latNum, lng: lngNum } : null;
+
+          const gpsTimestamp = candLoc?.updated_at ?? veh?.last_seen_at ?? candDriver?.last_seen_at ?? null;
+          const gpsMs = gpsTimestamp ? new Date(gpsTimestamp).getTime() : NaN;
+          const gpsAgeSeconds = Number.isFinite(gpsMs) ? Math.max(0, (nowMs - gpsMs) / 1000) : Infinity;
+          const driverIsOfflineStatus =
+            candDriver != null && String(candDriver.status || "").toLowerCase() === "offline";
+          const isGpsFresh =
+            currentLocation != null &&
+            Number.isFinite(gpsAgeSeconds) &&
+            gpsAgeSeconds <= MAX_OFFLINE_SECONDS &&
+            !driverIsOfflineStatus;
+
+          const routeDels = veh?.route_id
+            ? candidateDeliveries.filter((d) => String(d.route_id) === String(veh.route_id))
+            : [];
+          const hasOpenDriverDeliveries =
+            candDriver?.id != null &&
+            candidateDeliveries.some(
+              (d) =>
+                String(d.driver_id) === String(candDriver.id) &&
+                !["completed", "cancelled"].includes(String(d.status || "").toLowerCase()),
+            );
+
+          let currentLoadPercent = null;
+          let loadSource = "unverified";
+          const reportedLoad =
+            veh?.load_percent != null && veh.load_percent !== "" ? Number(veh.load_percent) : NaN;
+          if (Number.isFinite(reportedLoad) && reportedLoad >= 0) {
+            currentLoadPercent = Math.max(0, Math.min(100, reportedLoad));
+            loadSource = "driver_reported";
+          } else if (veh?.route_id && routeDels.length > 0) {
+            const completed = routeDels.filter(
+              (d) => String(d.status || "").toLowerCase() === "completed",
+            ).length;
+            currentLoadPercent = Math.round((completed / routeDels.length) * 100);
+            loadSource = "route_progress_estimated";
+          } else if (!veh?.route_id && !hasOpenDriverDeliveries) {
+            currentLoadPercent = 0;
+            loadSource = "route_progress_estimated";
+          }
+
+          const activeStops = routeDels
+            .filter((d) => !["completed", "cancelled"].includes(String(d.status || "").toLowerCase()))
+            .map((d) => ({
+              lat: Number(d.bins?.latitude ?? NaN),
+              lng: Number(d.bins?.longitude ?? NaN),
+            }))
+            .filter(
+              (c) =>
+                Number.isFinite(c.lat) &&
+                Number.isFinite(c.lng) &&
+                !(Math.abs(c.lat) < 1e-6 && Math.abs(c.lng) < 1e-6),
+            );
+
+          candidateInputs.push({
+            id: String(veh.id),
+            label: veh.label || `Truck #${veh.id}`,
+            driverId: candDriver?.id != null ? String(candDriver.id) : null,
+            driverName: candDriver?.name || "Assigned Driver",
+            driverStatus: candDriver?.status ?? null,
+            isActive: veh.is_active !== false,
+            currentLocation,
+            currentLoadPercent,
+            loadSource,
+            status: veh.status || "available",
+            activeStops,
+            capacityLiters:
+              veh.capacity_liters != null && Number.isFinite(Number(veh.capacity_liters))
+                ? Number(veh.capacity_liters)
+                : null,
+            capacityKg:
+              veh.capacity_kg != null && Number.isFinite(Number(veh.capacity_kg))
+                ? Number(veh.capacity_kg)
+                : null,
+            gpsTimestamp,
+            gpsAgeSeconds,
+            isGpsFresh,
+            maxOfflineSeconds: MAX_OFFLINE_SECONDS,
+            hasActiveOverflowAssignment:
+              busySourceVehicleIds.has(String(veh.id)) ||
+              busyTargetVehicleIds.has(String(veh.id)) ||
+              (candDriver?.id != null && busyTargetDriverIds.has(String(candDriver.id))),
+          });
+        });
       }
+
+      const reassignmentResult = evaluateMultiCriteriaReassignment(
+        candidateInputs,
+        uncollectedStops,
+        SWMO_LANDFILL_DISPOSAL_SITE,
+      );
 
       // 3. Mark deliveries as OVERFLOW_UNCOLLECTED (tolerate DBs without enum value)
       const deliveryIds = uncollectedPickups.map((p) => p.deliveryId).filter(Boolean);
@@ -509,43 +642,118 @@ export default function HomeScreen() {
       const { error: drvErr } = await updateDriverStatusWithFallback(supabase, driver.id, "full", "on_route");
       if (drvErr) throw drvErr;
 
-      // 5. Insert overflow_events record
-      const normalizedTargetVehicleId = normalizeNonEmptyId(targetVehicleId);
-      const normalizedTargetDriverId = normalizeNonEmptyId(targetDriverId);
-      const eventPayload = {
-        source_vehicle_id: vehicleId,
-        source_driver_id: String(driver.id),
-        source_route_id: String(currentRoute.id),
-        target_vehicle_id: normalizedTargetVehicleId,
-        target_driver_id: normalizedTargetDriverId,
-        status: normalizedTargetDriverId ? "dispatched" : "pending",
-        overflow_bins: overflowBins,
-        bins_count: overflowBins.length,
-        distance_km: distanceKm,
-        reassignment_metadata: {
-          reported_capacity_percent: 100,
-          algorithm: "dynamic_capacity_reassignment",
-        },
-        created_at: new Date().toISOString(),
+      // 5. Insert overflow_events record(s) from Dynamic Reassignment Engine (single or multi-truck split)
+      const nowIso = new Date().toISOString();
+      const mapStopToBinEntry = (stop, idx, meta = null) => {
+        const base = {
+          bin_id: stop.binId,
+          stop_order: stop.stopOrder ?? idx + 1,
+          lat: stop.coordinate.lat,
+          lng: stop.coordinate.lng,
+          location: stop.location || "Collection Stop",
+        };
+        return meta && idx === 0 ? { ...base, _meta: meta } : base;
       };
 
-      const { error: eventError } = await insertOverflowEventWithFallback(supabase, eventPayload);
-      if (eventError) {
-        throw new Error(eventError.message || "Failed inserting overflow event.");
+      const createdPayloads = [];
+      for (const assignment of reassignmentResult.assignments) {
+        const normalizedTargetVehicleId = normalizeNonEmptyId(assignment.vehicleId);
+        const normalizedTargetDriverId = normalizeNonEmptyId(assignment.driverId);
+        const assignmentMeta = {
+          reported_capacity_percent: 100,
+          algorithm: "dynamic_capacity_reassignment_v2",
+          is_multi_truck: reassignmentResult.isMultiTruck,
+          assignment_group_count: reassignmentResult.assignments.length,
+          assigned_stops_count: assignment.stopsCount,
+          total_overflow_stops: uncollectedStops.length,
+          starting_load_percent: assignment.startingLoadPercent,
+          added_load_percent: assignment.addedLoadPercent,
+          projected_load_percent: assignment.projectedLoadPercent,
+          added_volume_liters: assignment.addedVolumeLiters,
+          added_weight_kg: assignment.addedWeightKg,
+          limiting_factor: assignment.limitingFactor,
+          composite_score: assignment.compositeScore,
+          additional_distance_km: assignment.additionalDistanceKm,
+          distance_to_dumpsite_km: assignment.distanceToDumpsiteKm,
+          capacity_validated: reassignmentResult.capacityValidated,
+          capacity_validation_note: reassignmentResult.capacityValidationNote,
+        };
+        const assignedBins = assignment.assignedStops.map((s, idx) =>
+          mapStopToBinEntry(s, idx, assignmentMeta),
+        );
+        const eventPayload = {
+          source_vehicle_id: vehicleId,
+          source_driver_id: String(driver.id),
+          source_route_id: String(currentRoute.id),
+          target_vehicle_id: normalizedTargetVehicleId,
+          target_driver_id: normalizedTargetDriverId,
+          status: normalizedTargetDriverId ? "dispatched" : "pending",
+          overflow_bins: assignedBins,
+          bins_count: assignedBins.length,
+          distance_km: assignment.additionalDistanceKm,
+          reassignment_metadata: assignmentMeta,
+          created_at: nowIso,
+        };
+        const { error: eventError } = await insertOverflowEventWithFallback(supabase, eventPayload);
+        if (eventError) {
+          throw new Error(eventError.message || "Failed inserting overflow event.");
+        }
+        createdPayloads.push(assignment);
+      }
+
+      const pendingStops =
+        reassignmentResult.assignments.length === 0
+          ? uncollectedStops
+          : reassignmentResult.unassignedStops;
+      if (pendingStops.length > 0) {
+        const pendingMeta = {
+          reported_capacity_percent: 100,
+          algorithm: "dynamic_capacity_reassignment_v2",
+          is_multi_truck: reassignmentResult.isMultiTruck,
+          unassigned_reason:
+            reassignmentResult.assignments.length === 0
+              ? "No eligible assisting truck met GPS, driver, and capacity constraints"
+              : "Remaining stops exceed combined capacity of available fleet",
+          capacity_validated: reassignmentResult.capacityValidated,
+          capacity_validation_note: reassignmentResult.capacityValidationNote,
+        };
+        const pendingBins = pendingStops.map((s, idx) => mapStopToBinEntry(s, idx, pendingMeta));
+        const { error: eventError } = await insertOverflowEventWithFallback(supabase, {
+          source_vehicle_id: vehicleId,
+          source_driver_id: String(driver.id),
+          source_route_id: String(currentRoute.id),
+          target_vehicle_id: null,
+          target_driver_id: null,
+          status: "pending",
+          overflow_bins: pendingBins,
+          bins_count: pendingBins.length,
+          distance_km: null,
+          reassignment_metadata: pendingMeta,
+          created_at: nowIso,
+        });
+        if (eventError) {
+          throw new Error(eventError.message || "Failed inserting overflow event.");
+        }
       }
 
       // 6. Notify dispatcher
+      const dispatchedCount = createdPayloads.reduce((sum, a) => sum + a.stopsCount, 0);
+      const notifyMsg =
+        createdPayloads.length > 1
+          ? `${driverName} signaled 100% FULL. Dynamic engine split ${dispatchedCount}/${overflowBins.length} stops across ${createdPayloads.length} trucks (${createdPayloads.map((a) => `${a.label}: ${a.stopsCount}`).join(", ")}).`
+          : createdPayloads.length === 1
+            ? `${driverName} signaled 100% FULL. Dynamic engine dispatched ${createdPayloads[0].stopsCount}/${overflowBins.length} stops to ${createdPayloads[0].label}.`
+            : `${driverName} signaled 100% FULL. ${overflowBins.length} uncollected bins awaiting dispatcher relief assignment.`;
+
       const { error: notifErr } = await insertNotificationWithFallback(supabase, {
         role: "dispatcher",
         title: "Truck Capacity Full",
-        message: normalizedTargetDriverId
-          ? `${driverName} signaled 100% FULL. ${overflowBins.length} uncollected bins dispatched to nearest truck.`
-          : `${driverName} signaled 100% FULL. ${overflowBins.length} uncollected bins awaiting dispatcher relief assignment.`,
+        message: notifyMsg,
         type: "warning",
         category: "truck",
         source_table: "overflow_events",
         read: false,
-        created_at: new Date().toISOString(),
+        created_at: nowIso,
       });
       if (notifErr) console.warn("Overflow notification note:", notifErr.message);
 

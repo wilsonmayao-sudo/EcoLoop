@@ -209,6 +209,8 @@ export interface OverflowBinEntry {
   lat: number;
   lng: number;
   location: string;
+  capacity_percent?: number | null;
+  _meta?: Record<string, any>;
 }
 
 export interface OverflowEventRecord {
@@ -788,7 +790,13 @@ function useLiveDataInternal() {
     setAllReportCategories(allReportCats);
     setAllMaintenanceTypes(allMaintTypes);
     setAllBinTypes(allBTypes);
-    setOverflowEvents((overflowEventsResult.data as OverflowEventRecord[]) ?? []);
+    const hydratedOverflowEvents = ((overflowEventsResult.data as OverflowEventRecord[]) ?? []).map((row) => ({
+      ...row,
+      reassignment_metadata:
+        row.reassignment_metadata ??
+        (Array.isArray(row.overflow_bins) ? row.overflow_bins[0]?._meta : undefined),
+    }));
+    setOverflowEvents(hydratedOverflowEvents);
     setCollectionSchedules((collectionSchedulesResult.data as CollectionScheduleRecord[]) ?? []);
     setError(firstError ?? null);
     hasLoadedOnceRef.current = true;
@@ -1264,7 +1272,12 @@ function useLiveDataInternal() {
   };
 
   const updateOverflowEvent = async (id: string, payload: Partial<OverflowEventRecord>) => {
-    const { error } = await supabase.from("overflow_events").update(payload).eq("id", id);
+    let { error } = await supabase.from("overflow_events").update(payload).eq("id", id);
+    if (error && "reassignment_metadata" in payload && isMissingColumnError(error, "reassignment_metadata")) {
+      const { reassignment_metadata: _ignored, ...rest } = payload as Record<string, unknown>;
+      if (Object.keys(rest).length === 0) return;
+      ({ error } = await supabase.from("overflow_events").update(rest).eq("id", id));
+    }
     if (error) throw error;
     await load();
   };

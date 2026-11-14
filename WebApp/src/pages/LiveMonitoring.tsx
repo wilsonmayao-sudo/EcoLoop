@@ -26,8 +26,15 @@ import { useOverflowDispatch } from "../hooks/useOverflowDispatch";
 import LiveFleetMap, {
   type LiveFleetMapIconKind,
   type LiveFleetMapMarker,
+  type LiveFleetMapRoute,
   type LiveFleetMapTone,
 } from "../components/maps/LiveFleetMap";
+import {
+  fetchStreetRouteGeometry,
+  isValidLngLat,
+  type LngLat,
+} from "../services/streetRouteService";
+import type { UncollectedStop } from "../utils/routing/dynamicReassignment";
 import {
   formatDateOnly,
   formatDateTime,
@@ -140,6 +147,7 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
   const {
     overflowEvents,
     overflowLog,
+    findMultiCriteriaOptimalTruck,
     signalTruckFull,
     acceptOverflow,
     declineOverflow,
@@ -497,9 +505,17 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
     });
   }, [areaFilter, monitoredTrucks, searchQuery, statusFilter]);
 
-  // Map markers: live truck driver locations matching active filters
+  const activeOverflowEvents = useMemo(
+    () =>
+      overflowEvents.filter((e) =>
+        ["pending", "dispatched", "accepted", "declined"].includes(String(e.status).toLowerCase()),
+      ),
+    [overflowEvents],
+  );
+
+  // Map markers: live truck driver locations + active overflow stop pins
   const mapMarkers = useMemo((): LiveFleetMapMarker[] => {
-    return filteredTrucks
+    const truckMarkers: LiveFleetMapMarker[] = filteredTrucks
       .filter((t) => Number.isFinite(t.latitude) && Number.isFinite(t.longitude))
       .map((truck) => {
         let tone: LiveFleetMapTone = "blue";
@@ -536,7 +552,134 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
           small: false,
         };
       });
-  }, [filteredTrucks, operationsConfig.gpsDelayedSeconds, selectedTruckId]);
+
+    const seenOverflowBinIds = new Set<string>();
+    const overflowBinMarkers: LiveFleetMapMarker[] = [];
+    for (const ev of activeOverflowEvents) {
+      if (ev.status === "declined") continue;
+      for (const ob of ev.overflow_bins ?? []) {
+        const bid = String(ob.bin_id);
+        if (seenOverflowBinIds.has(bid)) continue;
+        if (!isValidLngLat(ob.lat, ob.lng)) continue;
+        seenOverflowBinIds.add(bid);
+        const targetVeh = ev.target_vehicle_id != null ? vehicleById.get(String(ev.target_vehicle_id)) : null;
+        overflowBinMarkers.push({
+          key: `overflow-bin:${bid}`,
+          label: `Overflow Stop ${ob.location ?? `#${bid}`}${targetVeh ? ` -> ${targetVeh.label}` : " (Pending)"}`,
+          latitude: Number(ob.lat),
+          longitude: Number(ob.lng),
+          delayed: false,
+          tone: "amber",
+          icon: "bin",
+          small: true,
+        });
+      }
+    }
+
+    return [...truckMarkers, ...overflowBinMarkers];
+  }, [activeOverflowEvents, filteredTrucks, operationsConfig.gpsDelayedSeconds, selectedTruckId, vehicleById]);
+
+  const [liveMapRoutes, setLiveMapRoutes] = useState<LiveFleetMapRoute[]>([]);
+
+  // Resolve road-following Mapbox route polylines for active overflow assisting trucks and selected truck
+  const overflowRouteRequests = useMemo(() => {
+    const requests: Array<{ id: string; label: string; color: string; selected: boolean; waypoints: LngLat[] }> = [];
+    const seenRouteKeys = new Set<string>();
+
+    for (const ev of activeOverflowEvents) {
+      if (!ev.target_vehicle_id || (ev.status !== "dispatched" && ev.status !== "accepted")) continue;
+      const vehId = String(ev.target_vehicle_id);
+      const truck = monitoredTrucks.find((t) => String(t.vehicleId) === vehId);
+      const pts: LngLat[] = [];
+      if (truck && isValidLngLat(truck.latitude, truck.longitude)) {
+        pts.push([Number(truck.longitude), Number(truck.latitude)]);
+      }
+      for (const ob of ev.overflow_bins ?? []) {
+        if (isValidLngLat(ob.lat, ob.lng)) {
+          pts.push([Number(ob.lng), Number(ob.lat)]);
+        }
+      }
+      if (isValidLngLat(landfillSetting.latitude, landfillSetting.longitude)) {
+        pts.push([landfillSetting.longitude, landfillSetting.latitude]);
+      }
+      if (pts.length >= 2) {
+        const sig = `${ev.id}:${pts.map(([lng, lat]) => `${lng.toFixed(3)},${lat.toFixed(3)}`).join("|")}`;
+        if (!seenRouteKeys.has(sig)) {
+          seenRouteKeys.add(sig);
+          requests.push({
+            id: `overflow-${ev.id}`,
+            label: `Relief Route: ${truck?.vehicleName ?? `Truck ${vehId}`} (${ev.bins_count} overflow stops -> ${landfillSetting.name})`,
+            color: "#d97706",
+            selected: true,
+            waypoints: pts,
+          });
+        }
+      }
+    }
+
+    if (selectedTruck?.assignedRoute && isValidLngLat(selectedTruck.latitude, selectedTruck.longitude)) {
+      const completedBinSet = new Set(
+        deliveries
+          .filter(
+            (d) =>
+              String(d.route_id) === String(selectedTruck.assignedRoute!.id) &&
+              ["completed", "cancelled"].includes(normalizeStatus(d.status)),
+          )
+          .map((d) => String(d.bin_id)),
+      );
+      const pts: LngLat[] = [[Number(selectedTruck.longitude), Number(selectedTruck.latitude)]];
+      routeStops
+        .filter((rs) => String(rs.route_id) === String(selectedTruck.assignedRoute!.id) && !completedBinSet.has(String(rs.bin_id)))
+        .sort((a, b) => a.stop_order - b.stop_order)
+        .forEach((rs) => {
+          if (rs.bins && isValidLngLat(rs.bins.latitude, rs.bins.longitude)) {
+            pts.push([Number(rs.bins.longitude), Number(rs.bins.latitude)]);
+          }
+        });
+      if (isValidLngLat(landfillSetting.latitude, landfillSetting.longitude)) {
+        pts.push([landfillSetting.longitude, landfillSetting.latitude]);
+      }
+      if (pts.length >= 2) {
+        requests.push({
+          id: `selected-truck-${selectedTruck.vehicleId}`,
+          label: `Active Route: ${selectedTruck.vehicleName} -> ${landfillSetting.name}`,
+          color: "#059669",
+          selected: true,
+          waypoints: pts,
+        });
+      }
+    }
+
+    return requests;
+  }, [activeOverflowEvents, deliveries, landfillSetting.latitude, landfillSetting.longitude, landfillSetting.name, monitoredTrucks, routeStops, selectedTruck]);
+
+  useEffect(() => {
+    if (overflowRouteRequests.length === 0) {
+      setLiveMapRoutes([]);
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(
+      overflowRouteRequests.map(async (req): Promise<LiveFleetMapRoute | null> => {
+        const res = await fetchStreetRouteGeometry(req.id, req.waypoints);
+        if (!res || res.coordinates.length < 2) return null;
+        return {
+          id: req.id,
+          label: req.label,
+          color: req.color,
+          coordinates: res.coordinates,
+          selected: req.selected,
+        };
+      }),
+    ).then((resolved) => {
+      if (!cancelled) {
+        setLiveMapRoutes(resolved.filter((r): r is LiveFleetMapRoute => r !== null));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [overflowRouteRequests]);
 
   // KPIs
   const kpis = useMemo(() => {
@@ -552,14 +695,6 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
     setSelectedTruckId(truck.vehicleId);
     setConfirmFullTruck(false);
   };
-
-  const activeOverflowEvents = useMemo(
-    () =>
-      overflowEvents.filter((e) =>
-        ["pending", "dispatched", "accepted", "declined"].includes(String(e.status).toLowerCase()),
-      ),
-    [overflowEvents],
-  );
 
   const visibleOverflowLog = useMemo(
     () => overflowLog.filter((entry) => new Date(entry.timestamp).getTime() > logClearedAfterMs),
@@ -584,11 +719,14 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
     await runOverflowAction(() => deleteOverflowEvent(id), "Overflow event deleted.");
   };
 
-  const handleConfirmReassignOverflow = async (eventId: string) => {
-    if (!reassignVehicleId) return;
+  const handleConfirmReassignOverflow = async (eventId: string, overrideVehicleId?: string) => {
+    const target = overrideVehicleId ?? reassignVehicleId;
+    if (!target) return;
     await runOverflowAction(
-      () => reassignOverflow(eventId, reassignVehicleId),
-      "Relief truck assigned and notified.",
+      () => reassignOverflow(eventId, target),
+      target === "AUTO"
+        ? "Dynamic Reassignment Engine assigned eligible relief truck(s)."
+        : "Relief truck validated, assigned, and notified.",
     );
     setReassigningEventId(null);
     setReassignVehicleId("");
@@ -622,12 +760,20 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
       );
       if (!result) {
         setOverflowNotice("No uncollected stops remain on this route.");
+      } else if (result.assignments && result.assignments.length > 1) {
+        const list = result.assignments.map((a) => `${a.label} (${a.stopsCount} stops)`).join(", ");
+        setOverflowNotice(
+          `Overflow dynamically distributed across ${result.assignments.length} relief trucks: ${list}.`,
+        );
       } else if (result.nearest) {
         setOverflowNotice(
           `Overflow dispatched to ${result.nearest.vehicle.label} (${result.nearest.distanceKm} km away).`,
         );
       } else {
-        setOverflowNotice("Overflow event recorded. No idle truck found — manual dispatch required.");
+        setOverflowNotice(
+          result.algorithmResult?.message ||
+            "Overflow event recorded. No eligible truck with verified GPS, driver, and capacity found — manual dispatch required.",
+        );
       }
       setConfirmFullTruck(false);
     } catch (err) {
@@ -831,15 +977,30 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
                             </p>
                           </td>
                           <td className="px-4 py-3">
-                            {event.reassignment_metadata?.algorithm === "nearest-baseline" ? (
-                              <span className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
-                                Nearest Available
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                                <Sparkles className="size-3 text-emerald-600" /> Optimal
-                              </span>
-                            )}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {event.reassignment_metadata?.algorithm === "nearest-baseline" ? (
+                                <span className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+                                  Nearest Available
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                  <Sparkles className="size-3 text-emerald-600" /> Dynamic Engine
+                                </span>
+                              )}
+                              {event.reassignment_metadata?.isMultiTruck && (
+                                <span className="inline-flex items-center rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                                  Split {event.reassignment_metadata.splitIndex ?? 1}/{event.reassignment_metadata.splitCount ?? 2}
+                                </span>
+                              )}
+                              {event.reassignment_metadata?.capacityValidated === false && (
+                                <span
+                                  className="inline-flex items-center rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                                  title={event.reassignment_metadata.capacityValidationNote || "Estimated from route progress"}
+                                >
+                                  Est. Capacity
+                                </span>
+                              )}
+                            </div>
                             {event.reassignment_metadata?.evaluations?.length > 0 && (
                               <button
                                 type="button"
@@ -940,52 +1101,81 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
                             )}
                           </td>
                         </tr>
-                        {reassigningEventId === event.id && canManageFleet && (
-                          <tr className="bg-amber-50/50">
-                            <td colSpan={7} className="px-4 py-3">
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <span className="text-xs font-medium text-amber-900">
-                                  Assign relief truck for {sourceVeh?.label ?? `Truck ${event.source_vehicle_id}`} ({event.bins_count} stops):
-                                </span>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <CustomSelect
-                                    value={reassignVehicleId}
-                                    onChange={(val) => setReassignVehicleId(String(val))}
-                                    size="sm"
-                                    placeholder="Select relief truck..."
-                                    options={vehicles
-                                      .filter((v) => v.is_active !== false && String(v.id) !== String(event.source_vehicle_id))
-                                      .map((v) => {
-                                        const drv = v.driver_id != null ? driverById.get(String(v.driver_id)) : null;
-                                        return {
-                                          value: String(v.id),
-                                          label: `${v.label}${drv ? ` · ${drv.name}` : ""} (${normalizeStatus(v.status)})`,
-                                        };
-                                      })}
-                                  />
-                                  <button
-                                    type="button"
-                                    disabled={overflowBusy || !reassignVehicleId}
-                                    onClick={() => void handleConfirmReassignOverflow(event.id)}
-                                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-                                  >
-                                    Dispatch Relief
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setReassigningEventId(null);
-                                      setReassignVehicleId("");
-                                    }}
-                                    className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                                  >
-                                    Cancel
-                                  </button>
+                        {reassigningEventId === event.id && canManageFleet && (() => {
+                          const algoStops: UncollectedStop[] = (event.overflow_bins ?? []).map((ob, idx) => ({
+                            id: `stop-${ob.bin_id}`,
+                            binId: ob.bin_id,
+                            coordinate: { lat: Number(ob.lat ?? 0), lng: Number(ob.lng ?? 0) },
+                            stopOrder: ob.stop_order ?? idx + 1,
+                            location: ob.location || "Stop",
+                            capacityPercent: ob.capacity_percent ?? null,
+                          }));
+                          const evalRes = findMultiCriteriaOptimalTruck(
+                            String(event.source_vehicle_id ?? ""),
+                            algoStops,
+                            event.id,
+                          );
+                          const rankedOptions = [...evalRes.evaluations]
+                            .sort((a, b) => Number(b.eligible) - Number(a.eligible) || a.rank - b.rank)
+                            .map((ev) => ({
+                              value: ev.vehicleId,
+                              disabled: !ev.eligible,
+                              label: ev.eligible
+                                ? `#${ev.rank} ${ev.label} · ${ev.driverName} (${ev.remainingCapacityPercent}% free, +${ev.additionalDistanceKm} km)`
+                                : `${ev.label} · Unavailable (${ev.ineligibleReason})`,
+                            }));
+                          return (
+                            <tr className="bg-amber-50/50">
+                              <td colSpan={7} className="px-4 py-3">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                  <div>
+                                    <span className="text-xs font-medium text-amber-900 block">
+                                      Assign relief truck for {sourceVeh?.label ?? `Truck ${event.source_vehicle_id}`} ({event.bins_count} stops):
+                                    </span>
+                                    {evalRes.capacityValidationNote && (
+                                      <span className="text-[11px] text-amber-700">{evalRes.capacityValidationNote}</span>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      disabled={overflowBusy || evalRes.assignments.length === 0}
+                                      onClick={() => void handleConfirmReassignOverflow(event.id, "AUTO")}
+                                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                      <Sparkles className="size-3" /> Auto-Assign Optimal
+                                    </button>
+                                    <CustomSelect
+                                      value={reassignVehicleId}
+                                      onChange={(val) => setReassignVehicleId(String(val))}
+                                      size="sm"
+                                      placeholder="Select eligible relief truck..."
+                                      options={rankedOptions}
+                                    />
+                                    <button
+                                      type="button"
+                                      disabled={overflowBusy || !reassignVehicleId}
+                                      onClick={() => void handleConfirmReassignOverflow(event.id)}
+                                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                                    >
+                                      Dispatch Relief
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReassigningEventId(null);
+                                        setReassignVehicleId("");
+                                      }}
+                                      className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
+                              </td>
+                            </tr>
+                          );
+                        })()}
                         {expandedEventId === event.id && event.reassignment_metadata?.evaluations && (
                           <tr className="bg-gray-50/80">
                             <td colSpan={7} className="px-4 py-3">
@@ -1008,10 +1198,18 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
                                     >
                                       <div className="flex justify-between font-semibold">
                                         <span>{cand.label}</span>
-                                        <span>{cand.rank === 1 ? "Selected (#1)" : `#${cand.rank}`}</span>
+                                        <span>
+                                          {!cand.eligible
+                                            ? "Excluded"
+                                            : cand.rank === 1
+                                              ? "Selected (#1)"
+                                              : `#${cand.rank}`}
+                                        </span>
                                       </div>
                                       <div className="mt-1 text-gray-600">
-                                        Dist: {cand.distanceToStopsKm} km · Detour: +{cand.additionalDistanceKm} km · Load: {cand.projectedLoadPercent}% · Score: {cand.compositeScore}
+                                        {!cand.eligible
+                                          ? cand.ineligibleReason || "Ineligible for reassignment"
+                                          : `Dist: ${cand.distanceToStopsKm} km · Detour: +${cand.additionalDistanceKm} km · Load: ${cand.projectedLoadPercent}% · Score: ${cand.compositeScore}`}
                                       </div>
                                     </div>
                                   ))}
@@ -1053,6 +1251,7 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
           <div className="relative">
             <LiveFleetMap
               markers={mapMarkers}
+              routes={liveMapRoutes}
               loading={loading}
               onMarkerClick={(key) => {
                 if (key.startsWith("truck:")) {
