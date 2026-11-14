@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, AppState } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRoute } from "@react-navigation/native";
+import { useRoute, useFocusEffect } from "@react-navigation/native";
 import AppButton from "../components/ui/AppButton";
 import NetInfo from "@react-native-community/netinfo";
 import { Ionicons } from "@expo/vector-icons";
@@ -40,22 +40,6 @@ const OFF_ROUTE_THRESHOLD_METERS = 65;
 const OFF_ROUTE_MIN_INTERVAL_MS = 12_000;
 const COARSE_REFRESH_METERS = 300;
 const COARSE_REFRESH_INTERVAL_MS = 30_000;
-
-function routeNorm(value) {
-  return String(value ?? "")
-    .toLowerCase()
-    .replace(/\s+/g, "_");
-}
-
-function pickActiveRoute(routes) {
-  const list = routes ?? [];
-  return (
-    list.find((route) => routeNorm(route.status) === "active" && route.started_at) ??
-    list.find((route) => routeNorm(route.status) === "active") ??
-    list.find((route) => ["pending", "planned"].includes(routeNorm(route.status))) ??
-    null
-  );
-}
 
 function pickNonEmptyString(...candidates) {
   for (const c of candidates) {
@@ -99,14 +83,17 @@ export default function MapNavigateScreen() {
   const { colors, tokens } = useTheme();
   const { t } = useLanguage();
   const {
-    pendingPickups,
-    assignedPickups,
-    driverRoutes,
+    currentRoute,
+    routeState,
+    routeAssignedPickups,
+    routePendingPickups,
+    isOverflowRouteActive,
     isUnloadingAtLandfill,
     startLandfillUnload,
     completeLandfillUnload,
     completePickup,
     completeRoute,
+    reloadPickups,
     isLoading: pickupsLoading,
   } = usePickups();
   const { location: userLocation, locationPermission } = useLiveLocation();
@@ -172,6 +159,7 @@ export default function MapNavigateScreen() {
     });
     const subApp = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
+        void reloadPickups?.().catch(() => {});
         setFetchRequest((prev) => ({ ...prev, seq: prev.seq + 1 }));
       }
     });
@@ -179,7 +167,22 @@ export default function MapNavigateScreen() {
       unsubNet();
       subApp.remove();
     };
-  }, []);
+  }, [reloadPickups]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void reloadPickups?.().catch(() => {});
+    }, [reloadPickups]),
+  );
+
+  const prevRouteIdRef = useRef(currentRoute?.id ?? null);
+  useEffect(() => {
+    const nextRouteId = currentRoute?.id ?? null;
+    if (prevRouteIdRef.current !== nextRouteId) {
+      prevRouteIdRef.current = nextRouteId;
+      setLocalLandfillMode(false);
+    }
+  }, [currentRoute?.id]);
 
   const mapUsesMapbox = Boolean(mapboxToken && String(mapboxToken).trim());
   const mapHTML = useMemo(
@@ -187,29 +190,11 @@ export default function MapNavigateScreen() {
     [mapUsesMapbox, mapboxToken],
   );
 
-  const currentRoute = useMemo(() => pickActiveRoute(driverRoutes), [driverRoutes]);
-  const routeState = useMemo(() => {
-    const status = routeNorm(currentRoute?.status);
-    if (!currentRoute) return "none";
-    if (status === "completed") return "completed";
-    if (status === "pending" || status === "planned") return "pending";
-    if (status === "active" && currentRoute.started_at) return "in_progress";
-    if (status === "active") return "accepted";
-    return "none";
-  }, [currentRoute]);
   const canCompleteCollections = routeState === "accepted" || routeState === "in_progress";
 
-  const orderedPickups = useMemo(() => {
-    const list = pendingPickups ?? [];
-    if (!currentRoute?.id) return list;
-    return list.filter((p) => String(p.routeId) === String(currentRoute.id));
-  }, [pendingPickups, currentRoute?.id]);
+  const orderedPickups = useMemo(() => routePendingPickups ?? [], [routePendingPickups]);
 
-  const routeAssignedStops = useMemo(() => {
-    const list = assignedPickups ?? [];
-    if (!currentRoute?.id) return list;
-    return list.filter((p) => String(p.routeId) === String(currentRoute.id));
-  }, [assignedPickups, currentRoute?.id]);
+  const routeAssignedStops = useMemo(() => routeAssignedPickups ?? [], [routeAssignedPickups]);
 
   const totalStops = routeAssignedStops.length > 0 ? routeAssignedStops.length : orderedPickups.length;
   const doneStops = Math.max(0, totalStops - orderedPickups.length);
@@ -302,16 +287,19 @@ export default function MapNavigateScreen() {
   useEffect(() => {
     const wasOffline = !prevConnectedRef.current;
     prevConnectedRef.current = isConnected;
-    if (wasOffline && isConnected && activeTarget && !routeMeta.source.startsWith("mapbox")) {
-      setFetchRequest((curr) => ({
-        destKey: activeDestKey,
-        origin: routeOrigin ?? SWMO_HIDEOUT,
-        originKind: routeOrigin ? "gps" : "depot",
-        forceRefresh: false,
-        seq: curr.seq + 1,
-      }));
+    if (wasOffline && isConnected) {
+      void reloadPickups?.().catch(() => {});
+      if (activeTarget && !routeMeta.source.startsWith("mapbox")) {
+        setFetchRequest((curr) => ({
+          destKey: activeDestKey,
+          origin: routeOrigin ?? SWMO_HIDEOUT,
+          originKind: routeOrigin ? "gps" : "depot",
+          forceRefresh: false,
+          seq: curr.seq + 1,
+        }));
+      }
     }
-  }, [isConnected, activeDestKey, activeTarget, routeMeta.source, routeOrigin]);
+  }, [isConnected, activeDestKey, activeTarget, routeMeta.source, routeOrigin, reloadPickups]);
 
   const targetWaypoints = useMemo(() => (activeTarget ? [activeTarget] : []), [activeTarget]);
 
@@ -737,7 +725,9 @@ export default function MapNavigateScreen() {
   }, [followTruck, userLocation, mapReady, mapUsesMapbox]);
 
   const dockBottomPad = Math.max(insets.bottom, tokens.space.sm) + tokens.space.md;
-  const mapLoading = (geometryLoading && routeLineLatLng.length === 0 && Boolean(activeTarget)) || pickupsLoading;
+  const mapLoading =
+    (geometryLoading && routeLineLatLng.length === 0 && Boolean(activeTarget)) ||
+    (pickupsLoading && !currentRoute && orderedPickups.length === 0);
 
   const nextDestinationLabel = useMemo(() => {
     if (!activeTarget) return null;
@@ -825,6 +815,21 @@ export default function MapNavigateScreen() {
                               : t("dest_no_active", "NO ACTIVE STOP")}
                         </Text>
                       </View>
+                      {isOverflowRouteActive ? (
+                        <View
+                          style={[
+                            styles.destTypeBadge,
+                            {
+                              backgroundColor: (colors.warning ?? "#d97706") + "20",
+                              borderColor: colors.warning ?? "#d97706",
+                            },
+                          ]}
+                        >
+                          <Text style={[styles.destTypeText, { color: colors.warning ?? "#d97706" }]}>
+                            {t("dest_overflow_badge", "OVERFLOW ASSISTANCE")}
+                          </Text>
+                        </View>
+                      ) : null}
                       {totalStops > 0 ? (
                         <Text style={[styles.stopProgressText, { color: colors.textSecondary }]}>
                           {isNavigatingToLandfill
@@ -1062,7 +1067,7 @@ const styles = StyleSheet.create({
   },
   topHudLeft: { flex: 1, marginRight: 10, minWidth: 0 },
   topHudRight: { alignItems: "flex-end", minWidth: 70 },
-  destBadgeRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 3 },
+  destBadgeRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6, marginBottom: 3 },
   destTypeBadge: {
     paddingHorizontal: 7,
     paddingVertical: 2,

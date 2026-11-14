@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, Bell, ChevronDown, ChevronUp, Eye, Loader2, MapPin, Plus, Trash2, X } from "lucide-react";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import Toast from "../components/feedback/Toast";
@@ -17,7 +17,7 @@ import {
   type ExistingOpenRouteCandidate,
 } from "../services/routeAssignmentService";
 import { supabase } from "../services/supabaseClient";
-import { formatDateOnly, normalizeStatus, useLiveData, type PageType } from "../hooks/useLiveData";
+import { normalizeStatus, useLiveData, type PageType } from "../hooks/useLiveData";
 import CustomSelect from "../components/ui/CustomSelect";
 import {
   doesAreaMatchScheduleDay,

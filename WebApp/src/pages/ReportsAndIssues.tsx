@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, X, Check, CheckCircle, User, Image as ImageIcon, Route, Navigation, Trash2, ChevronDown } from "lucide-react";
 import ConfirmModal from "../components/feedback/ConfirmModal";
 import Toast from "../components/feedback/Toast";
@@ -6,7 +6,7 @@ import PageHeader from "../components/layout/PageHeader";
 import ReportLocationMap from "../components/reports/ReportLocationMap";
 import CustomSelect from "../components/ui/CustomSelect";
 import { useAuth } from "../contexts/AuthContext";
-import { formatDateOnly, formatDateTime, useLiveData, type PageType, type WasteReportRecord } from "../hooks/useLiveData";
+import { formatDateTime, useLiveData, type PageType, type WasteReportRecord } from "../hooks/useLiveData";
 import { parseReportCoordinate, resolveReportImageUrl } from "../utils/reportMedia";
 
 interface ReportsAndIssuesProps {

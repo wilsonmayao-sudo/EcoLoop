@@ -232,6 +232,8 @@ export default function LiveFleetMap({
   const engineRef = useRef<"mapbox" | "leaflet" | null>(null);
   const driverMarkersRef = useRef(new Map<string, DriverMarkerEntry>());
   const routesLayerRef = useRef<any>(null);
+  const markersRef = useRef(markers);
+  markersRef.current = markers;
   const onMarkerClickRef = useRef(onMarkerClick);
   const onRouteClickRef = useRef(onRouteClick);
   const lastFitSignatureRef = useRef("");
@@ -562,7 +564,7 @@ export default function LiveFleetMap({
         .filter((r) => r.id === selectedAreaCode || r.selected)
         .forEach((r) => targetCoords.push(...r.coordinates));
       if (targetCoords.length === 0) {
-        markers
+        markersRef.current
           .filter((m) => isCoordinateValid(m.latitude, m.longitude))
           .forEach((m) => targetCoords.push([m.longitude, m.latitude]));
       }
@@ -581,7 +583,7 @@ export default function LiveFleetMap({
         }
       }
     }
-  }, [mapReady, routes, selectedAreaCode, markers]);
+  }, [mapReady, routes, selectedAreaCode]);
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || !engineRef.current) return;

@@ -20,7 +20,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { useNotifications } from "../context/NotificationContext";
 import { usePickups } from "../context/PickupContext";
 import { useAuth } from "../context/AuthContext";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../lib/supabase";
 import { SWMO_LANDFILL } from "../utils/navigationRoute";
@@ -57,16 +57,6 @@ function getGreeting(t) {
   if (hour < 12) return t ? t("greeting_morning", "Good Morning") : "Good Morning";
   if (hour < 18) return t ? t("greeting_afternoon", "Good Afternoon") : "Good Afternoon";
   return t ? t("greeting_evening", "Good Evening") : "Good Evening";
-}
-
-function getRouteState(route) {
-  const status = routeNorm(route?.status);
-  if (!route) return "none";
-  if (status === "completed") return "completed";
-  if (status === "pending" || status === "planned") return "pending";
-  if (status === "active" && route.started_at) return "in_progress";
-  if (status === "active") return "accepted";
-  return "none";
 }
 
 function routeStateLabel(state, t) {
@@ -106,17 +96,6 @@ function getPrimaryAction(routeState, colors, isRouteFullyCollected, t) {
   return null;
 }
 
-function pickCurrentRoute(routes) {
-  const list = routes ?? [];
-  return (
-    list.find((route) => routeNorm(route.status) === "active" && route.started_at) ??
-    list.find((route) => routeNorm(route.status) === "active") ??
-    list.find((route) => ["pending", "planned"].includes(routeNorm(route.status))) ??
-    list.find((route) => routeNorm(route.status) === "completed") ??
-    null
-  );
-}
-
 export default function HomeScreen() {
   const { colors } = useTheme();
   const { t } = useLanguage();
@@ -124,14 +103,22 @@ export default function HomeScreen() {
   const navigation = useNavigation();
   const { driver, profile } = useAuth();
   const {
-    pendingPickups,
-    assignedPickups,
     assignedScheduleStops,
     isUnloadingAtLandfill,
     startLandfillUnload,
     completeLandfillUnload,
     completePickup,
-    driverRoutes,
+    currentRoute,
+    routeState,
+    routeAssignedPickups,
+    routePendingPickups,
+    incomingOverflowEvent,
+    setIncomingOverflowEvent,
+    activeSourceOverflowEvent,
+    isOverflowRouteActive,
+    acceptOverflowDispatch,
+    declineOverflowDispatch,
+    resolvedVehicleId: contextVehicleId,
     acceptRoute,
     startRoute,
     completeRoute,
@@ -143,13 +130,24 @@ export default function HomeScreen() {
   const [scheduleGuideDayFilter, setScheduleGuideDayFilter] = useState("ALL");
   const [justCompletedAll, setJustCompletedAll] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
-  const [incomingOverflowEvent, setIncomingOverflowEvent] = useState(null);
   const [isFullDispatched, setIsFullDispatched] = useState(false);
   const [disposalSite, setDisposalSite] = useState(null);
   const [driverLoadPercent, setDriverLoadPercent] = useState(25);
 
-  const currentRoute = useMemo(() => pickCurrentRoute(driverRoutes), [driverRoutes]);
-  const resolvedVehicleId = currentRoute?.vehicle_id ?? driver?.assigned_vehicle_id ?? null;
+  const resolvedVehicleId = currentRoute?.vehicle_id ?? contextVehicleId ?? driver?.assigned_vehicle_id ?? null;
+
+  useFocusEffect(
+    useCallback(() => {
+      void reloadPickups().catch(() => {});
+    }, [reloadPickups]),
+  );
+
+  useEffect(() => {
+    if (activeSourceOverflowEvent && routeNorm(driver?.status) === "full") {
+      setIsFullDispatched(true);
+      setDisposalSite((prev) => prev ?? SWMO_LANDFILL);
+    }
+  }, [activeSourceOverflowEvent, driver?.status]);
 
   useEffect(() => {
     const routeDays = extractRouteScheduleDays(currentRoute);
@@ -197,17 +195,8 @@ export default function HomeScreen() {
     [resolvedVehicleId],
   );
 
-  const routeState = getRouteState(currentRoute);
   const driverName = profile?.full_name ?? driver?.name ?? "Driver";
 
-  const routeAssignedPickups = useMemo(
-    () => (assignedPickups ?? []).filter((pickup) => String(pickup.routeId) === String(currentRoute?.id)),
-    [assignedPickups, currentRoute?.id],
-  );
-  const routePendingPickups = useMemo(
-    () => (pendingPickups ?? []).filter((pickup) => String(pickup.routeId) === String(currentRoute?.id)),
-    [pendingPickups, currentRoute?.id],
-  );
   const collectionList = routeAssignedPickups.length ? routeAssignedPickups : routePendingPickups;
   const totalPickups = collectionList.length;
   const completedPickups = collectionList.filter((pickup) => pickup.deliveryStatus === "completed").length;
@@ -315,63 +304,6 @@ export default function HomeScreen() {
     }
   };
 
-  // Realtime subscription & initial check for overflow events directed to this driver
-  useEffect(() => {
-    if (!driver?.id) return;
-
-    let isMounted = true;
-
-    // Check for any active incoming overflow events assigned to this driver
-    const checkIncoming = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("overflow_events")
-          .select("*")
-          .eq("target_driver_id", String(driver.id))
-          .eq("status", "dispatched")
-          .order("created_at", { ascending: false })
-          .limit(1);
-
-        if (!error && data && data.length > 0 && isMounted) {
-          setIncomingOverflowEvent(data[0]);
-        }
-      } catch (err) {
-        console.warn("Error checking incoming overflow:", err?.message);
-      }
-    };
-
-    checkIncoming();
-
-    // Listen to changes on overflow_events table
-    const channel = supabase
-      .channel(`driver_overflow_${driver.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "overflow_events",
-        },
-        (payload) => {
-          if (!isMounted) return;
-          const newRec = payload.new;
-          if (newRec && String(newRec.target_driver_id) === String(driver.id)) {
-            if (newRec.status === "dispatched") {
-              setIncomingOverflowEvent(newRec);
-            } else if (newRec.status === "accepted" || newRec.status === "declined" || newRec.status === "completed") {
-              setIncomingOverflowEvent((current) => (current?.id === newRec.id ? null : current));
-            }
-          }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      isMounted = false;
-      supabase.removeChannel(channel);
-    };
-  }, [driver?.id]);
-
   // Handler: Driver confirms TRUCK FULL -> Request Relief Truck (Screen A action)
   const handleSignalOverflowConfirmed = async () => {
     if (busy || isFullDispatched) return;
@@ -420,46 +352,68 @@ export default function HomeScreen() {
         location: p.street || p.address || "Collection Stop",
       }));
 
-      // 2. Query active drivers, live GPS, and open overflow locks for Dynamic Reassignment Engine
+      // 2. Query active fleet candidates via scoped RPC first (with direct query fallback if RPC not deployed)
       const MAX_OFFLINE_SECONDS = 90;
       const nowMs = Date.now();
-      const [driverRes, locRes, openEventsRes] = await Promise.all([
-        supabase
-          .from("drivers")
-          .select("id, name, status, assigned_vehicle_id, last_seen_at")
-          .neq("id", driver.id)
-          .in("status", ["available", "on_route"]),
-        supabase
-          .from("vehicle_locations_latest")
-          .select("vehicle_id, driver_id, latitude, longitude, updated_at"),
-        supabase
-          .from("overflow_events")
-          .select("source_vehicle_id, target_vehicle_id, target_driver_id, status")
-          .in("status", ["pending", "dispatched", "accepted"]),
-      ]);
-
-      if (driverRes.error) throw driverRes.error;
-      const activeDrivers = driverRes.data || [];
-      const latestLocations = locRes.data || [];
-      const openOverflowEvents = openEventsRes?.error ? [] : openEventsRes?.data || [];
-
+      let activeDrivers = [];
+      let candidateVehicles = [];
+      let openRoutes = [];
+      let latestLocations = [];
+      let candidateDeliveries = [];
       const busySourceVehicleIds = new Set();
       const busyTargetVehicleIds = new Set();
       const busyTargetDriverIds = new Set();
-      openOverflowEvents.forEach((ev) => {
-        const sNorm = String(ev.status || "").toLowerCase();
-        if (sNorm === "pending" && ev.source_vehicle_id != null) {
-          busySourceVehicleIds.add(String(ev.source_vehicle_id));
-        }
-        if (sNorm === "dispatched" || sNorm === "accepted") {
-          if (ev.source_vehicle_id != null) busySourceVehicleIds.add(String(ev.source_vehicle_id));
-          if (ev.target_vehicle_id != null) busyTargetVehicleIds.add(String(ev.target_vehicle_id));
-          if (ev.target_driver_id != null) busyTargetDriverIds.add(String(ev.target_driver_id));
-        }
+
+      const fleetRpcRes = await supabase.rpc("get_overflow_candidate_fleet", {
+        p_exclude_driver_id: Number(driver.id),
+        p_exclude_vehicle_id: Number(vehicleId),
       });
 
-      const candidateInputs = [];
-      if (activeDrivers.length > 0) {
+      if (!fleetRpcRes.error && fleetRpcRes.data?.success) {
+        const fleetData = fleetRpcRes.data;
+        activeDrivers = Array.isArray(fleetData.drivers) ? fleetData.drivers : [];
+        candidateVehicles = Array.isArray(fleetData.vehicles) ? fleetData.vehicles : [];
+        openRoutes = Array.isArray(fleetData.routes) ? fleetData.routes : [];
+        latestLocations = Array.isArray(fleetData.locations) ? fleetData.locations : [];
+        candidateDeliveries = Array.isArray(fleetData.deliveries) ? fleetData.deliveries : [];
+        (fleetData.busy_source_vehicle_ids || []).forEach((id) => busySourceVehicleIds.add(String(id)));
+        (fleetData.busy_target_vehicle_ids || []).forEach((id) => busyTargetVehicleIds.add(String(id)));
+        (fleetData.busy_target_driver_ids || []).forEach((id) => busyTargetDriverIds.add(String(id)));
+      } else {
+        if (fleetRpcRes.error && !isMissingRpcError(fleetRpcRes.error)) {
+          throw fleetRpcRes.error;
+        }
+        const [driverRes, locRes, openEventsRes] = await Promise.all([
+          supabase
+            .from("drivers")
+            .select("id, name, status, assigned_vehicle_id, last_seen_at")
+            .neq("id", driver.id)
+            .in("status", ["available", "on_route"]),
+          supabase
+            .from("vehicle_locations_latest")
+            .select("vehicle_id, driver_id, latitude, longitude, updated_at"),
+          supabase
+            .from("overflow_events")
+            .select("source_vehicle_id, target_vehicle_id, target_driver_id, status")
+            .in("status", ["pending", "dispatched", "accepted"]),
+        ]);
+
+        if (driverRes.error) throw driverRes.error;
+        activeDrivers = driverRes.data || [];
+        latestLocations = locRes.data || [];
+        const openOverflowEvents = openEventsRes?.error ? [] : openEventsRes?.data || [];
+        openOverflowEvents.forEach((ev) => {
+          const sNorm = String(ev.status || "").toLowerCase();
+          if (sNorm === "pending" && ev.source_vehicle_id != null) {
+            busySourceVehicleIds.add(String(ev.source_vehicle_id));
+          }
+          if (sNorm === "dispatched" || sNorm === "accepted") {
+            if (ev.source_vehicle_id != null) busySourceVehicleIds.add(String(ev.source_vehicle_id));
+            if (ev.target_vehicle_id != null) busyTargetVehicleIds.add(String(ev.target_vehicle_id));
+            if (ev.target_driver_id != null) busyTargetDriverIds.add(String(ev.target_driver_id));
+          }
+        });
+
         const candidateVehicleIds = [
           ...new Set(
             activeDrivers
@@ -468,7 +422,6 @@ export default function HomeScreen() {
           ),
         ];
 
-        let candidateVehicles = [];
         if (candidateVehicleIds.length > 0) {
           const { data: vehData } = await selectCandidateVehiclesWithFallback(supabase, candidateVehicleIds);
           candidateVehicles = vehData || [];
@@ -502,14 +455,33 @@ export default function HomeScreen() {
             : Promise.resolve({ data: [] }),
         ]);
 
-        const candidateDeliveries = [
+        candidateDeliveries = [
           ...(Array.isArray(routeDelRes?.data) ? routeDelRes.data : []),
           ...(Array.isArray(driverDelRes?.data) ? driverDelRes.data : []),
         ];
+      }
 
-        candidateVehicles.forEach((veh) => {
+      const candidateInputs = [];
+      candidateVehicles
+        .filter((veh) => String(veh.id) !== String(vehicleId))
+        .forEach((veh) => {
+          const matchingOpenRoute = openRoutes.find(
+            (r) =>
+              r.vehicle_id != null &&
+              String(r.vehicle_id) === String(veh.id) &&
+              r.driver_id != null,
+          );
           const candDriver =
-            activeDrivers.find((d) => String(d.assigned_vehicle_id) === String(veh.id)) ?? null;
+            activeDrivers.find((d) => String(d.assigned_vehicle_id) === String(veh.id)) ??
+            (veh.driver_id != null
+              ? activeDrivers.find((d) => String(d.id) === String(veh.driver_id))
+              : null) ??
+            (matchingOpenRoute
+              ? activeDrivers.find((d) => String(d.id) === String(matchingOpenRoute.driver_id))
+              : null) ??
+            null;
+          if (!candDriver || String(candDriver.id) === String(driver.id)) return;
+
           const candLoc = latestLocations.find(
             (l) =>
               (l.vehicle_id != null && String(l.vehicle_id) === String(veh.id)) ||
@@ -541,8 +513,9 @@ export default function HomeScreen() {
             gpsAgeSeconds <= MAX_OFFLINE_SECONDS &&
             !driverIsOfflineStatus;
 
-          const routeDels = veh?.route_id
-            ? candidateDeliveries.filter((d) => String(d.route_id) === String(veh.route_id))
+          const effRouteId = normalizeNonEmptyId(veh?.route_id ?? matchingOpenRoute?.id);
+          const routeDels = effRouteId
+            ? candidateDeliveries.filter((d) => String(d.route_id) === String(effRouteId))
             : [];
           const hasOpenDriverDeliveries =
             candDriver?.id != null &&
@@ -559,13 +532,13 @@ export default function HomeScreen() {
           if (Number.isFinite(reportedLoad) && reportedLoad >= 0) {
             currentLoadPercent = Math.max(0, Math.min(100, reportedLoad));
             loadSource = "driver_reported";
-          } else if (veh?.route_id && routeDels.length > 0) {
+          } else if (effRouteId && routeDels.length > 0) {
             const completed = routeDels.filter(
               (d) => String(d.status || "").toLowerCase() === "completed",
             ).length;
             currentLoadPercent = Math.round((completed / routeDels.length) * 100);
             loadSource = "route_progress_estimated";
-          } else if (!veh?.route_id && !hasOpenDriverDeliveries) {
+          } else if (!effRouteId && !hasOpenDriverDeliveries) {
             currentLoadPercent = 0;
             loadSource = "route_progress_estimated";
           }
@@ -613,7 +586,6 @@ export default function HomeScreen() {
               (candDriver?.id != null && busyTargetDriverIds.has(String(candDriver.id))),
           });
         });
-      }
 
       const reassignmentResult = evaluateMultiCriteriaReassignment(
         candidateInputs,
@@ -843,238 +815,16 @@ export default function HomeScreen() {
     }
     setBusy(true);
     try {
-      const eventId = incomingOverflowEvent.id;
-      const targetDriverId = String(driver.id);
-      const targetVehicleId = normalizeNonEmptyId(resolvedVehicleId);
-      const openRouteStatuses = new Set(["active", "pending", "planned"]);
-      const targetRouteId =
-        currentRoute?.id && openRouteStatuses.has(routeNorm(currentRoute.status))
-          ? String(currentRoute.id)
-          : null;
-
-      // 1. Concurrency check: verify event is still active and not yet accepted
-      const { data: latestEvent, error: fetchErr } = await supabase
-        .from("overflow_events")
-        .select("*")
-        .eq("id", eventId)
-        .single();
-
-      if (fetchErr || !latestEvent) {
-        throw new Error("Unable to retrieve overflow event details. Please try again.");
-      }
-
-      if (latestEvent.status === "accepted") {
-        setIncomingOverflowEvent(null);
-        Alert.alert(
-          t("alert_already_accepted_title", "Already Accepted"),
-          t("alert_already_accepted_msg", "This overflow request has already been accepted."),
-        );
-        return;
-      }
-
-      if (latestEvent.status === "declined" || latestEvent.status === "completed") {
-        setIncomingOverflowEvent(null);
-        Alert.alert(
-          t("alert_req_expired_title", "Request Expired"),
-          t("alert_req_expired_msg", "This overflow request is {status}.", { status: latestEvent.status }),
-        );
-        return;
-      }
-
-      // 2. Try transactional RPC first
-      let rpcSucceeded = false;
-      let shouldFallbackToClient = false;
-      const { data: rpcResult, error: rpcError } = await supabase.rpc("accept_overflow_event", {
-        p_event_id: eventId,
-        p_target_driver_id: targetDriverId,
-        p_target_vehicle_id: targetVehicleId,
-        p_target_route_id: targetRouteId,
-      });
-
-      if (!rpcError && rpcResult?.success) {
-        rpcSucceeded = true;
-      } else if (!rpcError && rpcResult && rpcResult.success === false) {
-        const errMsg = String(rpcResult.error || "Unable to accept overflow request.");
-        if (errMsg.toLowerCase().includes("already been accepted")) {
-          setIncomingOverflowEvent(null);
-          await reloadPickups();
-          Alert.alert(
-            t("alert_already_accepted_title", "Already Accepted"),
-            t("alert_already_accepted_msg", "This overflow request has already been accepted."),
-          );
-          return;
-        }
-        throw new Error(errMsg);
-      } else if (rpcError) {
-        if (isMissingRpcError(rpcError)) {
-          shouldFallbackToClient = true;
-          console.warn("RPC accept_overflow_event fallback:", rpcError.message);
-        } else {
-          throw new Error(rpcError.message || "Unable to accept overflow request.");
-        }
-      } else {
-        shouldFallbackToClient = true;
-      }
-
-      // 3. Fallback: coordinated client-side transaction only if RPC is not yet deployed
-      if (!rpcSucceeded && shouldFallbackToClient) {
-        const now = new Date().toISOString();
-        let effectiveRouteId = targetRouteId;
-
-        if (!effectiveRouteId) {
-          const { data: activeRoutes } = await supabase
-            .from("routes")
-            .select("id")
-            .eq("driver_id", driver.id)
-            .in("status", ["active", "pending", "planned"])
-            .order("created_at", { ascending: false })
-            .limit(1);
-
-          if (activeRoutes && activeRoutes.length > 0) {
-            effectiveRouteId = String(activeRoutes[0].id);
-          } else {
-            const { data: newRoute, error: newRouteErr } = await supabase
-              .from("routes")
-              .insert({
-                name: "Overflow Assistance Route",
-                status: "active",
-                driver_id: driver.id,
-                vehicle_id: driver.assigned_vehicle_id ?? null,
-                generated_at: now,
-                assignment_updated_at: now,
-                started_at: now,
-              })
-              .select("id")
-              .single();
-            if (newRouteErr) throw newRouteErr;
-            effectiveRouteId = String(newRoute.id);
-          }
-        }
-
-        const overflowBins = latestEvent.overflow_bins || [];
-        const binIds = overflowBins.map((b) => b.bin_id).filter(Boolean);
-
-        if (binIds.length > 0) {
-          let delivUpdate = supabase
-            .from("deliveries")
-            .update({
-              driver_id: driver.id,
-              route_id: effectiveRouteId,
-              status: "assigned",
-              updated_at: now,
-            })
-            .in("bin_id", binIds);
-          if (latestEvent.source_route_id) {
-            delivUpdate = delivUpdate.eq("route_id", latestEvent.source_route_id);
-          } else {
-            delivUpdate = delivUpdate.in("status", ["overflow_uncollected", "pending", "assigned"]);
-          }
-          const { data: updatedRows, error: delivErr } = await delivUpdate.select("bin_id");
-          if (delivErr) {
-            if (String(delivErr.code ?? "") === "23505") {
-              const { error: upsertErr } = await supabase.from("deliveries").upsert(
-                binIds.map((binId) => ({
-                  route_id: effectiveRouteId,
-                  bin_id: binId,
-                  driver_id: driver.id,
-                  status: "assigned",
-                  updated_at: now,
-                })),
-                { onConflict: "route_id,bin_id" },
-              );
-              if (upsertErr) throw upsertErr;
-            } else {
-              throw delivErr;
-            }
-          } else {
-            const updatedSet = new Set((updatedRows ?? []).map((r) => String(r.bin_id)));
-            const missingBinIds = binIds.filter((bid) => !updatedSet.has(String(bid)));
-            if (missingBinIds.length > 0) {
-              const { error: upsertMissingErr } = await supabase.from("deliveries").upsert(
-                missingBinIds.map((binId) => ({
-                  route_id: effectiveRouteId,
-                  bin_id: binId,
-                  driver_id: driver.id,
-                  status: "assigned",
-                  updated_at: now,
-                })),
-                { onConflict: "route_id,bin_id" },
-              );
-              if (upsertMissingErr) throw upsertMissingErr;
-            }
-          }
-
-          const { data: existingStops } = await supabase
-            .from("route_stops")
-            .select("bin_id, stop_order")
-            .eq("route_id", effectiveRouteId);
-
-          const existingBinSet = new Set((existingStops ?? []).map((s) => String(s.bin_id)));
-          const maxOrder = (existingStops ?? []).reduce((max, s) => Math.max(max, Number(s.stop_order) || 0), 0);
-          const newRouteStops = overflowBins
-            .filter((b) => b?.bin_id != null && !existingBinSet.has(String(b.bin_id)))
-            .map((b, idx) => ({
-              route_id: effectiveRouteId,
-              bin_id: b.bin_id,
-              stop_order: maxOrder + idx + 1,
-            }));
-
-          if (newRouteStops.length > 0) {
-            const { error: rsErr } = await supabase.from("route_stops").insert(newRouteStops);
-            if (rsErr) console.warn("route_stops insert note:", rsErr.message);
-          }
-
-          if (latestEvent.source_route_id) {
-            await supabase
-              .from("route_stops")
-              .delete()
-              .eq("route_id", latestEvent.source_route_id)
-              .in("bin_id", binIds);
-          }
-        }
-
-        const { error: updateEventErr } = await supabase
-          .from("overflow_events")
-          .update({
-            status: "accepted",
-            accepted_at: now,
-            target_driver_id: targetDriverId,
-            target_vehicle_id: targetVehicleId,
-          })
-          .eq("id", eventId);
-        if (updateEventErr) throw updateEventErr;
-      }
-
-      // 4. Notify dispatcher
-      const nowTime = new Date().toISOString();
-      const { error: notifErr } = await insertNotificationWithFallback(supabase, {
-        role: "dispatcher",
-        title: "Overflow Accepted",
-        message: `${driverName} ACCEPTED overflow assistance of ${incomingOverflowEvent.bins_count} stops.`,
-        type: "success",
-        category: "truck",
-        source_table: "overflow_events",
-        read: false,
-        created_at: nowTime,
-      });
-      if (notifErr) console.warn("Overflow accept notification note:", notifErr.message);
-
-      setIncomingOverflowEvent(null);
-      await reloadPickups();
+      const acceptedCount = incomingOverflowEvent.bins_count ?? incomingOverflowEvent.overflow_bins?.length ?? 0;
+      const res = await acceptOverflowDispatch(incomingOverflowEvent);
+      navigation.navigate("Map", { startRoute: true, overflowAccepted: true, routeId: res?.targetRouteId });
       Alert.alert(
         t("alert_overflow_assigned_title", "Overflow Assigned"),
         t(
           "alert_overflow_assigned_msg",
-          "{count} additional overflow pickup points added to your collection queue.",
-          { count: incomingOverflowEvent.bins_count },
+          "{count} overflow pickup points added to your active Overflow Assistance Route.",
+          { count: acceptedCount },
         ),
-        [
-          {
-            text: t("btn_view_route", "View Route"),
-            onPress: () => navigation.navigate("Map", { startRoute: true }),
-          },
-          { text: t("ok", "OK") },
-        ],
       );
     } catch (e) {
       Alert.alert(
@@ -1091,23 +841,7 @@ export default function HomeScreen() {
     if (!incomingOverflowEvent) return;
     setBusy(true);
     try {
-      await supabase
-        .from("overflow_events")
-        .update({ status: "declined" })
-        .eq("id", incomingOverflowEvent.id);
-
-      await insertNotificationWithFallback(supabase, {
-        role: "dispatcher",
-        title: "Overflow Declined",
-        message: `${driverName} declined overflow assistance of ${incomingOverflowEvent.bins_count} stops. Dispatcher re-routing required.`,
-        type: "warning",
-        category: "truck",
-        source_table: "overflow_events",
-        read: false,
-        created_at: new Date().toISOString(),
-      });
-
-      setIncomingOverflowEvent(null);
+      await declineOverflowDispatch(incomingOverflowEvent, driverName);
     } catch (e) {
       Alert.alert(
         t("alert_decline_overflow_err", "Failed Declining Overflow"),
@@ -1150,7 +884,13 @@ export default function HomeScreen() {
         <CurrentAssignmentCard
           route={currentRoute}
           routeState={routeState}
-          routeStateLabel={isHeadingToLandfill ? t("status_unloading", "Unloading at Landfill") : routeStateLabel(routeState, t)}
+          routeStateLabel={
+            isHeadingToLandfill
+              ? t("status_unloading", "Unloading at Landfill")
+              : isOverflowRouteActive
+                ? `${routeStateLabel(routeState, t)} • Overflow`
+                : routeStateLabel(routeState, t)
+          }
           areas={buildAreaLabel(currentRoute, collectionList)}
           scheduleStops={assignedScheduleStops}
           colors={colors}
@@ -1559,7 +1299,10 @@ export default function HomeScreen() {
                     {t("overflow_interrupted_route", "Interrupted Route")}
                   </Text>
                   <Text style={[styles.overflowInfoValue, { color: colors.textPrimary }]}>
-                    {currentRoute?.name ?? "Assigned Route"}
+                    {incomingOverflowEvent?.reassignment_metadata?.source_route_name ??
+                      (incomingOverflowEvent?.source_route_id
+                        ? `Route #${incomingOverflowEvent.source_route_id}`
+                        : "Overflow Assistance Route")}
                   </Text>
                 </View>
 

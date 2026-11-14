@@ -50,8 +50,9 @@ test("Issue 1: HomeScreen.js contains vehicle requirement check and prevents UI 
 
   // Verify vehicle assignment check
   assert.ok(
-    content.includes("const vehicleId = driver.assigned_vehicle_id ?? null;"),
-    "Must extract driver.assigned_vehicle_id"
+    content.includes("resolvedVehicleId ?? driver?.assigned_vehicle_id") ||
+      content.includes("driver.assigned_vehicle_id"),
+    "Must resolve assigned vehicleId from route or driver profile"
   );
   assert.ok(
     content.includes("if (!vehicleId)"),
@@ -78,33 +79,35 @@ test("Issue 1: HomeScreen.js contains vehicle requirement check and prevents UI 
     "Must throw error on event insert failure to prevent premature UI transition"
   );
 
-  const transitionIndex = content.indexOf("setIsFullDispatched(true);");
-  const insertIndex = content.indexOf("from(\"overflow_events\").insert(");
-  assert.ok(transitionIndex > insertIndex, "setIsFullDispatched must occur AFTER overflow_events insert");
+  const confirmFullIdx = content.indexOf("const handleSignalOverflowConfirmed");
+  assert.ok(confirmFullIdx !== -1, "Must find handleSignalOverflowConfirmed handler");
+  const confirmFullBlock = content.slice(confirmFullIdx);
+  const transitionIndex = confirmFullBlock.indexOf("setIsFullDispatched(true);");
+  const insertIndex = confirmFullBlock.indexOf("insertOverflowEventWithFallback(");
+  assert.ok(insertIndex !== -1 && transitionIndex > insertIndex, "setIsFullDispatched must occur AFTER overflow_events insert");
 });
 
-test("Issue 2: HomeScreen.js and useOverflowDispatch.ts reassign deliveries and stops on overflow accept", () => {
+test("Issue 2: PickupContext.js and useOverflowDispatch.ts accept overflow dispatches atomically via accept_overflow_event RPC", () => {
   const homeScreenPath = path.join(rootDir, "MobileApp", "src", "screens", "HomeScreen.js");
-  const homeContent = fs.readFileSync(homeScreenPath, "utf8");
+  const pickupContextPath = path.join(rootDir, "MobileApp", "src", "context", "PickupContext.js");
+  const mobileCombined =
+    fs.readFileSync(homeScreenPath, "utf8") + "\n" + fs.readFileSync(pickupContextPath, "utf8");
 
   // Concurrency check
   assert.ok(
-    homeContent.includes("if (latestEvent.status === \"accepted\")"),
-    "HomeScreen must prevent double-acceptance"
+    mobileCombined.includes('latestStatus === "accepted"') ||
+      mobileCombined.includes('latestEvent.status === "accepted"'),
+    "Mobile overflow acceptance must prevent double-acceptance"
   );
 
-  // Calls RPC and has fallback
+  // Calls transactional RPC and sets preferred route
   assert.ok(
-    homeContent.includes("supabase.rpc(\"accept_overflow_event\""),
-    "HomeScreen must call transactional accept_overflow_event RPC"
+    mobileCombined.includes('supabase.rpc("accept_overflow_event"'),
+    "Mobile must call transactional accept_overflow_event RPC"
   );
   assert.ok(
-    homeContent.includes(".from(\"deliveries\")") && homeContent.includes("status: \"assigned\""),
-    "HomeScreen fallback must reassign deliveries"
-  );
-  assert.ok(
-    homeContent.includes(".from(\"route_stops\").insert("),
-    "HomeScreen fallback must insert route_stops for target route"
+    mobileCombined.includes("preferredActiveRouteIdRef.current = createdRouteId"),
+    "Mobile must synchronize Navigate route focus after overflow acceptance"
   );
 
   // WebApp useOverflowDispatch verification
@@ -112,16 +115,8 @@ test("Issue 2: HomeScreen.js and useOverflowDispatch.ts reassign deliveries and 
   const webContent = fs.readFileSync(webDispatchPath, "utf8");
 
   assert.ok(
-    webContent.includes("supabase.rpc(\"accept_overflow_event\""),
+    webContent.includes('supabase.rpc("accept_overflow_event"'),
     "useOverflowDispatch must call accept_overflow_event RPC"
-  );
-  assert.ok(
-    webContent.includes(".from(\"deliveries\")") && webContent.includes("status: \"assigned\""),
-    "useOverflowDispatch fallback must reassign deliveries"
-  );
-  assert.ok(
-    webContent.includes(".from(\"route_stops\").insert("),
-    "useOverflowDispatch fallback must insert route_stops"
   );
 });
 
@@ -158,16 +153,16 @@ test("Database integrity: RoutePlanning.tsx does not update nonexistent route_st
   );
 });
 
-test("Phase 2 Issue 1: PickupContext removes invalid vehicle_id from routes select query and handles query error explicitly", () => {
+test("Phase 2 Issue 1: PickupContext handles routes query errors explicitly and provides legacy schema fallback", () => {
   const pickupContextPath = path.join(rootDir, "MobileApp", "src", "context", "PickupContext.js");
   const content = fs.readFileSync(pickupContextPath, "utf8");
 
-  // Verify routes select query does NOT include vehicle_id
-  const routesSelectMatch = content.match(/\.from\("routes"\)\s*\.select\("([^"]+)"\)/);
-  assert.ok(routesSelectMatch, "Must find routes select query");
+  // Verify routes query exists and provides a legacy schema fallback without vehicle_id/optimization_method
+  const routesFallbackMatch = content.match(/\.from\("routes"\)\s*\.select\("([^"]+)"\)/g);
+  assert.ok(routesFallbackMatch && routesFallbackMatch.length >= 1, "Must include schema-safe routes fallback select query");
   assert.ok(
-    !routesSelectMatch[1].includes("vehicle_id"),
-    "routes select query must NOT contain invalid vehicle_id column"
+    routesFallbackMatch.some((stmt) => !stmt.includes("vehicle_id")),
+    "Must include a fallback routes select query without vehicle_id for legacy DB compatibility"
   );
 
   // Verify explicit loadError state and handling
@@ -212,7 +207,8 @@ test("Phase 2 Issue 3: RoutePlanning.tsx notifies driver with correct schema and
   const content = fs.readFileSync(routePlanningPath, "utf8");
 
   const notifyStart = content.indexOf("async function notifyDriverRouteAssigned");
-  const notifyEnd = content.indexOf("type PageType =");
+  let notifyEnd = content.indexOf("interface RoutePlanningProps", notifyStart);
+  if (notifyEnd === -1) notifyEnd = content.indexOf("type PageType =", notifyStart);
   assert.ok(notifyStart !== -1 && notifyEnd !== -1, "Must find notifyDriverRouteAssigned function block");
   const fnBody = content.slice(notifyStart, notifyEnd);
 
@@ -381,8 +377,12 @@ test("Phase 3 Issue 3: WebApp tsconfig.json is configured with bundler resolutio
   const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, "utf8"));
   assert.equal(tsconfig.compilerOptions.jsx, "react-jsx", "jsx must be react-jsx");
   assert.equal(tsconfig.compilerOptions.moduleResolution, "bundler", "moduleResolution must be bundler");
-  assert.ok(tsconfig.compilerOptions.paths?.["@/*"], "Must configure @/* path alias");
-  assert.deepEqual(tsconfig.compilerOptions.paths["@/*"], ["src/*"], "@/* must resolve to src/*");
+  const aliasTargets = tsconfig.compilerOptions.paths?.["@/*"];
+  assert.ok(aliasTargets, "Must configure @/* path alias");
+  assert.ok(
+    Array.isArray(aliasTargets) && (aliasTargets.includes("./src/*") || aliasTargets.includes("src/*")),
+    "@/* must resolve to ./src/* or src/*"
+  );
 });
 
 test("Phase 3 Issue 4: Notifications.tsx removes unreachable truck filter and preserves filtering behavior", () => {

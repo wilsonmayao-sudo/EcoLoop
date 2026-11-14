@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layers, MapPin, Truck, Clock, X, Search, Ban, RotateCcw, Route as RouteIcon, AlertTriangle, Trash2, Recycle } from "lucide-react";
 import PageHeader from "../components/layout/PageHeader";
 import CollectionBinsPanel from "../components/areas/CollectionBinsPanel";
@@ -8,7 +8,7 @@ import LiveFleetMap, {
   type LiveFleetMapRoute,
 } from "../components/maps/LiveFleetMap";
 import CustomSelect from "../components/ui/CustomSelect";
-import { formatDateOnly, isBinActive, normalizeStatus, useLiveData, type BinRecord, type PageType } from "../hooks/useLiveData";
+import { isBinActive, normalizeStatus, useLiveData, type BinRecord, type PageType } from "../hooks/useLiveData";
 import {
   fetchStreetRouteGeometry,
   getAreaRouteColor,

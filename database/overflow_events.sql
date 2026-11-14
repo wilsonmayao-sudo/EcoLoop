@@ -14,6 +14,8 @@ create table if not exists public.overflow_events (
   overflow_bins jsonb not null default '[]'::jsonb,
   bins_count integer not null default 0,
   distance_km double precision,
+  reassignment_metadata jsonb default '{}'::jsonb,
+  target_route_id bigint references public.routes(id) on delete set null,
   created_at timestamptz not null default now(),
   accepted_at timestamptz,
   completed_at timestamptz
@@ -21,8 +23,15 @@ create table if not exists public.overflow_events (
 
 create index if not exists overflow_events_status_idx on public.overflow_events (status);
 create index if not exists overflow_events_created_at_idx on public.overflow_events (created_at desc);
+create index if not exists overflow_events_target_driver_status_idx on public.overflow_events (target_driver_id, status);
+create index if not exists overflow_events_target_vehicle_status_idx on public.overflow_events (target_vehicle_id, status);
 
 alter table public.overflow_events enable row level security;
+alter table public.overflow_events replica identity full;
+
+drop policy if exists "Allow read access to all users" on public.overflow_events;
+drop policy if exists "Drivers and dispatchers can view overflow events" on public.overflow_events;
+drop policy if exists "Drivers and dispatchers can update overflow events" on public.overflow_events;
 
 drop policy if exists "overflow_events_read_authenticated" on public.overflow_events;
 create policy "overflow_events_read_authenticated" on public.overflow_events
@@ -33,7 +42,25 @@ create policy "overflow_events_read_authenticated" on public.overflow_events
     or public.is_supervisor(auth.uid())
     or (
       public.current_profile_is_active()
-      and public.current_app_role() = any (array['admin'::text, 'dispatcher'::text, 'supervisor'::text, 'truck_driver'::text])
+      and public.current_app_role() = 'truck_driver'::text
+      and public.current_driver_id() is not null
+      and (
+        btrim(coalesce(source_driver_id, '')) = public.current_driver_id()::text
+        or btrim(coalesce(target_driver_id, '')) = public.current_driver_id()::text
+        or (
+          public.current_driver_vehicle_id() is not null
+          and (
+            (
+              btrim(coalesce(source_driver_id, '')) = ''
+              and btrim(coalesce(source_vehicle_id, '')) = public.current_driver_vehicle_id()::text
+            )
+            or (
+              btrim(coalesce(target_driver_id, '')) = ''
+              and btrim(coalesce(target_vehicle_id, '')) = public.current_driver_vehicle_id()::text
+            )
+          )
+        )
+      )
     )
   );
 
@@ -47,12 +74,8 @@ create policy "overflow_events_write_authenticated" on public.overflow_events
     or (
       public.current_profile_is_active()
       and public.current_app_role() = 'truck_driver'::text
-      and exists (
-        select 1
-        from public.drivers d
-        where d.auth_user_id = auth.uid()
-          and d.id::text = source_driver_id
-      )
+      and public.current_driver_id() is not null
+      and btrim(coalesce(source_driver_id, '')) = public.current_driver_id()::text
     )
   );
 
@@ -66,11 +89,15 @@ create policy "overflow_events_update_authenticated" on public.overflow_events
     or (
       public.current_profile_is_active()
       and public.current_app_role() = 'truck_driver'::text
-      and exists (
-        select 1
-        from public.drivers d
-        where d.auth_user_id = auth.uid()
-          and (d.id::text = source_driver_id or d.id::text = target_driver_id)
+      and public.current_driver_id() is not null
+      and (
+        btrim(coalesce(source_driver_id, '')) = public.current_driver_id()::text
+        or btrim(coalesce(target_driver_id, '')) = public.current_driver_id()::text
+        or (
+          public.current_driver_vehicle_id() is not null
+          and btrim(coalesce(target_driver_id, '')) = ''
+          and btrim(coalesce(target_vehicle_id, '')) = public.current_driver_vehicle_id()::text
+        )
       )
     )
   )
@@ -81,11 +108,15 @@ create policy "overflow_events_update_authenticated" on public.overflow_events
     or (
       public.current_profile_is_active()
       and public.current_app_role() = 'truck_driver'::text
-      and exists (
-        select 1
-        from public.drivers d
-        where d.auth_user_id = auth.uid()
-          and (d.id::text = source_driver_id or d.id::text = target_driver_id)
+      and public.current_driver_id() is not null
+      and (
+        btrim(coalesce(source_driver_id, '')) = public.current_driver_id()::text
+        or btrim(coalesce(target_driver_id, '')) = public.current_driver_id()::text
+        or (
+          public.current_driver_vehicle_id() is not null
+          and btrim(coalesce(target_driver_id, '')) = ''
+          and btrim(coalesce(target_vehicle_id, '')) = public.current_driver_vehicle_id()::text
+        )
       )
     )
   );

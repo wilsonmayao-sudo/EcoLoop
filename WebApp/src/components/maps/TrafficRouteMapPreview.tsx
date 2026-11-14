@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import {
@@ -64,6 +64,14 @@ export default function TrafficRouteMapPreview({
       setLandfill(getConfiguredLandfill());
     });
   }, []);
+
+  const waypointsSignature = useMemo(() => {
+    const stopsKey = (stops ?? [])
+      .map((s) => `${Number.isFinite(s.lat) ? s.lat.toFixed(5) : "x"},${Number.isFinite(s.lng) ? s.lng.toFixed(5) : "x"}:${s.label ?? ""}`)
+      .join("|");
+    const depotKey = depot ? `${depot.lat},${depot.lng}:${depot.label ?? ""}` : "no-depot";
+    return `${routeId}:${lat.toFixed(5)},${lng.toFixed(5)}:${zoom}:${depotKey}:${stopsKey}:${landfill.lat},${landfill.lng}:${landfill.name}:${landfill.address}`;
+  }, [depot, landfill.address, landfill.lat, landfill.lng, landfill.name, lat, lng, routeId, stops, zoom]);
 
   useEffect(() => {
     if (!token || !containerRef.current) return;
@@ -197,7 +205,7 @@ export default function TrafficRouteMapPreview({
       map.remove();
       mapRef.current = null;
     };
-  }, [lat, lng, zoom, token, stops, depot, routeId, mapDefaults.mapboxStyle, landfill.lat, landfill.lng, landfill.name, landfill.address]);
+  }, [token, mapDefaults.mapboxStyle, waypointsSignature]);
 
   if (!token) {
     const pad = 0.02;

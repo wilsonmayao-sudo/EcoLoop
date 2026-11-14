@@ -2,6 +2,10 @@ const path = require('path');
 const fs = require('fs');
 const appJson = require('./app.json');
 
+const mobileEnv = path.resolve(__dirname, '.env');
+const mobileEnvLocal = path.resolve(__dirname, '.env.local');
+const webEnvLocal = path.resolve(__dirname, '../WebApp/.env.local');
+
 /** Read KEY=value from a .env-style file (no multiline values). */
 function readEnvValueFromFile(filePath, key) {
   try {

@@ -220,6 +220,7 @@ export interface OverflowEventRecord {
   source_route_id: string | null;
   target_vehicle_id: string | number | null;
   target_driver_id: string | number | null;
+  target_route_id?: string | number | null;
   status: "pending" | "dispatched" | "accepted" | "declined" | "completed" | string;
   overflow_bins: OverflowBinEntry[];
   bins_count: number;
@@ -395,6 +396,76 @@ export function getRouteProgress(routeId: string, deliveries: DeliveryRecord[]) 
 }
 
 const COMPLETED_DELIVERY_STATUSES = new Set(["completed", "collected", "done"]);
+
+const OVERFLOW_EVENTS_EXTENDED_SELECT =
+  "id, source_vehicle_id, source_driver_id, source_route_id, target_vehicle_id, target_driver_id, target_route_id, status, overflow_bins, bins_count, distance_km, reassignment_metadata, created_at, dispatched_at, accepted_at, completed_at";
+const OVERFLOW_EVENTS_LEGACY_SELECT =
+  "id, source_vehicle_id, source_driver_id, source_route_id, target_vehicle_id, target_driver_id, status, overflow_bins, bins_count, distance_km, created_at, accepted_at, completed_at";
+
+async function fetchOverflowEventsSafe() {
+  let result: { data: any[] | null; error: any } = await supabase
+    .from("overflow_events")
+    .select(OVERFLOW_EVENTS_EXTENDED_SELECT)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (
+    result.error &&
+    (isMissingColumnError(result.error, "target_route_id") ||
+      isMissingColumnError(result.error, "reassignment_metadata") ||
+      isMissingColumnError(result.error, "dispatched_at"))
+  ) {
+    result = await supabase
+      .from("overflow_events")
+      .select(OVERFLOW_EVENTS_LEGACY_SELECT)
+      .order("created_at", { ascending: false })
+      .limit(100);
+  }
+  return result;
+}
+
+function hydrateOverflowEventRows(rows: OverflowEventRecord[] | null | undefined): OverflowEventRecord[] {
+  return (rows ?? []).map((row) => ({
+    ...row,
+    reassignment_metadata:
+      row.reassignment_metadata ??
+      (Array.isArray(row.overflow_bins) ? row.overflow_bins[0]?._meta : undefined),
+  }));
+}
+
+function filterAndHydrateDrivers(rawDrivers: DriverRecord[], rawProfiles: any[]): DriverRecord[] {
+  const profileByAuthId = new Map<
+    string,
+    { role: string; status: string; full_name: string; phone: string | null; phone_number: string | null }
+  >();
+  rawProfiles.forEach((prof) => {
+    if (prof?.auth_user_id) {
+      profileByAuthId.set(String(prof.auth_user_id), {
+        role: String(prof.role ?? ""),
+        status: String(prof.status ?? ""),
+        full_name: String(prof.full_name ?? ""),
+        phone: prof.phone ?? null,
+        phone_number: prof.phone_number ?? null,
+      });
+    }
+  });
+
+  return rawDrivers
+    .filter((driver) => {
+      if (!driver.auth_user_id) return true;
+      const prof = profileByAuthId.get(String(driver.auth_user_id));
+      if (!prof) return true;
+      return prof.role === "truck_driver" && prof.status !== "inactive" && prof.status !== "suspended";
+    })
+    .map((driver) => {
+      const prof = driver.auth_user_id ? profileByAuthId.get(String(driver.auth_user_id)) : undefined;
+      return {
+        ...driver,
+        name: prof?.full_name?.trim() || driver.name,
+        phone: driver.phone ?? prof?.phone ?? prof?.phone_number ?? null,
+        phone_number: driver.phone_number ?? prof?.phone_number ?? prof?.phone ?? null,
+      };
+    });
+}
 
 /** Computes stop-level route completion counts and percentage across deliveries and route_stops. */
 export function getRouteStopProgress(
@@ -696,7 +767,7 @@ function useLiveDataInternal() {
       supabase.from("report_categories").select("id, name, is_active, sort_order").order("sort_order", { ascending: true }),
       supabase.from("maintenance_types").select("id, name, is_active, sort_order").order("sort_order", { ascending: true }),
       supabase.from("bin_types").select("id, name, is_active, sort_order").order("sort_order", { ascending: true }),
-      supabase.from("overflow_events").select("id, source_vehicle_id, source_driver_id, source_route_id, target_vehicle_id, target_driver_id, status, overflow_bins, bins_count, distance_km, created_at, accepted_at, completed_at").order("created_at", { ascending: false }).limit(100),
+      fetchOverflowEventsSafe(),
       supabase.from("collection_schedules").select("id, area_code, area_name, shift_label, stop_order, location_name, stop_type, barangay, days_of_week, day_times, scheduled_time, waste_category, assigned_truck_note, special_instructions, bin_id, latitude, longitude, coordinate_status, monitor_name, source_reference, source_page, is_active").eq("is_active", true).order("area_code", { ascending: true }).order("stop_order", { ascending: true }),
     ]);
 
@@ -729,38 +800,10 @@ function useLiveDataInternal() {
     const allMaintTypes = (allMaintenanceTypesResult.data as ReferenceRecord[]) ?? [];
     const allBTypes = (allBinTypesResult.data as ReferenceRecord[]) ?? [];
 
-    const profileByAuthId = new Map<
-      string,
-      { role: string; status: string; full_name: string; phone: string | null; phone_number: string | null }
-    >();
-    ((userProfilesResult.data as any[]) ?? []).forEach((prof) => {
-      if (prof?.auth_user_id) {
-        profileByAuthId.set(String(prof.auth_user_id), {
-          role: String(prof.role ?? ""),
-          status: String(prof.status ?? ""),
-          full_name: String(prof.full_name ?? ""),
-          phone: prof.phone ?? null,
-          phone_number: prof.phone_number ?? null,
-        });
-      }
-    });
-
-    const filteredDrivers = ((driversResult.data as DriverRecord[]) ?? [])
-      .filter((driver) => {
-        if (!driver.auth_user_id) return true;
-        const prof = profileByAuthId.get(String(driver.auth_user_id));
-        if (!prof) return true;
-        return prof.role === "truck_driver" && prof.status !== "inactive" && prof.status !== "suspended";
-      })
-      .map((driver) => {
-        const prof = driver.auth_user_id ? profileByAuthId.get(String(driver.auth_user_id)) : undefined;
-        return {
-          ...driver,
-          name: prof?.full_name?.trim() || driver.name,
-          phone: driver.phone ?? prof?.phone ?? prof?.phone_number ?? null,
-          phone_number: driver.phone_number ?? prof?.phone_number ?? prof?.phone ?? null,
-        };
-      });
+    const filteredDrivers = filterAndHydrateDrivers(
+      (driversResult.data as DriverRecord[]) ?? [],
+      (userProfilesResult.data as any[]) ?? [],
+    );
 
     setBins((binsResult.data as BinRecord[]) ?? []);
     setDrivers(filteredDrivers);
@@ -790,23 +833,238 @@ function useLiveDataInternal() {
     setAllReportCategories(allReportCats);
     setAllMaintenanceTypes(allMaintTypes);
     setAllBinTypes(allBTypes);
-    const hydratedOverflowEvents = ((overflowEventsResult.data as OverflowEventRecord[]) ?? []).map((row) => ({
-      ...row,
-      reassignment_metadata:
-        row.reassignment_metadata ??
-        (Array.isArray(row.overflow_bins) ? row.overflow_bins[0]?._meta : undefined),
-    }));
-    setOverflowEvents(hydratedOverflowEvents);
+    setOverflowEvents(hydrateOverflowEventRows(overflowEventsResult.data as OverflowEventRecord[]));
     setCollectionSchedules((collectionSchedulesResult.data as CollectionScheduleRecord[]) ?? []);
     setError(firstError ?? null);
     hasLoadedOnceRef.current = true;
     setLoading(false);
   }, [profile?.auth_user_id]);
 
+  const refreshTables = useCallback(
+    async (tables: Set<string>) => {
+      if (!profile?.auth_user_id || tables.size === 0) return;
+      if (!hasLoadedOnceRef.current) {
+        await load();
+        return;
+      }
+
+      const tasks: Promise<void>[] = [];
+
+      if (tables.has("bins")) {
+        tasks.push(
+          Promise.resolve(
+            supabase
+              .from("bins")
+              .select("id, code, location, barangay, area_code, schedule_days, schedule_time_window, waste_category, collection_status, coordinate_status, is_active, type, status, capacity_percent, latitude, longitude, updated_at")
+              .order("id", { ascending: true }),
+          ).then(({ data, error }) => {
+            if (!error && data) setBins(data as BinRecord[]);
+          }),
+        );
+      }
+
+      if (tables.has("drivers") || tables.has("user_profiles")) {
+        tasks.push(
+          Promise.all([
+            supabase.from("drivers").select("id, name, status, auth_user_id, profile_id, phone, phone_number, assigned_vehicle_id, last_seen_at").order("name", { ascending: true }),
+            supabase.from("user_profiles").select("id, auth_user_id, full_name, role, status, phone, phone_number"),
+          ]).then(([driversRes, profilesRes]) => {
+            if (!driversRes.error && driversRes.data) {
+              setDrivers(filterAndHydrateDrivers(driversRes.data as DriverRecord[], (profilesRes.data as any[]) ?? []));
+            }
+          }),
+        );
+      }
+
+      if (tables.has("routes")) {
+        tasks.push(
+          Promise.resolve(
+            supabase
+              .from("routes")
+              .select("id, name, status, area_code, scheduled_days, shift_label, waste_category, distance_km, duration_minutes, driver_id, vehicle_id, center_lat, center_lng, generated_at, assignment_updated_at, started_at, completed_at, created_at, updated_at")
+              .order("created_at", { ascending: false }),
+          ).then(({ data, error }) => {
+            if (!error && data) setRoutes(data as RouteRecord[]);
+          }),
+        );
+      }
+
+      if (tables.has("route_stops")) {
+        tasks.push(
+          Promise.resolve(
+            supabase
+              .from("route_stops")
+              .select("route_id, bin_id, stop_order, bins(id, code, location, barangay, area_code, schedule_days, schedule_time_window, waste_category, collection_status, coordinate_status, is_active, type, status, capacity_percent, latitude, longitude)")
+              .order("stop_order", { ascending: true }),
+          ).then(({ data, error }) => {
+            if (!error && data) {
+              setRouteStops(
+                (data as any[]).map((stop) => ({
+                  ...stop,
+                  bins: Array.isArray(stop.bins) ? stop.bins[0] ?? null : stop.bins ?? null,
+                })) as RouteStopRecord[],
+              );
+            }
+          }),
+        );
+      }
+
+      if (tables.has("deliveries")) {
+        tasks.push(
+          Promise.resolve(
+            supabase.from("deliveries").select("id, route_id, bin_id, driver_id, status, eta, completed_at, updated_at").order("updated_at", { ascending: false }),
+          ).then(({ data, error }) => {
+            if (!error && data) setDeliveries(data as DeliveryRecord[]);
+          }),
+        );
+      }
+
+      if (tables.has("vehicles")) {
+        tasks.push(
+          Promise.resolve(
+            supabase
+              .from("vehicles")
+              .select("id, code, truck_code, plate_number, label, model, is_active, status, driver_id, route_id, capacity_liters, capacity_kg, fuel_percent, latitude, longitude, last_seen_at, updated_at")
+              .order("label", { ascending: true }),
+          ).then(({ data, error }) => {
+            if (!error && data) setVehicles(data as VehicleRecord[]);
+          }),
+        );
+      }
+
+      if (tables.has("maintenance_records")) {
+        tasks.push(
+          Promise.resolve(
+            supabase.from("maintenance_records").select("id, vehicle_id, maintenance_type, scheduled_at, estimated_duration_minutes, notes, status, created_at").order("scheduled_at", { ascending: false }),
+          ).then(({ data, error }) => {
+            if (!error && data) setMaintenanceRecords(data as MaintenanceRecord[]);
+          }),
+        );
+      }
+
+      if (tables.has("waste_reports")) {
+        tasks.push(
+          Promise.resolve(
+            supabase
+              .from("waste_reports")
+              .select("id, report_id, report_number, driver_id, report_type, type, location, image_url, latitude, longitude, status, priority, description, reported_by, assigned_to, bin_id, route_id, created_at, resolved_at, updated_at")
+              .order("created_at", { ascending: false }),
+          ).then(({ data, error }) => {
+            if (!error && data) setReports(data as WasteReportRecord[]);
+          }),
+        );
+      }
+
+      if (tables.has("notifications")) {
+        tasks.push(
+          Promise.resolve(
+            supabase.from("notifications").select("id, user_auth_id, role, title, message, type, category, source_table, source_id, read, created_at").order("created_at", { ascending: false }),
+          ).then(({ data, error }) => {
+            if (!error && data) setNotifications(data as NotificationRecord[]);
+          }),
+        );
+      }
+
+      if (tables.has("system_settings")) {
+        tasks.push(
+          Promise.resolve(
+            supabase.from("system_settings").select("key, value, description").order("key", { ascending: true }),
+          ).then(({ data, error }) => {
+            if (!error && data) {
+              const loaded = data as SystemSetting[];
+              syncRuntimeSystemSettings(loaded);
+              setSettings(loaded);
+            }
+          }),
+        );
+      }
+
+      if (tables.has("role_permissions")) {
+        tasks.push(
+          Promise.resolve(
+            supabase.from("role_permissions").select("role, page, can_read, can_create, can_update, can_delete").order("role", { ascending: true }),
+          ).then(({ data, error }) => {
+            if (!error && data) setRolePermissions(data as RolePermission[]);
+          }),
+        );
+      }
+
+      if (tables.has("report_categories")) {
+        tasks.push(
+          Promise.resolve(
+            supabase.from("report_categories").select("id, name, is_active, sort_order").order("sort_order", { ascending: true }),
+          ).then(({ data, error }) => {
+            if (!error && data) {
+              const all = data as ReferenceRecord[];
+              setAllReportCategories(all);
+              setReportCategories(all.filter((item) => item.is_active !== false));
+            }
+          }),
+        );
+      }
+
+      if (tables.has("maintenance_types")) {
+        tasks.push(
+          Promise.resolve(
+            supabase.from("maintenance_types").select("id, name, is_active, sort_order").order("sort_order", { ascending: true }),
+          ).then(({ data, error }) => {
+            if (!error && data) {
+              const all = data as ReferenceRecord[];
+              setAllMaintenanceTypes(all);
+              setMaintenanceTypes(all.filter((item) => item.is_active !== false));
+            }
+          }),
+        );
+      }
+
+      if (tables.has("bin_types")) {
+        tasks.push(
+          Promise.resolve(
+            supabase.from("bin_types").select("id, name, is_active, sort_order").order("sort_order", { ascending: true }),
+          ).then(({ data, error }) => {
+            if (!error && data) {
+              const all = data as ReferenceRecord[];
+              setAllBinTypes(all);
+              setBinTypes(all.filter((item) => item.is_active !== false));
+            }
+          }),
+        );
+      }
+
+      if (tables.has("overflow_events")) {
+        tasks.push(
+          fetchOverflowEventsSafe().then(({ data, error }) => {
+            if (!error && data) setOverflowEvents(hydrateOverflowEventRows(data as OverflowEventRecord[]));
+          }),
+        );
+      }
+
+      if (tables.has("collection_schedules")) {
+        tasks.push(
+          Promise.resolve(
+            supabase
+              .from("collection_schedules")
+              .select("id, area_code, area_name, shift_label, stop_order, location_name, stop_type, barangay, days_of_week, day_times, scheduled_time, waste_category, assigned_truck_note, special_instructions, bin_id, latitude, longitude, coordinate_status, monitor_name, source_reference, source_page, is_active")
+              .eq("is_active", true)
+              .order("area_code", { ascending: true })
+              .order("stop_order", { ascending: true }),
+          ).then(({ data, error }) => {
+            if (!error && data) setCollectionSchedules(data as CollectionScheduleRecord[]);
+          }),
+        );
+      }
+
+      await Promise.all(tasks);
+    },
+    [load, profile?.auth_user_id],
+  );
+
   const loadRef = useRef<() => Promise<void>>(load);
+  const refreshTablesRef = useRef<(tables: Set<string>) => Promise<void>>(refreshTables);
   useEffect(() => {
     loadRef.current = load;
-  }, [load]);
+    refreshTablesRef.current = refreshTables;
+  }, [load, refreshTables]);
 
   useEffect(() => {
     if (!profile?.auth_user_id) {
@@ -836,13 +1094,17 @@ function useLiveDataInternal() {
     }
 
     void load();
+    const pendingTables = new Set<string>();
     let reloadTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleCoalescedLoad = () => {
+    const scheduleTableRefresh = (table: string) => {
+      pendingTables.add(table);
       if (reloadTimer) clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => {
         reloadTimer = null;
-        void loadRef.current();
-      }, 300);
+        const batch = new Set(pendingTables);
+        pendingTables.clear();
+        void refreshTablesRef.current(batch);
+      }, 250);
     };
 
     const channel = supabase.channel(`webapp-live-data-${profile.auth_user_id}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -857,13 +1119,13 @@ function useLiveDataInternal() {
           });
           if (foundExisting) return;
         }
-        scheduleCoalescedLoad();
+        scheduleTableRefresh(table);
       });
     });
     channel.subscribe();
 
     const handleDriversUpdated = () => {
-      scheduleCoalescedLoad();
+      scheduleTableRefresh("drivers");
     };
     if (typeof window !== "undefined") {
       window.addEventListener("ecoloop:drivers-updated", handleDriversUpdated);
@@ -871,6 +1133,7 @@ function useLiveDataInternal() {
 
     return () => {
       if (reloadTimer) clearTimeout(reloadTimer);
+      pendingTables.clear();
       if (typeof window !== "undefined") {
         window.removeEventListener("ecoloop:drivers-updated", handleDriversUpdated);
       }
@@ -969,13 +1232,13 @@ function useLiveDataInternal() {
   }) => {
     const { error } = await supabase.from("bins").insert(payload);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["bins", "route_stops"]));
   };
 
   const updateBin = async (id: string | number, payload: Partial<BinRecord>) => {
     const { error } = await supabase.from("bins").update(payload).eq("id", id);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["bins", "route_stops"]));
   };
 
   const setBinActive = async (id: string | number, active: boolean) => {
@@ -987,7 +1250,7 @@ function useLiveDataInternal() {
       })
       .eq("id", id);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["bins", "route_stops"]));
   };
 
   const disableBin = async (id: string | number) => {
@@ -1001,13 +1264,13 @@ function useLiveDataInternal() {
   const createReport = async (payload: Partial<WasteReportRecord>) => {
     const { error } = await supabase.from("waste_reports").insert(payload);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["waste_reports"]));
   };
 
   const updateReport = async (id: string, payload: Partial<WasteReportRecord>) => {
     const { error } = await supabase.from("waste_reports").update(payload).eq("id", id);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["waste_reports"]));
   };
 
   const resolveReport = async (id: string) => {
@@ -1017,7 +1280,7 @@ function useLiveDataInternal() {
   const deleteReport = async (id: string) => {
     const { error } = await supabase.from("waste_reports").delete().eq("id", id);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["waste_reports"]));
   };
 
   const createNotification = async (payload: Partial<NotificationRecord>) => {
@@ -1027,7 +1290,7 @@ function useLiveDataInternal() {
       ({ error } = await supabase.from("notifications").insert({ ...row, category: "route" }));
     }
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["notifications"]));
   };
 
   /** Batch insert (e.g. notify every driver with a linked auth account). */
@@ -1041,37 +1304,37 @@ function useLiveDataInternal() {
         .insert(rows.map((r) => (r.category === "truck" ? { ...r, category: "route" } : r))));
     }
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["notifications"]));
   };
 
   const markNotificationRead = async (id: string) => {
     const { error } = await supabase.from("notifications").update({ read: true }).eq("id", id);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["notifications"]));
   };
 
   const markAllNotificationsRead = async () => {
     const { error } = await supabase.from("notifications").update({ read: true }).eq("read", false);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["notifications"]));
   };
 
   const deleteNotification = async (id: string) => {
     const { error } = await supabase.from("notifications").delete().eq("id", id);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["notifications"]));
   };
 
   const clearReadNotifications = async () => {
     const { error } = await supabase.from("notifications").delete().eq("read", true);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["notifications"]));
   };
 
   const createVehicle = async (payload: Partial<VehicleRecord>) => {
     const { data, error } = await supabase.from("vehicles").insert(payload).select("id").single();
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["vehicles", "drivers"]));
     return data as { id: string | number };
   };
 
@@ -1083,7 +1346,7 @@ function useLiveDataInternal() {
       ({ error } = await supabase.from("vehicles").update(rest).eq("id", id));
     }
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["vehicles", "drivers"]));
   };
 
   const assignVehicleDriver = async (vehicleId: string, driverId: string | null) => {
@@ -1119,7 +1382,7 @@ function useLiveDataInternal() {
       if (drvErr) throw drvErr;
     }
 
-    await load();
+    await refreshTables(new Set(["vehicles", "drivers"]));
   };
 
   const deleteVehicle = async (id: string) => {
@@ -1138,19 +1401,19 @@ function useLiveDataInternal() {
     if (!deletedRows || deletedRows.length === 0) {
       throw new Error("Delete blocked by database permissions or linked records. Deactivate the truck or remove it in Supabase SQL Editor.");
     }
-    await load();
+    await refreshTables(new Set(["vehicles", "drivers"]));
   };
 
   const createMaintenanceRecord = async (payload: Partial<MaintenanceRecord>) => {
     const { error } = await supabase.from("maintenance_records").insert(payload);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["maintenance_records"]));
   };
 
   const updateMaintenanceRecord = async (id: string, payload: Partial<MaintenanceRecord>) => {
     const { error } = await supabase.from("maintenance_records").update(payload).eq("id", id);
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["maintenance_records"]));
   };
 
   const recordAuditLog = async (entry: {
@@ -1192,7 +1455,7 @@ function useLiveDataInternal() {
       oldData: previous,
       newData: value,
     });
-    await load();
+    await refreshTables(new Set(["system_settings"]));
   };
 
   const upsertSystemSettingsBatch = async (
@@ -1212,7 +1475,7 @@ function useLiveDataInternal() {
         newData: entry.value,
       });
     }
-    await load();
+    await refreshTables(new Set(["system_settings"]));
   };
 
   const assertReferenceTable = (table: ReferenceTableName) => {
@@ -1235,7 +1498,7 @@ function useLiveDataInternal() {
       oldData: null,
       newData: data ?? insertPayload,
     });
-    await load();
+    await refreshTables(new Set([table]));
   };
 
   const updateReferenceItem = async (table: ReferenceTableName, id: string, payload: Partial<Pick<ReferenceRecord, "name" | "is_active" | "sort_order">>) => {
@@ -1249,7 +1512,7 @@ function useLiveDataInternal() {
       oldData: null,
       newData: payload,
     });
-    await load();
+    await refreshTables(new Set([table]));
   };
 
   const toggleCollectionAreaActive = async (areaCode: string, isActive: boolean) => {
@@ -1258,7 +1521,7 @@ function useLiveDataInternal() {
       .update({ is_active: isActive })
       .eq("area_code", areaCode);
     if (schedError) throw schedError;
-    await load();
+    await refreshTables(new Set(["collection_schedules"]));
   };
 
   const createOverflowEvent = async (payload: Partial<OverflowEventRecord>) => {
@@ -1268,7 +1531,7 @@ function useLiveDataInternal() {
       ({ error } = await supabase.from("overflow_events").insert(rest));
     }
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["overflow_events"]));
   };
 
   const updateOverflowEvent = async (id: string, payload: Partial<OverflowEventRecord>) => {
@@ -1279,7 +1542,7 @@ function useLiveDataInternal() {
       ({ error } = await supabase.from("overflow_events").update(rest).eq("id", id));
     }
     if (error) throw error;
-    await load();
+    await refreshTables(new Set(["overflow_events"]));
   };
 
   const deleteOverflowEvent = async (id: string) => {
@@ -1292,76 +1555,113 @@ function useLiveDataInternal() {
     if (!deletedRows || deletedRows.length === 0) {
       throw new Error("Delete was blocked by database permissions. Use Resolve/Dismiss or run the overflow DELETE policy SQL.");
     }
-    await load();
+    await refreshTables(new Set(["overflow_events"]));
   };
 
-  return {
-    loading,
-    error,
-    bins,
-    drivers,
-    routes,
-    routeStops,
-    deliveries,
-    vehicles,
-    vehicleLocations,
-    maintenanceRecords,
-    reports,
-    notifications,
-    settings,
-    organizationSetting: parsedSettings.organization,
-    displayPreferences: parsedSettings.displayPreferences,
-    depotSetting: parsedSettings.depot,
-    landfillSetting: parsedSettings.landfill,
-    operationsConfig: parsedSettings.operationsConfig,
-    mapDefaults: parsedSettings.mapDefaults,
-    securityConfig: parsedSettings.securityConfig,
-    rolePermissions,
-    reportCategories,
-    maintenanceTypes,
-    binTypes,
-    allReportCategories,
-    allMaintenanceTypes,
-    allBinTypes,
-    overflowEvents,
-    collectionSchedules,
-    driverById,
-    routeById,
-    vehicleById,
-    dashboardStats,
-    reload: load,
-    refreshVehicleLocations,
-    refreshLiveProgress,
-    createBin,
-    updateBin,
-    setBinActive,
-    disableBin,
-    enableBin,
-    createReport,
-    updateReport,
-    resolveReport,
-    deleteReport,
-    createNotification,
-    createNotifications,
-    markNotificationRead,
-    markAllNotificationsRead,
-    deleteNotification,
-    clearReadNotifications,
-    createVehicle,
-    updateVehicle,
-    assignVehicleDriver,
-    deleteVehicle,
-    createMaintenanceRecord,
-    updateMaintenanceRecord,
-    upsertSystemSetting,
-    upsertSystemSettingsBatch,
-    createReferenceItem,
-    updateReferenceItem,
-    toggleCollectionAreaActive,
-    createOverflowEvent,
-    updateOverflowEvent,
-    deleteOverflowEvent,
-  };
+  return useMemo(
+    () => ({
+      loading,
+      error,
+      bins,
+      drivers,
+      routes,
+      routeStops,
+      deliveries,
+      vehicles,
+      vehicleLocations,
+      maintenanceRecords,
+      reports,
+      notifications,
+      settings,
+      organizationSetting: parsedSettings.organization,
+      displayPreferences: parsedSettings.displayPreferences,
+      depotSetting: parsedSettings.depot,
+      landfillSetting: parsedSettings.landfill,
+      operationsConfig: parsedSettings.operationsConfig,
+      mapDefaults: parsedSettings.mapDefaults,
+      securityConfig: parsedSettings.securityConfig,
+      rolePermissions,
+      reportCategories,
+      maintenanceTypes,
+      binTypes,
+      allReportCategories,
+      allMaintenanceTypes,
+      allBinTypes,
+      overflowEvents,
+      collectionSchedules,
+      driverById,
+      routeById,
+      vehicleById,
+      dashboardStats,
+      reload: load,
+      refreshVehicleLocations,
+      refreshLiveProgress,
+      createBin,
+      updateBin,
+      setBinActive,
+      disableBin,
+      enableBin,
+      createReport,
+      updateReport,
+      resolveReport,
+      deleteReport,
+      createNotification,
+      createNotifications,
+      markNotificationRead,
+      markAllNotificationsRead,
+      deleteNotification,
+      clearReadNotifications,
+      createVehicle,
+      updateVehicle,
+      assignVehicleDriver,
+      deleteVehicle,
+      createMaintenanceRecord,
+      updateMaintenanceRecord,
+      upsertSystemSetting,
+      upsertSystemSettingsBatch,
+      createReferenceItem,
+      updateReferenceItem,
+      toggleCollectionAreaActive,
+      createOverflowEvent,
+      updateOverflowEvent,
+      deleteOverflowEvent,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      loading,
+      error,
+      bins,
+      drivers,
+      routes,
+      routeStops,
+      deliveries,
+      vehicles,
+      vehicleLocations,
+      maintenanceRecords,
+      reports,
+      notifications,
+      settings,
+      parsedSettings,
+      rolePermissions,
+      reportCategories,
+      maintenanceTypes,
+      binTypes,
+      allReportCategories,
+      allMaintenanceTypes,
+      allBinTypes,
+      overflowEvents,
+      collectionSchedules,
+      driverById,
+      routeById,
+      vehicleById,
+      dashboardStats,
+      load,
+      refreshVehicleLocations,
+      refreshLiveProgress,
+      refreshTables,
+      profile,
+    ],
+  );
 }
 
 export type LiveDataContextValue = ReturnType<typeof useLiveDataInternal>;

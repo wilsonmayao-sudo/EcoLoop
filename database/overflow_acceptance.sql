@@ -45,6 +45,7 @@ declare
   v_source_route_bigint  bigint := null;
   v_source_driver_bigint bigint := null;
   v_profile_status       text := null;
+  v_is_staff             boolean := false;
   v_bin_id               bigint;
   v_max_stop_order       int := 0;
   v_now                  timestamptz := now();
@@ -63,11 +64,16 @@ begin
     return jsonb_build_object('success', false, 'error', 'Authentication required');
   end if;
 
-  if coalesce(current_setting('role', true), '') not in ('service_role', 'postgres') then
-    if not (
+  if coalesce(current_setting('role', true), '') in ('service_role', 'postgres') then
+    v_is_staff := true;
+  else
+    v_is_staff := (
       public.is_admin(auth.uid())
       or public.is_dispatcher(auth.uid())
       or public.is_supervisor(auth.uid())
+    );
+    if not (
+      v_is_staff
       or (
         public.current_profile_is_active()
         and public.current_app_role() = 'truck_driver'::text
@@ -94,11 +100,22 @@ begin
   end if;
 
   if v_event.status = 'accepted' then
-    return jsonb_build_object('success', false, 'error', 'Overflow event has already been accepted');
+    return jsonb_build_object(
+      'success', false,
+      'error', 'Overflow event has already been accepted',
+      'target_route_id', case when v_event.target_route_id is not null then v_event.target_route_id::text else null end
+    );
   end if;
 
   if v_event.status in ('declined', 'completed') then
     return jsonb_build_object('success', false, 'error', 'Overflow event cannot be accepted in current state: ' || v_event.status);
+  end if;
+
+  if not v_is_staff
+     and nullif(btrim(v_event.target_driver_id), '') is not null
+     and btrim(v_event.target_driver_id) <> v_target_driver_txt
+  then
+    return jsonb_build_object('success', false, 'error', 'This overflow dispatch is assigned to a different driver');
   end if;
 
   if v_event.source_driver_id is not null and btrim(v_event.source_driver_id) = v_target_driver_txt then
@@ -129,11 +146,28 @@ begin
     return jsonb_build_object('success', false, 'error', 'Target driver account is ' || v_profile_status);
   end if;
 
-  -- Resolve & lock target vehicle row
+  -- Resolve & lock target vehicle row (falling back to open routes / vehicles.driver_id)
   v_vehicle_id_txt := coalesce(
     nullif(btrim(p_target_vehicle_id), ''),
     v_driver.assigned_vehicle_id::text,
-    nullif(btrim(v_event.target_vehicle_id), '')
+    nullif(btrim(v_event.target_vehicle_id), ''),
+    (
+      select r.vehicle_id::text
+      from public.routes r
+      where r.driver_id = v_target_driver_bigint
+        and r.vehicle_id is not null
+        and r.status in ('active'::public.route_status, 'pending'::public.route_status, 'planned'::public.route_status)
+      order by case when r.status = 'active'::public.route_status then 1 else 2 end, r.created_at desc
+      limit 1
+    ),
+    (
+      select v.id::text
+      from public.vehicles v
+      where v.driver_id is not null
+        and btrim(v.driver_id) = v_target_driver_txt
+      order by v.id asc
+      limit 1
+    )
   );
 
   if v_vehicle_id_txt is not null and v_event.source_vehicle_id is not null and btrim(v_event.source_vehicle_id) = btrim(v_vehicle_id_txt) then
@@ -172,13 +206,18 @@ begin
     v_source_driver_bigint := btrim(v_event.source_driver_id)::bigint;
   end if;
 
-  -- Validate provided target route is open and belongs to target driver
+  -- Dedicated Overflow Assistance Route Rule: only reuse an open Overflow Assistance Route;
+  -- never append overflow stops onto the back of a driver's regular collection route.
   if v_route_id is not null then
     select id, status into v_candidate_route
     from public.routes
     where id::text = v_route_id
       and driver_id = v_target_driver_bigint
       and status in ('active', 'pending', 'planned')
+      and (
+        coalesce(optimization_method, '') in ('overflow_reassignment', 'dynamic-reassignment+mapbox')
+        or lower(coalesce(name, '')) like '%overflow%'
+      )
     for update;
 
     if not found then
@@ -193,65 +232,46 @@ begin
     end if;
   end if;
 
-  -- Resolve target route if not provided or not open
   if v_route_id is null then
-    select id, status into v_candidate_route
-    from public.routes
-    where driver_id = v_target_driver_bigint
-      and status in ('active', 'pending', 'planned')
-    order by case when status = 'active' then 1 else 2 end, created_at desc
-    limit 1
-    for update;
-
-    if found then
-      v_route_id := v_candidate_route.id::text;
-      if v_candidate_route.status in ('pending', 'planned') then
-        update public.routes
-        set
-          status = 'active',
-          started_at = coalesce(started_at, v_now),
-          assignment_updated_at = v_now
-        where id = v_candidate_route.id;
-      end if;
-    else
-      if v_source_route_bigint is not null then
-        select area_code, scheduled_days, shift_label, waste_category, center_lat, center_lng
-        into v_source_route
-        from public.routes
-        where id = v_source_route_bigint;
-      end if;
-
-      insert into public.routes (
-        name,
-        status,
-        area_code,
-        scheduled_days,
-        shift_label,
-        waste_category,
-        center_lat,
-        center_lng,
-        driver_id,
-        vehicle_id,
-        generated_at,
-        assignment_updated_at,
-        started_at
-      ) values (
-        'Overflow Assistance Route',
-        'active',
-        case when v_source_route_bigint is not null then v_source_route.area_code else null end,
-        case when v_source_route_bigint is not null then v_source_route.scheduled_days else null end,
-        case when v_source_route_bigint is not null then v_source_route.shift_label else null end,
-        case when v_source_route_bigint is not null then v_source_route.waste_category else null end,
-        case when v_source_route_bigint is not null then v_source_route.center_lat else null end,
-        case when v_source_route_bigint is not null then v_source_route.center_lng else null end,
-        v_target_driver_bigint,
-        v_vehicle_bigint,
-        v_now,
-        v_now,
-        v_now
-      )
-      returning id::text into v_route_id;
+    if v_source_route_bigint is not null then
+      select area_code, scheduled_days, shift_label, waste_category, center_lat, center_lng
+      into v_source_route
+      from public.routes
+      where id = v_source_route_bigint;
     end if;
+
+    insert into public.routes (
+      name,
+      status,
+      area_code,
+      scheduled_days,
+      shift_label,
+      waste_category,
+      center_lat,
+      center_lng,
+      driver_id,
+      vehicle_id,
+      optimization_method,
+      generated_at,
+      assignment_updated_at,
+      started_at
+    ) values (
+      'Overflow Assistance Route',
+      'active',
+      case when v_source_route_bigint is not null then v_source_route.area_code else null end,
+      case when v_source_route_bigint is not null then v_source_route.scheduled_days else null end,
+      case when v_source_route_bigint is not null then v_source_route.shift_label else null end,
+      case when v_source_route_bigint is not null then v_source_route.waste_category else null end,
+      case when v_source_route_bigint is not null then v_source_route.center_lat else null end,
+      case when v_source_route_bigint is not null then v_source_route.center_lng else null end,
+      v_target_driver_bigint,
+      v_vehicle_bigint,
+      'overflow_reassignment',
+      v_now,
+      v_now,
+      v_now
+    )
+    returning id::text into v_route_id;
   end if;
 
   v_target_route_bigint := v_route_id::bigint;
@@ -445,12 +465,25 @@ begin
     status = 'accepted',
     accepted_at = v_now,
     target_driver_id = v_target_driver_txt,
-    target_vehicle_id = coalesce(nullif(btrim(v_vehicle_id_txt), ''), v_event.target_vehicle_id)
+    target_vehicle_id = coalesce(nullif(btrim(v_vehicle_id_txt), ''), v_event.target_vehicle_id),
+    target_route_id = v_target_route_bigint,
+    reassignment_metadata = coalesce(reassignment_metadata, '{}'::jsonb)
+      || jsonb_build_object(
+        'target_route_id', v_target_route_bigint,
+        'target_driver_id', v_target_driver_txt,
+        'target_vehicle_id', coalesce(nullif(btrim(v_vehicle_id_txt), ''), v_event.target_vehicle_id),
+        'accepted_at', v_now
+      )
   where id = p_event_id;
 
   return jsonb_build_object(
     'success', true,
+    'ok', true,
+    'event_id', p_event_id,
     'target_route_id', v_route_id,
+    'route_id', v_route_id,
+    'assigned_bin_ids', to_jsonb(v_bin_ids),
+    'accepted_at', v_now,
     'bins_transferred', coalesce(array_length(v_bin_ids, 1), 0),
     'bins_skipped', v_skipped_bins
   );

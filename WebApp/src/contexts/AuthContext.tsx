@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../services/supabaseClient";
 import { getRuntimeSystemSettings, subscribeRuntimeSettings } from "../utils/systemSettings";
 

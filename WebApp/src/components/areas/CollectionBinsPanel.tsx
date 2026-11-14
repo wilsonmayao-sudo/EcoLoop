@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MapPin, Plus, X, Navigation, Pencil, Ban, RotateCcw } from "lucide-react";
 import ConfirmModal from "../feedback/ConfirmModal";
 import { isBinActive, useLiveData, type BinRecord } from "../../hooks/useLiveData";

@@ -61,6 +61,8 @@ export function shouldRecordLocationHistory(current, lastHistory) {
   return moved >= LIVE_LOCATION_HISTORY_DISTANCE_M;
 }
 
+const fallbackVehicleIdByDriver = new Map();
+
 export async function publishDriverLocation({ driverId, vehicleId, routeId, location, includeHistory = false }) {
   const normalizedDriverId = normalizeNumericId(driverId) ?? normalizeId(driverId);
   let normalizedVehicleId = normalizeNumericId(vehicleId) ?? normalizeId(vehicleId);
@@ -69,14 +71,20 @@ export async function publishDriverLocation({ driverId, vehicleId, routeId, loca
   if (!normalizedDriverId || !location) return;
 
   if (!normalizedVehicleId) {
-    const { data: linkedVehicle } = await supabase
-      .from("vehicles")
-      .select("id")
-      .eq("driver_id", String(normalizedDriverId))
-      .limit(1)
-      .maybeSingle();
-    if (linkedVehicle?.id != null) {
-      normalizedVehicleId = normalizeNumericId(linkedVehicle.id) ?? normalizeId(linkedVehicle.id);
+    const cacheKey = String(normalizedDriverId);
+    if (fallbackVehicleIdByDriver.has(cacheKey)) {
+      normalizedVehicleId = fallbackVehicleIdByDriver.get(cacheKey);
+    } else {
+      const { data: linkedVehicle } = await supabase
+        .from("vehicles")
+        .select("id")
+        .eq("driver_id", cacheKey)
+        .limit(1)
+        .maybeSingle();
+      if (linkedVehicle?.id != null) {
+        normalizedVehicleId = normalizeNumericId(linkedVehicle.id) ?? normalizeId(linkedVehicle.id);
+      }
+      fallbackVehicleIdByDriver.set(cacheKey, normalizedVehicleId ?? null);
     }
   }
 

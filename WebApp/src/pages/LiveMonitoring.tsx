@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Truck,
   MapPin,
@@ -36,7 +36,6 @@ import {
 } from "../services/streetRouteService";
 import type { UncollectedStop } from "../utils/routing/dynamicReassignment";
 import {
-  formatDateOnly,
   formatDateTime,
   getRouteStopProgress,
   normalizeStatus,
@@ -201,15 +200,21 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
       }));
   }, [collectionSchedules]);
 
-  // Ticking timer for real-time GPS freshness display
+  // Ticking timer for real-time GPS freshness display (pauses when tab hidden or off Live view)
   useEffect(() => {
-    const timer = window.setInterval(() => setLiveNow(Date.now()), 3000);
+    if (activeTab !== "live") return;
+    setLiveNow(Date.now());
+    const timer = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      setLiveNow(Date.now());
+    }, 3000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [activeTab]);
 
   // Poll vehicle locations and live route/stop progress
   useEffect(() => {
     const syncLive = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       void refreshVehicleLocations();
       void refreshLiveProgress();
     };
@@ -218,79 +223,54 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
     return () => window.clearInterval(timer);
   }, [refreshLiveProgress, refreshVehicleLocations]);
 
-  // Build Monitored Trucks list using live Supabase data
-  const monitoredTrucks = useMemo((): MonitoredTruck[] => {
-    const driverById = new Map(drivers.map((d) => [String(d.id), d]));
-    const routeById = new Map(routes.map((r) => [String(r.id), r]));
-    const areaByCode = new Map(collectionAreas.map((a) => [a.areaCode, a.areaName]));
+  // Memoize static route/area/delivery lookups independently of the 3s liveNow clock
+  const areaByCode = useMemo(() => new Map(collectionAreas.map((a) => [a.areaCode, a.areaName])), [collectionAreas]);
 
+  const areaCodeByRouteId = useMemo(() => {
     const scheduleAreaByBinId = new Map<string, string>();
     collectionSchedules.forEach((row) => {
       if (row.bin_id != null && row.area_code) {
         scheduleAreaByBinId.set(String(row.bin_id), row.area_code.trim());
       }
     });
-
-    const areaCodeByRouteId = new Map<string, string>();
+    const map = new Map<string, string>();
     routeStops.forEach((stop) => {
       const rKey = String(stop.route_id);
-      if (areaCodeByRouteId.has(rKey)) return;
+      if (map.has(rKey)) return;
       const stopArea =
         stop.bins?.area_code?.trim() ||
         (stop.bin_id != null ? scheduleAreaByBinId.get(String(stop.bin_id)) : undefined);
       if (stopArea) {
-        areaCodeByRouteId.set(rKey, stopArea);
+        map.set(rKey, stopArea);
       }
     });
+    return map;
+  }, [collectionSchedules, routeStops]);
 
-    const driverByVehicleId = new Map<string, DriverRecord>();
-    const driverOfflineThresholdMs = operationsConfig.driverOfflineSeconds * 1000;
-    drivers.forEach((driver) => {
-      if (driver.assigned_vehicle_id == null) return;
-      const statusNorm = normalizeStatus(driver.status);
-      if (statusNorm === "inactive" || statusNorm === "suspended") return;
-      const key = String(driver.assigned_vehicle_id);
-      const existing = driverByVehicleId.get(key);
-      if (!existing) {
-        driverByVehicleId.set(key, driver);
-        return;
-      }
-      const candSeen = driver.last_seen_at ? new Date(driver.last_seen_at).getTime() : 0;
-      const existSeen = existing.last_seen_at ? new Date(existing.last_seen_at).getTime() : 0;
-      const candOnline = candSeen > 0 && liveNow - candSeen <= driverOfflineThresholdMs && statusNorm !== "offline";
-      const existOnline =
-        existSeen > 0 &&
-        liveNow - existSeen <= driverOfflineThresholdMs &&
-        normalizeStatus(existing.status) !== "offline";
-      if (candOnline !== existOnline) {
-        if (candOnline) driverByVehicleId.set(key, driver);
-        return;
-      }
-      if (candSeen > existSeen) {
-        driverByVehicleId.set(key, driver);
-      }
-    });
-
-    const activeRouteByDriver = new Map<string, RouteRecord>();
-    const activeRouteByVehicle = new Map<string, RouteRecord>();
+  const { activeRouteByDriver, activeRouteByVehicle } = useMemo(() => {
+    const byDriver = new Map<string, RouteRecord>();
+    const byVehicle = new Map<string, RouteRecord>();
     routes.forEach((route) => {
       const s = normalizeStatus(route.status);
       if (!ACTIVE_ROUTE_STATUSES.has(s)) return;
       if (route.driver_id != null) {
         const dKey = String(route.driver_id);
-        if (isPreferredRoute(route, activeRouteByDriver.get(dKey))) {
-          activeRouteByDriver.set(dKey, route);
+        if (isPreferredRoute(route, byDriver.get(dKey))) {
+          byDriver.set(dKey, route);
         }
       }
       if (route.vehicle_id != null) {
         const vKey = String(route.vehicle_id);
-        if (isPreferredRoute(route, activeRouteByVehicle.get(vKey))) {
-          activeRouteByVehicle.set(vKey, route);
+        if (isPreferredRoute(route, byVehicle.get(vKey))) {
+          byVehicle.set(vKey, route);
         }
       }
     });
+    return { activeRouteByDriver: byDriver, activeRouteByVehicle: byVehicle };
+  }, [routes]);
 
-    const activeDeliveryRouteByDriver = new Map<string, RouteRecord>();
+  const activeDeliveryRouteByDriver = useMemo(() => {
+    const byDriver = new Map<string, RouteRecord>();
     deliveries.forEach((delivery) => {
       if (delivery.driver_id == null || delivery.route_id == null) return;
       const dStatus = normalizeStatus(delivery.status);
@@ -298,8 +278,76 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
       const route = routeById.get(String(delivery.route_id));
       if (!route || normalizeStatus(route.status) === "cancelled") return;
       const dKey = String(delivery.driver_id);
-      if (isPreferredRoute(route, activeDeliveryRouteByDriver.get(dKey))) {
-        activeDeliveryRouteByDriver.set(dKey, route);
+      if (isPreferredRoute(route, byDriver.get(dKey))) {
+        byDriver.set(dKey, route);
+      }
+    });
+    return byDriver;
+  }, [deliveries, routeById]);
+
+  const driversGroupedByVehicleId = useMemo(() => {
+    const grouped = new Map<string, DriverRecord[]>();
+    drivers.forEach((driver) => {
+      if (driver.assigned_vehicle_id == null) return;
+      const statusNorm = normalizeStatus(driver.status);
+      if (statusNorm === "inactive" || statusNorm === "suspended") return;
+      const key = String(driver.assigned_vehicle_id);
+      const list = grouped.get(key) ?? [];
+      list.push(driver);
+      grouped.set(key, list);
+    });
+    return grouped;
+  }, [drivers]);
+
+  const routeProgressById = useMemo(() => {
+    const map = new Map<string, { progressPercent: number; completedStops: number; totalStops: number }>();
+    const activeRouteIds = new Set<string>();
+    routes.forEach((r) => {
+      if (r.id != null) activeRouteIds.add(String(r.id));
+    });
+    activeRouteIds.forEach((rid) => {
+      map.set(rid, getRouteStopProgress(rid, deliveries, routeStops));
+    });
+    return map;
+  }, [deliveries, routeStops, routes]);
+
+  // Build Monitored Trucks list using live Supabase data
+  const monitoredTrucks = useMemo((): MonitoredTruck[] => {
+    const gpsDelayedThresholdMs = operationsConfig.gpsDelayedSeconds * 1000;
+    const gpsStoppedThresholdMs = operationsConfig.gpsStoppedSeconds * 1000;
+    const driverOfflineThresholdMs = operationsConfig.driverOfflineSeconds * 1000;
+    const landfillProximityMeters = operationsConfig.landfillProximityMeters;
+
+    const driverByVehicleId = new Map<string, DriverRecord>();
+    driversGroupedByVehicleId.forEach((candidates, key) => {
+      if (candidates.length === 1) {
+        driverByVehicleId.set(key, candidates[0]);
+        return;
+      }
+      let best = candidates[0];
+      for (let i = 1; i < candidates.length; i += 1) {
+        const cand = candidates[i];
+        const candSeen = cand.last_seen_at ? new Date(cand.last_seen_at).getTime() : 0;
+        const existSeen = best.last_seen_at ? new Date(best.last_seen_at).getTime() : 0;
+        const candOnline = candSeen > 0 && liveNow - candSeen <= driverOfflineThresholdMs && normalizeStatus(cand.status) !== "offline";
+        const existOnline = existSeen > 0 && liveNow - existSeen <= driverOfflineThresholdMs && normalizeStatus(best.status) !== "offline";
+        if (candOnline !== existOnline) {
+          if (candOnline) best = cand;
+        } else if (candSeen > existSeen) {
+          best = cand;
+        }
+      }
+      driverByVehicleId.set(key, best);
+    });
+
+    const locationByVehicleId = new Map<string, (typeof vehicleLocations)[number]>();
+    const locationByDriverId = new Map<string, (typeof vehicleLocations)[number]>();
+    vehicleLocations.forEach((loc) => {
+      if (loc.vehicle_id != null && !locationByVehicleId.has(String(loc.vehicle_id))) {
+        locationByVehicleId.set(String(loc.vehicle_id), loc);
+      }
+      if (loc.driver_id != null && !locationByDriverId.has(String(loc.driver_id))) {
+        locationByDriverId.set(String(loc.driver_id), loc);
       }
     });
 
@@ -311,10 +359,8 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
           driverByVehicleId.get(String(vehicle.id)) ??
           null;
         const loc =
-          vehicleLocations.find((l) => String(l.vehicle_id) === String(vehicle.id)) ??
-          (vehicleDriver?.id != null
-            ? vehicleLocations.find((l) => String(l.driver_id) === String(vehicleDriver.id))
-            : undefined);
+          locationByVehicleId.get(String(vehicle.id)) ??
+          (vehicleDriver?.id != null ? locationByDriverId.get(String(vehicleDriver.id)) : undefined);
         const rawLat = loc?.latitude != null ? Number(loc.latitude) : vehicle.latitude != null ? Number(vehicle.latitude) : null;
         const rawLng = loc?.longitude != null ? Number(loc.longitude) : vehicle.longitude != null ? Number(vehicle.longitude) : null;
         const hasValidCoords =
@@ -360,11 +406,6 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
           driver = driverById.get(String(assignedRoute.driver_id)) ?? null;
         }
 
-        const gpsDelayedThresholdMs = operationsConfig.gpsDelayedSeconds * 1000;
-        const gpsStoppedThresholdMs = operationsConfig.gpsStoppedSeconds * 1000;
-        const driverOfflineThresholdMs = operationsConfig.driverOfflineSeconds * 1000;
-        const landfillProximityMeters = operationsConfig.landfillProximityMeters;
-
         const driverLastSeenMs = driver?.last_seen_at ? new Date(driver.last_seen_at).getTime() : 0;
         const driverActivityAgeMs = driverLastSeenMs > 0 ? liveNow - driverLastSeenMs : Infinity;
 
@@ -387,16 +428,11 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
           );
         }
 
-        // Progress calculation for assigned route
-        let progressPercent = 0;
-        let completedStops = 0;
-        let totalStops = 0;
-        if (assignedRoute) {
-          const prog = getRouteStopProgress(assignedRoute.id, deliveries, routeStops);
-          progressPercent = prog.progressPercent;
-          completedStops = prog.completedStops;
-          totalStops = prog.totalStops;
-        }
+        // Reuse precomputed stop progress
+        const prog = assignedRoute ? routeProgressById.get(String(assignedRoute.id)) : undefined;
+        const progressPercent = prog?.progressPercent ?? 0;
+        const completedStops = prog?.completedStops ?? 0;
+        const totalStops = prog?.totalStops ?? 0;
 
         const isRouteCompleted =
           assignedRoute != null &&
@@ -470,7 +506,25 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
           isReturningToLandfill,
         };
       });
-  }, [collectionAreas, collectionSchedules, deliveries, drivers, landfillSetting, liveNow, operationsConfig, routeStops, routes, vehicleLocations, vehicles]);
+  }, [
+    activeDeliveryRouteByDriver,
+    activeRouteByDriver,
+    activeRouteByVehicle,
+    areaByCode,
+    areaCodeByRouteId,
+    driverById,
+    driversGroupedByVehicleId,
+    landfillSetting,
+    liveNow,
+    operationsConfig.driverOfflineSeconds,
+    operationsConfig.gpsDelayedSeconds,
+    operationsConfig.gpsStoppedSeconds,
+    operationsConfig.landfillProximityMeters,
+    routeById,
+    routeProgressById,
+    vehicleLocations,
+    vehicles,
+  ]);
 
   // Selected Truck object
   const selectedTruck = useMemo(
@@ -582,7 +636,7 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
   const [liveMapRoutes, setLiveMapRoutes] = useState<LiveFleetMapRoute[]>([]);
 
   // Resolve road-following Mapbox route polylines for active overflow assisting trucks and selected truck
-  const overflowRouteRequests = useMemo(() => {
+  const overflowRoutePlan = useMemo(() => {
     const requests: Array<{ id: string; label: string; color: string; selected: boolean; waypoints: LngLat[] }> = [];
     const seenRouteKeys = new Set<string>();
 
@@ -650,17 +704,28 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
       }
     }
 
-    return requests;
+    const signature = requests
+      .map(
+        (r) =>
+          `${r.id}:${r.color}:${r.waypoints.map(([lng, lat]) => `${lng.toFixed(3)},${lat.toFixed(3)}`).join("|")}`,
+      )
+      .join("||");
+
+    return { requests, signature };
   }, [activeOverflowEvents, deliveries, landfillSetting.latitude, landfillSetting.longitude, landfillSetting.name, monitoredTrucks, routeStops, selectedTruck]);
 
+  const overflowRouteRequestsRef = useRef(overflowRoutePlan.requests);
+  overflowRouteRequestsRef.current = overflowRoutePlan.requests;
+
   useEffect(() => {
-    if (overflowRouteRequests.length === 0) {
-      setLiveMapRoutes([]);
+    const requests = overflowRouteRequestsRef.current;
+    if (requests.length === 0) {
+      setLiveMapRoutes((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     let cancelled = false;
     void Promise.all(
-      overflowRouteRequests.map(async (req): Promise<LiveFleetMapRoute | null> => {
+      requests.map(async (req): Promise<LiveFleetMapRoute | null> => {
         const res = await fetchStreetRouteGeometry(req.id, req.waypoints);
         if (!res || res.coordinates.length < 2) return null;
         return {
@@ -679,7 +744,7 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
     return () => {
       cancelled = true;
     };
-  }, [overflowRouteRequests]);
+  }, [overflowRoutePlan.signature]);
 
   // KPIs
   const kpis = useMemo(() => {

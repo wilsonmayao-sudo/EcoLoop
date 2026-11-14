@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Activity, Database, HardDrive, Map as MapIcon, RefreshCw, Server } from "lucide-react";
 import { supabase } from "../../services/supabaseClient";
 import { formatDateTime } from "../../hooks/useLiveData";
