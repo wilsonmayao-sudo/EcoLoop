@@ -6,6 +6,7 @@ export type AppRole = "admin" | "dispatcher" | "supervisor" | "truck_driver";
 export type AccountStatus = "pending_approval" | "active" | "suspended" | "inactive";
 
 export interface UserProfile {
+  id?: string;
   auth_user_id: string;
   full_name: string;
   email: string;
@@ -30,10 +31,54 @@ export function useAuth() {
   return ctx;
 }
 
+function getInactiveAccountMessage(status: AccountStatus): string {
+  switch (status) {
+    case "suspended":
+      return "Your account has been suspended by an administrator. Contact an administrator to reactivate your access.";
+    case "inactive":
+      return "Your account is currently inactive. Contact an administrator for assistance.";
+    case "pending_approval":
+      return "Your account is waiting for admin approval.";
+    default:
+      return "Your account is not active. Contact an administrator for assistance.";
+  }
+}
+
+function isBenignSignOutError(error: any): boolean {
+  const msg = String(error?.message ?? error ?? "").toLowerCase();
+  const status = Number(error?.status ?? 0);
+  return (
+    status === 401 ||
+    status === 403 ||
+    msg.includes("auth session missing") ||
+    msg.includes("session_not_found") ||
+    msg.includes("session from session_id claim in jwt does not exist") ||
+    msg.includes("invalid jwt")
+  );
+}
+
+function clearBrowserAuthStorage() {
+  const purge = (storage: Storage | undefined) => {
+    if (!storage) return;
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (!key) continue;
+      if (/^sb-.*-auth-token/i.test(key) || key === "supabase.auth.token") {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((key) => storage.removeItem(key));
+  };
+  if (typeof window === "undefined") return;
+  purge(window.localStorage);
+  purge(window.sessionStorage);
+}
+
 async function fetchProfile(authUserId: string): Promise<UserProfile | null> {
   const { data, error } = await supabase
     .from("user_profiles")
-    .select("auth_user_id, full_name, email, role, status")
+    .select("id, auth_user_id, full_name, email, role, status")
     .eq("auth_user_id", authUserId)
     .maybeSingle();
   if (error) throw error;
@@ -50,66 +95,122 @@ export function AuthProvider({ children }: { children: any }) {
   const [profile, setProfile] = useState(null as UserProfile | null);
   const [authError, setAuthError] = useState(null as string | null);
   const pendingLogoutReasonRef = useRef<string | null>(null);
+  const refreshSeqRef = useRef(0);
+  const signingOutRef = useRef(false);
   const [idleTimeoutMinutes, setIdleTimeoutMinutes] = useState<number>(
     () => getRuntimeSystemSettings().securityConfig.idleTimeoutMinutes,
   );
 
-  const refresh = async (nextSession: any | null) => {
-    setSession(nextSession);
+  const performSignOut = async (options?: { reason?: string | null }) => {
+    const seq = ++refreshSeqRef.current;
+    signingOutRef.current = true;
+    const reason = options?.reason ?? null;
+    pendingLogoutReasonRef.current = reason;
 
-    if (!nextSession?.user?.id) {
+    let remoteError: any = null;
+    try {
+      const result = await Promise.race([
+        supabase.auth.signOut({ scope: "global" }),
+        new Promise<{ error: Error }>((resolve) =>
+          setTimeout(() => resolve({ error: new Error("Timed out waiting for server sign-out.") }), 6000),
+        ),
+      ]);
+      if (result?.error && !isBenignSignOutError(result.error)) {
+        remoteError = result.error;
+      }
+    } catch (err: any) {
+      if (!isBenignSignOutError(err)) {
+        remoteError = err;
+      }
+    }
+
+    try {
+      const localResult = await supabase.auth.signOut({ scope: "local" });
+      if (localResult?.error && !isBenignSignOutError(localResult.error)) {
+        throw localResult.error;
+      }
+      clearBrowserAuthStorage();
+    } catch (localErr: any) {
+      if (seq === refreshSeqRef.current) {
+        signingOutRef.current = false;
+      }
+      throw new Error(localErr?.message || "Unable to clear the local session cleanly. Please try again.");
+    }
+
+    if (seq === refreshSeqRef.current) {
+      setSession(null);
+      setProfile(null);
+      setLoading(false);
+      if (remoteError && !reason) {
+        const notice = `Signed out on this device, though the server session could not be revoked remotely: ${remoteError?.message ?? "network error"}`;
+        pendingLogoutReasonRef.current = null;
+        setAuthError(notice);
+      } else {
+        pendingLogoutReasonRef.current = null;
+        setAuthError(reason);
+      }
+      signingOutRef.current = false;
+    }
+  };
+
+  const refresh = async (nextSession: any | null) => {
+    const seq = ++refreshSeqRef.current;
+
+    if (!nextSession?.user?.id || signingOutRef.current) {
       const reason = pendingLogoutReasonRef.current;
       pendingLogoutReasonRef.current = null;
-      setAuthError(reason);
+      setSession(null);
       setProfile(null);
+      setAuthError(reason);
       setLoading(false);
       return;
     }
 
+    setSession(nextSession);
     setAuthError(null);
 
     try {
       const prof = await fetchProfile(nextSession.user.id);
+      if (seq !== refreshSeqRef.current || signingOutRef.current) return;
+
       if (!prof) {
-        await supabase.auth.signOut();
-        setProfile(null);
-        setAuthError("Account profile not found. Please contact the administrator.");
-        setLoading(false);
-        return;
-      }
-      if (prof.status !== "active") {
-        await supabase.auth.signOut();
-        setProfile(null);
-        setAuthError("Your account is waiting for admin approval.");
-        setLoading(false);
+        await performSignOut({ reason: "Account profile not found or was removed. Please contact the administrator." });
         return;
       }
       if (!roleAllowedForWeb(prof.role)) {
-        await supabase.auth.signOut();
-        setProfile(null);
-        setAuthError("This account role is not allowed to access the web dashboard.");
-        setLoading(false);
+        await performSignOut({ reason: "This account role is not allowed to access the web dashboard." });
+        return;
+      }
+      if (prof.status !== "active") {
+        await performSignOut({ reason: getInactiveAccountMessage(prof.status) });
         return;
       }
       setProfile(prof);
       setLoading(false);
     } catch (e: any) {
-      await supabase.auth.signOut();
-      setProfile(null);
-      setAuthError(e?.message ?? "Authentication failed.");
-      setLoading(false);
+      if (seq !== refreshSeqRef.current || signingOutRef.current) return;
+      await performSignOut({ reason: e?.message ?? "Authentication failed." });
     }
   };
 
   useEffect(() => {
     let mounted = true;
     supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      refresh(data.session ?? null);
+      if (!mounted || signingOutRef.current) return;
+      void refresh(data.session ?? null);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      refresh(nextSession);
+    const { data: sub } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!mounted) return;
+      if (event === "SIGNED_OUT") {
+        clearBrowserAuthStorage();
+        if (!signingOutRef.current) {
+          void refresh(null);
+        }
+        return;
+      }
+      if (signingOutRef.current) return;
+      void refresh(nextSession);
     });
 
     return () => {
@@ -117,6 +218,41 @@ export function AuthProvider({ children }: { children: any }) {
       sub.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!profile?.id || !session?.user?.id) return undefined;
+
+    const channel = supabase
+      .channel(`web-account-watch-${profile.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_profiles", filter: `id=eq.${profile.id}` },
+        (payload: any) => {
+          if (payload.eventType === "DELETE") {
+            void performSignOut({
+              reason: "Your account was permanently deleted by an administrator.",
+            });
+            return;
+          }
+          const updated = payload.new as UserProfile | undefined;
+          if (!updated) return;
+          if (updated.status !== "active") {
+            void performSignOut({ reason: getInactiveAccountMessage(updated.status) });
+            return;
+          }
+          if (!roleAllowedForWeb(updated.role)) {
+            void performSignOut({ reason: "This account role no longer permits web dashboard access." });
+            return;
+          }
+          setProfile((prev) => (prev ? { ...prev, ...updated } : prev));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [profile?.id, session?.user?.id]);
 
   useEffect(() => {
     return subscribeRuntimeSettings(() => {
@@ -135,10 +271,9 @@ export function AuthProvider({ children }: { children: any }) {
     const resetTimer = () => {
       if (timeoutId) clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
-        pendingLogoutReasonRef.current = `Signed out automatically after ${idleTimeoutMinutes} minutes of inactivity.`;
-        void supabase.auth.signOut().catch(() => {
-          setAuthError(pendingLogoutReasonRef.current);
-          pendingLogoutReasonRef.current = null;
+        const idleMsg = `Signed out automatically after ${idleTimeoutMinutes} minutes of inactivity.`;
+        void performSignOut({ reason: idleMsg }).catch(() => {
+          setAuthError(idleMsg);
         });
       }, timeoutMs);
     };
@@ -162,8 +297,13 @@ export function AuthProvider({ children }: { children: any }) {
     password: string;
     role?: "admin" | "dispatcher" | "supervisor";
   }) => {
+    signingOutRef.current = false;
+    pendingLogoutReasonRef.current = null;
     setAuthError(null);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
     if (error) {
       setAuthError(error.message);
       throw error;
@@ -172,28 +312,28 @@ export function AuthProvider({ children }: { children: any }) {
       const prof = await fetchProfile(data.user.id);
       if (!prof) {
         const profileError = new Error("Account profile not found. Please contact the administrator.");
-        await supabase.auth.signOut();
-        setAuthError(profileError.message);
+        await performSignOut({ reason: profileError.message }).catch(() => null);
         throw profileError;
       }
-      if (prof.status !== "active") {
-        const approvalError = new Error("Your account is waiting for admin approval.");
-        await supabase.auth.signOut();
-        setAuthError(approvalError.message);
-        throw approvalError;
-      }
-      if (!roleAllowedForWeb(prof.role)) {
-        const webRoleError = new Error("This account role is not allowed to access the web dashboard.");
-        await supabase.auth.signOut();
-        setAuthError(webRoleError.message);
+      if (!roleAllowedForWeb(prof.role) || (role && prof.role !== role)) {
+        const webRoleError = new Error(
+          role
+            ? `This account does not have ${role} access.`
+            : "This account role is not allowed to access the web dashboard.",
+        );
+        await performSignOut({ reason: webRoleError.message }).catch(() => null);
         throw webRoleError;
+      }
+      if (prof.status !== "active") {
+        const statusError = new Error(getInactiveAccountMessage(prof.status));
+        await performSignOut({ reason: statusError.message }).catch(() => null);
+        throw statusError;
       }
     }
   };
 
   const signOut = async () => {
-    setAuthError(null);
-    await supabase.auth.signOut();
+    await performSignOut({ reason: null });
   };
 
   const value = useMemo(

@@ -1,4 +1,4 @@
-const SCHEDULE_DAY_CODES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+export const SCHEDULE_DAY_CODES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const DAY_ALIAS_MAP = {
   mon: "Mon",
@@ -215,4 +215,52 @@ export function formatCollectionAreaDisplay(areaCode, rawAreaName, schedules = [
   const title = cleanCollectionAreaTitle(areaCode, rawAreaName);
   const scheduleLabel = formatAreaScheduleLabel(schedules);
   return scheduleLabel ? `${title} • ${scheduleLabel}` : title;
+}
+
+export function normalizeScheduleDayFilter(selectedDay) {
+  const normalized = String(selectedDay ?? "").trim().toLowerCase();
+  if (!normalized || normalized === "all" || normalized === "all days" || normalized === "any") {
+    return "ALL";
+  }
+  return DAY_ALIAS_MAP[normalized] ?? "ALL";
+}
+
+export function doesScheduleMatchDay(days, selectedDay) {
+  const targetDay = normalizeScheduleDayFilter(selectedDay);
+  if (targetDay === "ALL") return true;
+
+  const scheduleDays = extractNormalizedScheduleDays(days);
+  return scheduleDays.length === SCHEDULE_DAY_CODES.length || scheduleDays.includes(targetDay);
+}
+
+export function doesAreaMatchScheduleDay(schedules, selectedDay) {
+  if (normalizeScheduleDayFilter(selectedDay) === "ALL") return true;
+  if (!Array.isArray(schedules)) return false;
+
+  return schedules.some(
+    (schedule) =>
+      schedule?.is_active !== false && doesScheduleMatchDay(schedule?.days_of_week, selectedDay),
+  );
+}
+
+export function extractRouteScheduleDays(route) {
+  if (!route) return [];
+  const explicit = route.scheduled_days ?? route.scheduledDays;
+  if (Array.isArray(explicit) && explicit.length > 0) {
+    const normalized = extractNormalizedScheduleDays(explicit);
+    if (normalized.length > 0) return normalized;
+  }
+
+  const routeName = String(route.name ?? "").trim();
+  if (routeName) {
+    const parenMatches = Array.from(routeName.matchAll(/\(([^)]+)\)/g));
+    for (let i = parenMatches.length - 1; i >= 0; i -= 1) {
+      const candidate = parenMatches[i][1]?.trim();
+      if (!candidate) continue;
+      const parsed = extractNormalizedScheduleDays([candidate]);
+      if (parsed.length > 0) return parsed;
+    }
+  }
+
+  return [];
 }

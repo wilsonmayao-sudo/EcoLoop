@@ -116,6 +116,17 @@ export function formatScheduleDaysLabel(days: string[] | null | undefined): stri
 }
 
 /**
+ * Normalizes a day filter value into a canonical ScheduleDayCode ("Mon".."Sun") or "ALL".
+ */
+export function normalizeScheduleDayFilter(selectedDay?: string | null): ScheduleDayCode | "ALL" {
+  const normalized = String(selectedDay ?? "").trim().toLowerCase();
+  if (!normalized || normalized === "all" || normalized === "all days" || normalized === "any") {
+    return "ALL";
+  }
+  return DAY_ALIAS_MAP[normalized] ?? "ALL";
+}
+
+/**
  * Returns true if a single schedule's day list matches the selected day filter.
  * Matches when filter is "ALL", when the schedule is Daily, or when it includes the selected day.
  */
@@ -123,13 +134,10 @@ export function doesScheduleMatchDay(
   days: string[] | null | undefined,
   selectedDay: string,
 ): boolean {
-  const normalizedFilter = selectedDay.trim().toLowerCase();
-  if (!normalizedFilter || normalizedFilter === "all" || normalizedFilter === "all days") {
+  const targetDay = normalizeScheduleDayFilter(selectedDay);
+  if (targetDay === "ALL") {
     return true;
   }
-
-  const targetDay = DAY_ALIAS_MAP[normalizedFilter];
-  if (!targetDay) return false;
 
   const scheduleDays = extractNormalizedScheduleDays(days);
   return scheduleDays.length === SCHEDULE_DAY_CODES.length || scheduleDays.includes(targetDay);
@@ -143,8 +151,7 @@ export function doesAreaMatchScheduleDay(
   schedules: Array<{ days_of_week?: string[] | null; is_active?: boolean | null }>,
   selectedDay: string,
 ): boolean {
-  const normalizedFilter = selectedDay.trim().toLowerCase();
-  if (!normalizedFilter || normalizedFilter === "all" || normalizedFilter === "all days") {
+  if (normalizeScheduleDayFilter(selectedDay) === "ALL") {
     return true;
   }
 
@@ -152,4 +159,147 @@ export function doesAreaMatchScheduleDay(
     (schedule) =>
       schedule.is_active !== false && doesScheduleMatchDay(schedule.days_of_week, selectedDay),
   );
+}
+
+/**
+ * Extracts effective normalized schedule days for a bin by combining its own schedule_days
+ * with any active collection_schedules rows directly linked to that bin_id.
+ */
+export function getEffectiveBinScheduleDays(
+  bin: {
+    id?: string | number | null;
+    schedule_days?: string[] | null;
+    scheduleDays?: string[] | null;
+    area_code?: string | null;
+    areaCode?: string | null;
+  },
+  collectionSchedules?: Array<{
+    bin_id?: string | number | null;
+    area_code?: string | null;
+    days_of_week?: string[] | null;
+    is_active?: boolean | null;
+  }> | null,
+): ScheduleDayCode[] {
+  const rawDays: string[] = [];
+  const binOwnDays = bin.schedule_days ?? bin.scheduleDays;
+  if (Array.isArray(binOwnDays)) {
+    rawDays.push(...binOwnDays);
+  }
+
+  const binIdStr = bin.id != null ? String(bin.id) : "";
+  if (binIdStr && Array.isArray(collectionSchedules)) {
+    for (const row of collectionSchedules) {
+      if (row.is_active === false) continue;
+      if (row.bin_id != null && String(row.bin_id) === binIdStr && Array.isArray(row.days_of_week)) {
+        rawDays.push(...row.days_of_week);
+      }
+    }
+  }
+
+  return extractNormalizedScheduleDays(rawDays);
+}
+
+/**
+ * Returns true if a bin is scheduled for collection on the selected day.
+ */
+export function doesBinMatchScheduleDay(
+  bin: {
+    id?: string | number | null;
+    schedule_days?: string[] | null;
+    scheduleDays?: string[] | null;
+    area_code?: string | null;
+    areaCode?: string | null;
+  },
+  selectedDay: string,
+  collectionSchedules?: Array<{
+    bin_id?: string | number | null;
+    area_code?: string | null;
+    days_of_week?: string[] | null;
+    is_active?: boolean | null;
+  }> | null,
+): boolean {
+  const targetDay = normalizeScheduleDayFilter(selectedDay);
+  if (targetDay === "ALL") {
+    return true;
+  }
+
+  const effectiveDays = getEffectiveBinScheduleDays(bin, collectionSchedules);
+  if (effectiveDays.length > 0) {
+    return effectiveDays.length === SCHEDULE_DAY_CODES.length || effectiveDays.includes(targetDay);
+  }
+
+  const areaCode = String(bin.area_code ?? bin.areaCode ?? "").trim().toUpperCase();
+  if (areaCode && Array.isArray(collectionSchedules)) {
+    const areaSchedules = collectionSchedules.filter(
+      (row) => row.is_active !== false && String(row.area_code ?? "").trim().toUpperCase() === areaCode,
+    );
+    if (areaSchedules.length > 0) {
+      return doesAreaMatchScheduleDay(areaSchedules, targetDay);
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Extracts explicit schedule day codes from a route's scheduled_days field or embedded "(Day)" tag in its name.
+ * Never infers collection day from created_at timestamps.
+ */
+export function extractRouteScheduleDays(route: {
+  scheduled_days?: string[] | null;
+  scheduledDays?: string[] | null;
+  name?: string | null;
+}): ScheduleDayCode[] {
+  const explicit = route.scheduled_days ?? route.scheduledDays;
+  if (Array.isArray(explicit) && explicit.length > 0) {
+    const normalized = extractNormalizedScheduleDays(explicit);
+    if (normalized.length > 0) return normalized;
+  }
+
+  const routeName = String(route.name ?? "").trim();
+  if (routeName) {
+    const parenMatches = Array.from(routeName.matchAll(/\(([^)]+)\)/g));
+    for (let i = parenMatches.length - 1; i >= 0; i -= 1) {
+      const candidate = parenMatches[i][1]?.trim();
+      if (!candidate) continue;
+      const parsed = extractNormalizedScheduleDays([candidate]);
+      if (parsed.length > 0) {
+        return parsed;
+      }
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Returns true if a route is scheduled for the selected day (or All Days).
+ */
+export function doesRouteMatchScheduleDay(
+  route: {
+    scheduled_days?: string[] | null;
+    scheduledDays?: string[] | null;
+    name?: string | null;
+    area_code?: string | null;
+    areaCode?: string | null;
+  },
+  selectedDay: string,
+  areaSchedulesByCode?: Map<string, Array<{ days_of_week?: string[] | null; is_active?: boolean | null }>>,
+): boolean {
+  const targetDay = normalizeScheduleDayFilter(selectedDay);
+  if (targetDay === "ALL") {
+    return true;
+  }
+
+  const routeDays = extractRouteScheduleDays(route);
+  if (routeDays.length > 0) {
+    return routeDays.length === SCHEDULE_DAY_CODES.length || routeDays.includes(targetDay);
+  }
+
+  const areaCode = String(route.area_code ?? route.areaCode ?? "").trim().toUpperCase();
+  if (areaCode && areaSchedulesByCode?.has(areaCode)) {
+    return doesAreaMatchScheduleDay(areaSchedulesByCode.get(areaCode) ?? [], targetDay);
+  }
+
+  return true;
 }

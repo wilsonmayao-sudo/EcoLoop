@@ -40,6 +40,10 @@ declare
   v_elem jsonb;
   v_candidate_route record;
 begin
+  if p_target_driver_id is null or btrim(p_target_driver_id) = '' then
+    return jsonb_build_object('success', false, 'error', 'Target driver is required to accept overflow');
+  end if;
+
   if auth.uid() is null and coalesce(current_setting('role', true), '') not in ('service_role', 'postgres') then
     return jsonb_build_object('success', false, 'error', 'Authentication required');
   end if;
@@ -82,9 +86,29 @@ begin
     return jsonb_build_object('success', false, 'error', 'Overflow event cannot be accepted in current state: ' || v_event.status);
   end if;
 
-  -- Resolve target route if not provided
-  if v_route_id is null or v_route_id = '' then
-    select id into v_candidate_route
+  -- Validate provided target route is open and belongs to target driver
+  if v_route_id is not null and btrim(v_route_id) <> '' then
+    select id, status into v_candidate_route
+    from public.routes
+    where id::text = btrim(v_route_id)
+      and driver_id::text = p_target_driver_id
+      and status in ('active', 'pending', 'planned');
+
+    if not found then
+      v_route_id := null;
+    elsif v_candidate_route.status in ('pending', 'planned') then
+      update public.routes
+      set
+        status = 'active',
+        started_at = coalesce(started_at, v_now),
+        assignment_updated_at = v_now
+      where id = v_candidate_route.id;
+    end if;
+  end if;
+
+  -- Resolve target route if not provided or not open
+  if v_route_id is null or btrim(v_route_id) = '' then
+    select id, status into v_candidate_route
     from public.routes
     where driver_id::text = p_target_driver_id
       and status in ('active', 'pending', 'planned')
@@ -93,6 +117,14 @@ begin
 
     if found then
       v_route_id := v_candidate_route.id::text;
+      if v_candidate_route.status in ('pending', 'planned') then
+        update public.routes
+        set
+          status = 'active',
+          started_at = coalesce(started_at, v_now),
+          assignment_updated_at = v_now
+        where id = v_candidate_route.id;
+      end if;
     else
       insert into public.routes (
         name,
@@ -128,44 +160,77 @@ begin
 
     if v_bin_id is not null then
       v_bin_ids := array_append(v_bin_ids, v_bin_id);
-      v_max_stop_order := v_max_stop_order + 1;
 
-      -- Add stop to target route
-      insert into public.route_stops (route_id, bin_id, stop_order)
-      values (v_route_id::bigint, v_bin_id, v_max_stop_order)
-      on conflict do nothing;
+      -- Add stop to target route if not already present
+      if not exists (
+        select 1
+        from public.route_stops
+        where route_id = v_route_id::bigint
+          and bin_id = v_bin_id
+      ) then
+        v_max_stop_order := v_max_stop_order + 1;
+        insert into public.route_stops (route_id, bin_id, stop_order)
+        values (v_route_id::bigint, v_bin_id, v_max_stop_order)
+        on conflict do nothing;
+      end if;
 
-      -- Reassign existing delivery record scoped to source route
-      update public.deliveries
-      set
-        driver_id = p_target_driver_id::bigint,
-        route_id = v_route_id::bigint,
-        status = 'assigned',
-        updated_at = v_now
-      where bin_id = v_bin_id
-        and (
-          (v_event.source_route_id is not null and v_event.source_route_id <> '' and route_id::text = v_event.source_route_id)
-          or ((v_event.source_route_id is null or v_event.source_route_id = '') and status in ('overflow_uncollected', 'pending', 'assigned'))
-        );
+      -- Reassign delivery record safely without violating (route_id, bin_id) uniqueness
+      if exists (
+        select 1
+        from public.deliveries
+        where route_id = v_route_id::bigint
+          and bin_id = v_bin_id
+      ) then
+        update public.deliveries
+        set
+          driver_id = p_target_driver_id::bigint,
+          status = 'assigned',
+          updated_at = v_now
+        where route_id = v_route_id::bigint
+          and bin_id = v_bin_id;
 
-      if not found then
-        insert into public.deliveries (
-          route_id,
-          bin_id,
-          driver_id,
-          status,
-          updated_at
-        ) values (
-          v_route_id::bigint,
-          v_bin_id,
-          p_target_driver_id::bigint,
-          'assigned',
-          v_now
-        );
+        if v_event.source_route_id is not null and btrim(v_event.source_route_id) <> '' and v_event.source_route_id <> v_route_id then
+          delete from public.deliveries
+          where route_id::text = v_event.source_route_id
+            and bin_id = v_bin_id;
+        end if;
+      else
+        update public.deliveries
+        set
+          driver_id = p_target_driver_id::bigint,
+          route_id = v_route_id::bigint,
+          status = 'assigned',
+          updated_at = v_now
+        where bin_id = v_bin_id
+          and (
+            (v_event.source_route_id is not null and v_event.source_route_id <> '' and route_id::text = v_event.source_route_id)
+            or ((v_event.source_route_id is null or v_event.source_route_id = '') and status::text in ('overflow_uncollected', 'pending', 'assigned'))
+          );
+
+        if not found then
+          insert into public.deliveries (
+            route_id,
+            bin_id,
+            driver_id,
+            status,
+            updated_at
+          ) values (
+            v_route_id::bigint,
+            v_bin_id,
+            p_target_driver_id::bigint,
+            'assigned',
+            v_now
+          )
+          on conflict (route_id, bin_id) do update
+          set
+            driver_id = excluded.driver_id,
+            status = 'assigned',
+            updated_at = excluded.updated_at;
+        end if;
       end if;
 
       -- Remove from source route stops so source truck queue is cleared
-      if v_event.source_route_id is not null then
+      if v_event.source_route_id is not null and v_event.source_route_id <> v_route_id then
         delete from public.route_stops
         where route_id::text = v_event.source_route_id
           and bin_id = v_bin_id;

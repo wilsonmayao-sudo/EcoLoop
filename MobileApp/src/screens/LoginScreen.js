@@ -55,21 +55,22 @@ export default function LoginScreen({ onLogin, onSignup, authError }) {
       }
       setIsSubmitting(true);
       try {
-        await onSignup?.({
+        const result = await onSignup?.({
           fullName: trimmedName,
           email: trimmedEmail,
           password,
           phoneNumber: trimmedPhone,
         });
         setError('');
-        Alert.alert('Sign Up', 'Your account has been submitted and is waiting for admin approval.');
-        setSuccessMessage('Account submitted successfully. Wait for admin approval.');
-        setIsSignup(false);
-        setName('');
-        setEmail('');
-        setPhoneNumber('');
-        setPassword('');
-        setConfirmPassword('');
+        if (!result?.session) {
+          Alert.alert('Account Created', 'Your Truck Driver account is active. You can now log in.');
+          setSuccessMessage('Account created and activated. You can now log in.');
+          setIsSignup(false);
+          setName('');
+          setPhoneNumber('');
+          setPassword('');
+          setConfirmPassword('');
+        }
         return;
       } catch (signupError) {
         setError(signupError?.message ?? 'Unable to sign up right now.');
@@ -247,7 +248,7 @@ export default function LoginScreen({ onLogin, onSignup, authError }) {
 
             <Text style={[styles.helper, { color: colors.textSecondary, marginTop: tokens.space.md }]}>
               {isSignup
-                ? "Driver accounts require admin approval before login."
+                ? "New Truck Driver accounts are active immediately upon sign up."
                 : "Sign in with your registered truck driver account."}
             </Text>
           </SurfaceCard>

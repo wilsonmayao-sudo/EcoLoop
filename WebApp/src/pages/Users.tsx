@@ -90,18 +90,22 @@ export default function Users({ onNavigate, initialFilter = "total", role = "adm
     const channel = supabase
       .channel(`admin-users-page-${Date.now()}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "user_profiles" }, () => void load(false))
+      .on("postgres_changes", { event: "*", schema: "public", table: "drivers" }, () => void load(false))
       .subscribe();
     const handleRefresh = () => {
       if (document.visibilityState === "visible") {
         void load(false);
       }
     };
+    const handleDriversUpdated = () => void load(false);
     const interval = window.setInterval(handleRefresh, 15_000);
     window.addEventListener("focus", handleRefresh);
+    window.addEventListener("ecoloop:drivers-updated", handleDriversUpdated);
     document.addEventListener("visibilitychange", handleRefresh);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", handleRefresh);
+      window.removeEventListener("ecoloop:drivers-updated", handleDriversUpdated);
       document.removeEventListener("visibilitychange", handleRefresh);
       supabase.removeChannel(channel);
     };

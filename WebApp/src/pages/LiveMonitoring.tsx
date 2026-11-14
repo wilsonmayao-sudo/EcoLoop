@@ -236,22 +236,28 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
     });
 
     const driverByVehicleId = new Map<string, DriverRecord>();
+    const driverOfflineThresholdMs = operationsConfig.driverOfflineSeconds * 1000;
     drivers.forEach((driver) => {
       if (driver.assigned_vehicle_id == null) return;
+      const statusNorm = normalizeStatus(driver.status);
+      if (statusNorm === "inactive" || statusNorm === "suspended") return;
       const key = String(driver.assigned_vehicle_id);
       const existing = driverByVehicleId.get(key);
       if (!existing) {
         driverByVehicleId.set(key, driver);
         return;
       }
-      const candOnline = normalizeStatus(driver.status) !== "offline";
-      const existOnline = normalizeStatus(existing.status) !== "offline";
+      const candSeen = driver.last_seen_at ? new Date(driver.last_seen_at).getTime() : 0;
+      const existSeen = existing.last_seen_at ? new Date(existing.last_seen_at).getTime() : 0;
+      const candOnline = candSeen > 0 && liveNow - candSeen <= driverOfflineThresholdMs && statusNorm !== "offline";
+      const existOnline =
+        existSeen > 0 &&
+        liveNow - existSeen <= driverOfflineThresholdMs &&
+        normalizeStatus(existing.status) !== "offline";
       if (candOnline !== existOnline) {
         if (candOnline) driverByVehicleId.set(key, driver);
         return;
       }
-      const candSeen = driver.last_seen_at ? new Date(driver.last_seen_at).getTime() : 0;
-      const existSeen = existing.last_seen_at ? new Date(existing.last_seen_at).getTime() : 0;
       if (candSeen > existSeen) {
         driverByVehicleId.set(key, driver);
       }

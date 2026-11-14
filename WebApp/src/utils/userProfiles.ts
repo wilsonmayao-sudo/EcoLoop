@@ -63,47 +63,185 @@ export async function fetchAdminUserProfiles(options?: { pendingOnly?: boolean }
   return (data as AdminUserProfileRow[]) ?? [];
 }
 
+function notifyDriversUpdated() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("ecoloop:drivers-updated"));
+  }
+}
+
+async function ensureDriverRecordForProfile(params: {
+  authUserId: string;
+  profileId?: string | null;
+  fullName?: string | null;
+  phoneNumber?: string | null;
+}) {
+  const { authUserId, profileId = null, fullName, phoneNumber = null } = params;
+  const cleanName = fullName?.trim() || "Truck Driver";
+  const { data: existingDriver, error: selectError } = await supabase
+    .from("drivers")
+    .select("id, profile_id, status")
+    .eq("auth_user_id", authUserId)
+    .maybeSingle();
+  if (selectError) throw selectError;
+
+  if (!existingDriver) {
+    const { error: upsertError } = await supabase.from("drivers").upsert(
+      {
+        auth_user_id: authUserId,
+        profile_id: profileId,
+        name: cleanName,
+        status: "available",
+        phone: phoneNumber,
+        phone_number: phoneNumber,
+        assigned_vehicle_id: null,
+      },
+      { onConflict: "auth_user_id" },
+    );
+    if (upsertError) throw upsertError;
+  } else {
+    const nextStatus =
+      String(existingDriver.status ?? "").toLowerCase() === "offline"
+        ? "available"
+        : existingDriver.status;
+    const { error: updateError } = await supabase
+      .from("drivers")
+      .update({
+        profile_id: profileId ?? existingDriver.profile_id,
+        name: cleanName,
+        status: nextStatus,
+        ...(phoneNumber ? { phone: phoneNumber, phone_number: phoneNumber } : {}),
+      })
+      .eq("id", existingDriver.id);
+    if (updateError) throw updateError;
+  }
+}
+
 export async function approveUserProfileByAuthId(authUserId: string) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("user_profiles")
     .update({ status: "active", approved_at: new Date().toISOString() })
-    .eq("auth_user_id", authUserId);
+    .eq("auth_user_id", authUserId)
+    .select("id, full_name, role, phone, phone_number")
+    .maybeSingle();
   if (error) throw error;
+
+  if (data?.role === "truck_driver") {
+    await ensureDriverRecordForProfile({
+      authUserId,
+      profileId: data.id,
+      fullName: data.full_name,
+      phoneNumber: data.phone_number ?? data.phone ?? null,
+    });
+  }
+  notifyDriversUpdated();
+}
+
+export async function suspendOrReactivateAccountByAuthId(authUserId: string, suspend: boolean) {
+  const { data, error } = await supabase.rpc("admin_suspend_user_account", {
+    p_auth_user_id: authUserId,
+    p_suspend: suspend,
+  });
+  if (error) throw new Error(error.message || "Unable to update account suspension status.");
+  notifyDriversUpdated();
+  return data as {
+    success: boolean;
+    auth_user_id: string;
+    status: AccountStatus;
+    email: string | null;
+    full_name: string | null;
+    role: AppRole;
+  };
+}
+
+export async function deleteUserAccountPermanentlyByAuthId(authUserId: string) {
+  const { data, error } = await supabase.rpc("admin_delete_user_account", {
+    p_auth_user_id: authUserId,
+  });
+  if (error) throw new Error(error.message || "Unable to permanently delete user account.");
+  notifyDriversUpdated();
+  return data as {
+    success: boolean;
+    deleted_auth_user_id: string;
+    email: string | null;
+    full_name: string | null;
+    role: AppRole | null;
+  };
 }
 
 export async function updateUserProfileStatusByAuthId(authUserId: string, status: AccountStatus) {
+  if (status === "suspended") {
+    await suspendOrReactivateAccountByAuthId(authUserId, true);
+    return;
+  }
+
+  if (status === "active") {
+    const { data: currentProfile } = await supabase
+      .from("user_profiles")
+      .select("id, full_name, role, status, phone, phone_number")
+      .eq("auth_user_id", authUserId)
+      .maybeSingle();
+
+    if (currentProfile?.status === "suspended" || currentProfile?.status === "inactive") {
+      await suspendOrReactivateAccountByAuthId(authUserId, false);
+      if (currentProfile.role === "truck_driver") {
+        await ensureDriverRecordForProfile({
+          authUserId,
+          profileId: currentProfile.id,
+          fullName: currentProfile.full_name,
+          phoneNumber: currentProfile.phone_number ?? currentProfile.phone ?? null,
+        });
+      }
+      notifyDriversUpdated();
+      return;
+    }
+  }
+
   const payload: Record<string, unknown> = { status };
   if (status === "active") {
     payload.approved_at = new Date().toISOString();
   }
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("user_profiles")
     .update(payload)
-    .eq("auth_user_id", authUserId);
+    .eq("auth_user_id", authUserId)
+    .select("id, full_name, role, phone, phone_number")
+    .maybeSingle();
   if (error) throw error;
+
+  if (data?.role === "truck_driver" && status === "active") {
+    await ensureDriverRecordForProfile({
+      authUserId,
+      profileId: data.id,
+      fullName: data.full_name,
+      phoneNumber: data.phone_number ?? data.phone ?? null,
+    });
+  }
+  notifyDriversUpdated();
 }
 
 export async function updateUserProfileRoleByAuthId(authUserId: string, role: AppRole, fullName?: string) {
-  const { error } = await supabase
+  const updatePayload: Record<string, unknown> = { role };
+  if (role === "truck_driver") {
+    updatePayload.status = "active";
+    updatePayload.approved_at = new Date().toISOString();
+  }
+  const { data, error } = await supabase
     .from("user_profiles")
-    .update({ role })
-    .eq("auth_user_id", authUserId);
+    .update(updatePayload)
+    .eq("auth_user_id", authUserId)
+    .select("id, full_name, phone, phone_number")
+    .maybeSingle();
   if (error) throw error;
 
   if (role === "truck_driver") {
-    const { data: existingDriver } = await supabase
-      .from("drivers")
-      .select("id")
-      .eq("auth_user_id", authUserId)
-      .maybeSingle();
-    if (!existingDriver) {
-      await supabase.from("drivers").insert({
-        auth_user_id: authUserId,
-        name: fullName?.trim() || "Truck Driver",
-        status: "available",
-      });
-    }
+    await ensureDriverRecordForProfile({
+      authUserId,
+      profileId: data?.id ?? null,
+      fullName: fullName ?? data?.full_name,
+      phoneNumber: data?.phone_number ?? data?.phone ?? null,
+    });
   }
+  notifyDriversUpdated();
 }
 
 export async function createStaffAccountByAdmin(params: {
@@ -151,7 +289,7 @@ export async function createStaffAccountByAdmin(params: {
   }
 
   const nowIso = new Date().toISOString();
-  const { error: profileError } = await supabase
+  const { data: profileRow, error: profileError } = await supabase
     .from("user_profiles")
     .upsert(
       {
@@ -160,27 +298,25 @@ export async function createStaffAccountByAdmin(params: {
         email: normalizedEmail,
         role: params.role,
         status: "active",
+        phone: trimmedPhone,
+        phone_number: trimmedPhone,
         approved_at: nowIso,
       },
       { onConflict: "auth_user_id" },
-    );
+    )
+    .select("id")
+    .maybeSingle();
   if (profileError) throw profileError;
 
   if (params.role === "truck_driver") {
-    const { data: existingDriver } = await supabase
-      .from("drivers")
-      .select("id")
-      .eq("auth_user_id", newUserId)
-      .maybeSingle();
-    if (!existingDriver) {
-      await supabase.from("drivers").insert({
-        auth_user_id: newUserId,
-        name: trimmedName,
-        status: "available",
-        phone_number: trimmedPhone,
-      });
-    }
+    await ensureDriverRecordForProfile({
+      authUserId: newUserId,
+      profileId: profileRow?.id ?? null,
+      fullName: trimmedName,
+      phoneNumber: trimmedPhone,
+    });
   }
+  notifyDriversUpdated();
 
   return newUserId;
 }

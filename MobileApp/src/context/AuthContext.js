@@ -1,14 +1,55 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../lib/supabase";
 import { clearDriverLatestLocation } from "../services/liveLocation";
 
 const AuthContext = createContext(null);
-const APPROVAL_PENDING_MESSAGE = "Your account is still waiting for admin approval.";
 
 function isInvalidRefreshTokenError(error) {
   const msg = String(error?.message ?? error ?? "");
   return /invalid refresh token|refresh token not found/i.test(msg);
+}
+
+function isBenignSignOutError(error) {
+  const msg = String(error?.message ?? error ?? "").toLowerCase();
+  const status = Number(error?.status ?? 0);
+  return (
+    status === 401 ||
+    status === 403 ||
+    msg.includes("auth session missing") ||
+    msg.includes("session_not_found") ||
+    msg.includes("session from session_id claim in jwt does not exist") ||
+    msg.includes("invalid jwt")
+  );
+}
+
+function getMobileAccountBlockedMessage(status) {
+  switch (String(status ?? "").toLowerCase()) {
+    case "suspended":
+      return "Your account has been suspended by an administrator. Contact an administrator to reactivate your access.";
+    case "inactive":
+      return "Your account is currently inactive. Contact an administrator for assistance.";
+    case "rejected":
+    case "declined":
+      return "Your account registration was rejected. Please contact the administrator.";
+    default:
+      return "Account not active. Please contact the administrator.";
+  }
+}
+
+async function clearSupabaseAuthStorage() {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const authKeys = keys.filter(
+      (key) => /^sb-.*-auth-token/i.test(key) || key === "supabase.auth.token"
+    );
+    if (authKeys.length > 0) {
+      await AsyncStorage.multiRemove(authKeys);
+    }
+  } catch (storageErr) {
+    console.warn("Unable to clear local auth storage keys:", storageErr?.message ?? storageErr);
+  }
 }
 
 async function clearStaleLocalSession() {
@@ -17,6 +58,7 @@ async function clearStaleLocalSession() {
   } catch {
     // Ignore local cleanup errors
   }
+  await clearSupabaseAuthStorage();
 }
 
 export const useAuth = () => {
@@ -35,49 +77,94 @@ export function AuthProvider({ children }) {
   const [authError, setAuthError] = useState(null);
   const signingUpRef = useRef(false);
   const suppressSignupSessionRef = useRef(false);
+  const signingOutRef = useRef(false);
+  const authSeqRef = useRef(0);
+  const pendingLogoutReasonRef = useRef(null);
 
   const validateProfile = async (userId) => {
     if (!userId) {
       setProfile(null);
       return null;
     }
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("user_profiles")
-      .select("auth_user_id, role, status, full_name, email, phone_number, address")
+      .select("id, auth_user_id, role, status, full_name, email, phone_number, address")
       .eq("auth_user_id", userId)
       .maybeSingle();
     if (error) throw error;
+
+    if (!data || (data.role === "truck_driver" && (data.status === "pending_approval" || data.status === "pending"))) {
+      try {
+        await supabase.rpc("ensure_current_driver_account");
+      } catch {
+        // Fallback query/upsert handled below if RPC is unavailable
+      }
+      const refreshed = await supabase
+        .from("user_profiles")
+        .select("id, auth_user_id, role, status, full_name, email, phone_number, address")
+        .eq("auth_user_id", userId)
+        .maybeSingle();
+      if (!refreshed.error && refreshed.data) {
+        data = refreshed.data;
+      }
+    }
+
     if (!data) {
       setProfile(null);
-      throw new Error(APPROVAL_PENDING_MESSAGE);
-    }
-    if (data.status === "pending_approval" || data.status === "pending") {
-      throw new Error(APPROVAL_PENDING_MESSAGE);
-    }
-    if (data.status === "rejected" || data.status === "declined") {
-      throw new Error("Your account registration was rejected. Please contact the administrator.");
-    }
-    if (data.status !== "active") {
-      throw new Error("Account not active. Please contact the administrator.");
+      throw new Error("Account profile not found. Please contact the administrator.");
     }
     if (data.role !== "truck_driver") {
       throw new Error("This account is not a Truck Driver account.");
+    }
+    if (data.status !== "active") {
+      throw new Error(getMobileAccountBlockedMessage(data.status));
     }
     setProfile(data);
     return data;
   };
 
-  const loadDriver = async (userId) => {
+  const loadDriver = async (userId, accountProfile = null) => {
     if (!userId) {
       setDriver(null);
       return;
     }
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("drivers")
       .select("id, name, status, auth_user_id, phone_number, address, assigned_vehicle_id")
       .eq("auth_user_id", userId)
       .maybeSingle();
     if (error) throw error;
+    if (!data) {
+      try {
+        await supabase.rpc("ensure_current_driver_account");
+      } catch {
+        // Fallback direct insert below
+      }
+      const retry = await supabase
+        .from("drivers")
+        .select("id, name, status, auth_user_id, phone_number, address, assigned_vehicle_id")
+        .eq("auth_user_id", userId)
+        .maybeSingle();
+      if (!retry.error && retry.data) {
+        data = retry.data;
+      } else if (accountProfile?.role === "truck_driver") {
+        const inserted = await supabase
+          .from("drivers")
+          .insert({
+            auth_user_id: userId,
+            name: accountProfile.full_name || "Truck Driver",
+            status: "available",
+            phone_number: accountProfile.phone_number || null,
+            address: accountProfile.address || null,
+            assigned_vehicle_id: null,
+          })
+          .select("id, name, status, auth_user_id, phone_number, address, assigned_vehicle_id")
+          .maybeSingle();
+        if (!inserted.error && inserted.data) {
+          data = inserted.data;
+        }
+      }
+    }
     if (!data) {
       setDriver(null);
       throw new Error("Driver record not found. Please contact the administrator.");
@@ -89,24 +176,120 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  const refreshAccount = async (nextSession) => {
-    setSession(nextSession);
-    if (!nextSession?.user?.id) {
+  const driverIdRef = useRef(null);
+  driverIdRef.current = driver?.id ?? null;
+
+  const performSignOut = useCallback(async ({ reason = null } = {}) => {
+    const seq = ++authSeqRef.current;
+    signingOutRef.current = true;
+    pendingLogoutReasonRef.current = reason;
+
+    const currentDriverId = driverIdRef.current;
+    if (currentDriverId) {
+      try {
+        await Promise.race([
+          clearDriverLatestLocation({ driverId: currentDriverId }),
+          new Promise((resolve) => setTimeout(resolve, 1500)),
+        ]);
+      } catch (error) {
+        console.warn("Unable to clear driver location during sign out:", error?.message);
+      }
+    }
+
+    try {
+      const presenceChannels = supabase
+        .getChannels()
+        .filter((ch) => typeof ch?.topic === "string" && ch.topic.endsWith(":drivers-presence"));
+      presenceChannels.forEach((ch) => {
+        try {
+          supabase.removeChannel(ch);
+        } catch {
+          // Ignore channel cleanup failure during logout
+        }
+      });
+    } catch {
+      // Ignore channel lookup failure during logout
+    }
+
+    let remoteError = null;
+    try {
+      const result = await Promise.race([
+        supabase.auth.signOut({ scope: "global" }),
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ error: new Error("Timed out waiting for server sign-out.") }), 5000)
+        ),
+      ]);
+      if (result?.error && !isBenignSignOutError(result.error)) {
+        remoteError = result.error;
+      }
+    } catch (error) {
+      if (!isBenignSignOutError(error)) {
+        remoteError = error;
+      }
+    }
+
+    try {
+      const localResult = await supabase.auth.signOut({ scope: "local" });
+      if (localResult?.error && !isBenignSignOutError(localResult.error)) {
+        throw localResult.error;
+      }
+      await clearSupabaseAuthStorage();
+    } catch (localErr) {
+      if (seq === authSeqRef.current) {
+        signingOutRef.current = false;
+      }
+      throw new Error(localErr?.message || "Unable to clear the local session cleanly. Please try again.");
+    }
+
+    if (seq === authSeqRef.current) {
+      setSession(null);
       setProfile(null);
       setDriver(null);
+      setLoading(false);
+      if (remoteError && !reason) {
+        pendingLogoutReasonRef.current = null;
+        setAuthError(
+          `Signed out on this device, though the server session could not be revoked cleanly: ${remoteError?.message ?? "network error"}`
+        );
+      } else {
+        pendingLogoutReasonRef.current = null;
+        setAuthError(reason);
+      }
+      signingOutRef.current = false;
+    }
+  }, []);
+
+  const refreshAccount = async (nextSession) => {
+    const seq = ++authSeqRef.current;
+
+    if (!nextSession?.user?.id || signingOutRef.current) {
+      const reason = pendingLogoutReasonRef.current;
+      pendingLogoutReasonRef.current = null;
+      setSession(null);
+      setProfile(null);
+      setDriver(null);
+      setAuthError(reason);
       return;
     }
+
+    setSession(nextSession);
     const accountProfile = await validateProfile(nextSession.user.id);
+    if (seq !== authSeqRef.current || signingOutRef.current) return;
     if (!accountProfile) {
       return;
     }
-    await loadDriver(nextSession.user.id);
+    await loadDriver(nextSession.user.id, accountProfile);
+    if (seq !== authSeqRef.current || signingOutRef.current) {
+      setSession(null);
+      setProfile(null);
+      setDriver(null);
+    }
   };
 
   useEffect(() => {
     let mounted = true;
     supabase.auth.getSession().then(async ({ data, error }) => {
-      if (!mounted) return;
+      if (!mounted || signingOutRef.current) return;
       if (error) {
         if (isInvalidRefreshTokenError(error)) {
           await clearStaleLocalSession();
@@ -139,7 +322,8 @@ export function AuthProvider({ children }) {
       }
     });
 
-    const { data: authSubscription } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
+      if (!mounted) return;
       if (signingUpRef.current || suppressSignupSessionRef.current) {
         setAuthError(null);
         setSession(null);
@@ -148,6 +332,19 @@ export function AuthProvider({ children }) {
         if (nextSession?.user?.id) {
           await clearStaleLocalSession();
         }
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        await clearSupabaseAuthStorage();
+        if (signingOutRef.current) {
+          return;
+        }
+        await refreshAccount(null);
+        return;
+      }
+
+      if (signingOutRef.current) {
         return;
       }
 
@@ -173,6 +370,41 @@ export function AuthProvider({ children }) {
       authSubscription.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!profile?.id || !session?.user?.id) return undefined;
+
+    const profileChannel = supabase
+      .channel(`mobile-profile-watch-${profile.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_profiles", filter: `id=eq.${profile.id}` },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            void performSignOut({
+              reason: "Your account was permanently deleted by an administrator.",
+            });
+            return;
+          }
+          const updated = payload.new;
+          if (!updated) return;
+          if (updated.role !== "truck_driver") {
+            void performSignOut({ reason: "This account is no longer assigned the Truck Driver role." });
+            return;
+          }
+          if (updated.status !== "active") {
+            void performSignOut({ reason: getMobileAccountBlockedMessage(updated.status) });
+            return;
+          }
+          setProfile((current) => (current ? { ...current, ...updated } : current));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(profileChannel);
+    };
+  }, [performSignOut, profile?.id, session?.user?.id]);
 
   useEffect(() => {
     if (!driver?.id) return undefined;
@@ -225,6 +457,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signIn = async ({ email, password }) => {
+    signingOutRef.current = false;
+    pendingLogoutReasonRef.current = null;
     signingUpRef.current = false;
     suppressSignupSessionRef.current = false;
     setAuthError(null);
@@ -237,11 +471,7 @@ export function AuthProvider({ children }) {
       try {
         await refreshAccount(data.session);
       } catch (accountError) {
-        await supabase.auth.signOut();
-        setSession(null);
-        setProfile(null);
-        setDriver(null);
-        setAuthError(accountError.message);
+        await performSignOut({ reason: accountError?.message || "Unable to sign in." }).catch(() => null);
         throw accountError;
       }
     }
@@ -260,10 +490,12 @@ export function AuthProvider({ children }) {
     }
 
     setAuthError(null);
+    signingOutRef.current = false;
+    pendingLogoutReasonRef.current = null;
     signingUpRef.current = true;
-    suppressSignupSessionRef.current = true;
+    suppressSignupSessionRef.current = false;
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: cleanedEmail,
         password,
         options: {
@@ -277,34 +509,24 @@ export function AuthProvider({ children }) {
       });
       if (error) throw error;
 
-      // Profile and driver rows are created by public.handle_new_auth_user().
-      // Do not refresh account data here; the account is still pending approval.
-      await supabase.auth.signOut();
-      setAuthError(null);
-      setSession(null);
-      setProfile(null);
-      setDriver(null);
+      // Profile and driver rows are created as active by public.handle_new_auth_user().
+      if (data?.session) {
+        try {
+          await supabase.rpc("ensure_current_driver_account");
+        } catch {
+          // Trigger already created active profile and driver rows
+        }
+        await refreshAccount(data.session);
+      }
+      return data;
     } finally {
       signingUpRef.current = false;
     }
   };
 
-  const signOut = async () => {
-    setAuthError(null);
-    if (driver?.id) {
-      try {
-        await clearDriverLatestLocation({ driverId: driver.id });
-        const presenceChannel = supabase.channel("drivers-presence", {
-          config: { presence: { key: String(driver.id) } },
-        });
-        await presenceChannel.untrack();
-        supabase.removeChannel(presenceChannel);
-      } catch (error) {
-        console.warn("Unable to clear driver location during sign out:", error?.message);
-      }
-    }
-    await supabase.auth.signOut();
-  };
+  const signOut = useCallback(async () => {
+    await performSignOut({ reason: null });
+  }, [performSignOut]);
 
   const value = useMemo(
     () => ({
@@ -318,7 +540,7 @@ export function AuthProvider({ children }) {
       signOut,
       setDriverStatus,
     }),
-    [session, driver, profile, loading, authError, setDriverStatus],
+    [session, driver, profile, loading, authError, signOut, setDriverStatus],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

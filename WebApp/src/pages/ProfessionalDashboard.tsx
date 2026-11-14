@@ -5,7 +5,7 @@ import CustomSelect from "../components/ui/CustomSelect";
 import { formatDateOnly, getRouteProgress, isBinActive, normalizeStatus, relativeTime, useLiveData, type PageType } from "../hooks/useLiveData";
 import { supabase } from "../services/supabaseClient";
 import { useAuth, type AppRole } from "../contexts/AuthContext";
-import { doesScheduleMatchDay } from "../utils/scheduleDays";
+import { doesBinMatchScheduleDay, doesScheduleMatchDay } from "../utils/scheduleDays";
 import {
   fetchAdminUserProfiles,
   formatAccountRoleLabel,
@@ -33,7 +33,7 @@ interface ProfessionalDashboardProps {
 
 export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, role = "admin" }: ProfessionalDashboardProps) {
   const { profile } = useAuth();
-  const { dashboardStats, bins, collectionSchedules, reports, routes, deliveries, vehicles, drivers, notifications, driverById, loading, error } = useLiveData();
+  const { dashboardStats, bins, collectionSchedules, reports, routes, deliveries, vehicles, drivers, notifications, driverById, operationsConfig, loading, error } = useLiveData();
   const isAdmin = role === "admin";
   const canManageRoutes = role === "dispatcher";
   const canExportDriverPdf = role === "supervisor" || role === "dispatcher";
@@ -44,7 +44,15 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
   const [showExportModal, setShowExportModal] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const driverOptions = useMemo(() => drivers.map((driver) => ({ value: String(driver.id), label: driver.name })), [drivers]);
+  const activeDrivers = useMemo(
+    () =>
+      drivers.filter((driver) => {
+        const status = normalizeStatus(driver.status);
+        return status !== "inactive" && status !== "suspended";
+      }),
+    [drivers],
+  );
+  const driverOptions = useMemo(() => activeDrivers.map((driver) => ({ value: String(driver.id), label: driver.name })), [activeDrivers]);
   const reportPeriodOptions = [
     { value: "today", label: "Today" },
     { value: "week", label: "This Week" },
@@ -107,7 +115,7 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
       }
     });
     const scheduledBinsToday = bins.filter(
-      (bin) => isBinActive(bin) && doesScheduleMatchDay(bin.schedule_days, todayDayCode),
+      (bin) => isBinActive(bin) && doesBinMatchScheduleDay(bin, todayDayCode, collectionSchedules),
     );
     const completedBins = scheduledBinsToday.filter((b) => normalizeStatus(b.collection_status) === "completed").length;
     const missedBins = scheduledBinsToday.filter((b) => normalizeStatus(b.collection_status) === "missed").length;
@@ -156,18 +164,22 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
     const channel = supabase
       .channel(`admin-dashboard-user-profiles-${Date.now()}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "user_profiles" }, () => void loadAdminUsers(false))
+      .on("postgres_changes", { event: "*", schema: "public", table: "drivers" }, () => void loadAdminUsers(false))
       .subscribe();
     const handleRefresh = () => {
       if (document.visibilityState === "visible") {
         void loadAdminUsers(false);
       }
     };
+    const handleDriversUpdated = () => void loadAdminUsers(false);
     const interval = window.setInterval(handleRefresh, 15_000);
     window.addEventListener("focus", handleRefresh);
+    window.addEventListener("ecoloop:drivers-updated", handleDriversUpdated);
     document.addEventListener("visibilitychange", handleRefresh);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", handleRefresh);
+      window.removeEventListener("ecoloop:drivers-updated", handleDriversUpdated);
       document.removeEventListener("visibilitychange", handleRefresh);
       supabase.removeChannel(channel);
     };
@@ -770,23 +782,45 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
           <div className="bg-white rounded-xl p-5 sm:p-6 border border-gray-200">
             <h2 className="font-semibold text-lg text-gray-900 mb-4">Driver &amp; Truck Activity</h2>
             <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
-              {drivers.slice(0, 6).map((driver) => {
+              {activeDrivers.slice(0, 8).map((driver) => {
                 const assignedRoute = routes.find(
                   (route) => String(route.driver_id) === String(driver.id) && normalizeStatus(route.status) !== "completed",
                 );
+                const assignedVehicle = vehicles.find(
+                  (vehicle) => driver.assigned_vehicle_id != null && String(vehicle.id) === String(driver.assigned_vehicle_id),
+                );
+                const lastSeenMs = driver.last_seen_at ? new Date(driver.last_seen_at).getTime() : 0;
+                const isOnline =
+                  lastSeenMs > 0 &&
+                  Date.now() - lastSeenMs <= operationsConfig.driverOfflineSeconds * 1000 &&
+                  normalizeStatus(driver.status) !== "offline";
+                const statusNorm = normalizeStatus(driver.status);
+                const roleStateLabel =
+                  statusNorm === "on_route"
+                    ? "On Route"
+                    : assignedRoute || assignedVehicle
+                      ? "Assigned"
+                      : "Available";
                 return (
                   <div key={driver.id} className="rounded-lg bg-gray-50 border border-gray-100 p-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium text-gray-900 truncate">{driver.name}</p>
-                      <span className="text-xs capitalize text-gray-600 shrink-0">{driver.status}</span>
+                      <span className="inline-flex items-center gap-1.5 text-xs text-gray-600 shrink-0">
+                        <span className={`size-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-gray-400"}`} />
+                        <span>{isOnline ? "Online" : "Offline"} • {roleStateLabel}</span>
+                      </span>
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5 truncate">
-                      {assignedRoute ? `Assigned: ${assignedRoute.name}` : "No active route"}
+                      {assignedRoute
+                        ? `Route: ${assignedRoute.name}`
+                        : assignedVehicle
+                          ? `Truck: ${assignedVehicle.label || assignedVehicle.code}`
+                          : "Available for assignment"}
                     </p>
                   </div>
                 );
               })}
-              {!loading && drivers.length === 0 && <p className="text-sm text-gray-500">No drivers found.</p>}
+              {!loading && activeDrivers.length === 0 && <p className="text-sm text-gray-500">No drivers found.</p>}
             </div>
           </div>
 

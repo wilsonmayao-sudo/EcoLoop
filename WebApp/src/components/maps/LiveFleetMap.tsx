@@ -24,6 +24,8 @@ export interface LiveFleetMapMarker {
   icon?: LiveFleetMapIconKind;
   /** Optional compact marker (e.g. bins). */
   small?: boolean;
+  /** Highlight marker when explicitly selected (e.g. selected bin in Area view). */
+  selected?: boolean;
 }
 
 const TONE_BORDER: Record<LiveFleetMapTone, string> = {
@@ -57,16 +59,64 @@ function markerBorder(marker: LiveFleetMapMarker) {
 }
 
 function markerClass(marker: LiveFleetMapMarker) {
-  const size = marker.small ? "size-7" : "size-11";
-  const bg = marker.key.startsWith("facility:") ? "bg-emerald-50 ring-2 ring-emerald-600 ring-offset-2" : "bg-white";
-  return `flex ${size} cursor-pointer items-center justify-center rounded-full border-2 ${markerBorder(marker)} ${bg} shadow-lg`;
+  const size = marker.selected ? "size-9" : marker.small ? "size-7" : "size-11";
+  const bg = marker.selected
+    ? "bg-amber-50 ring-4 ring-amber-400/50 scale-110 shadow-xl"
+    : marker.key.startsWith("facility:")
+      ? "bg-emerald-50 ring-2 ring-emerald-600 ring-offset-2"
+      : "bg-white";
+  // Transition colors only; never transition transform near Mapbox/Leaflet native positioning.
+  return `flex ${size} cursor-pointer items-center justify-center rounded-full border-2 ${markerBorder(marker)} ${bg} shadow-lg transition-colors`;
+}
+
+interface DriverMarkerEntry {
+  marker: any;
+  wrapper?: HTMLDivElement;
+  button?: HTMLButtonElement;
+  lastLng: number;
+  lastLat: number;
+  lastClass: string;
+  lastLabel: string;
+}
+
+/** Build an untransformed Mapbox anchor wrapper around the styled marker button so zoom/pan transforms apply instantaneously. */
+function createMapboxMarkerNodes(
+  fleetMarker: LiveFleetMapMarker,
+  nextClass: string,
+  onClick: (key: string) => void,
+): { wrapper: HTMLDivElement; button: HTMLButtonElement } {
+  const wrapper = document.createElement("div");
+  wrapper.style.margin = "0";
+  wrapper.style.padding = "0";
+  wrapper.style.border = "0";
+  wrapper.style.background = "transparent";
+  wrapper.style.display = "inline-flex";
+  wrapper.style.alignItems = "center";
+  wrapper.style.justifyContent = "center";
+  wrapper.style.lineHeight = "0";
+  wrapper.style.transition = "opacity 0.2s";
+  if (fleetMarker.selected) wrapper.style.zIndex = "10";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = nextClass;
+  button.title = fleetMarker.label;
+  button.setAttribute("aria-label", `View ${fleetMarker.label}`);
+  button.innerHTML = renderMapMarkerSvg(
+    fleetMarker.icon,
+    fleetMarker.small && !fleetMarker.selected,
+  );
+  button.addEventListener("click", () => onClick(fleetMarker.key));
+
+  wrapper.appendChild(button);
+  return { wrapper, button };
 }
 
 function leafletIcon(marker: LiveFleetMapMarker) {
-  const px = marker.small ? 28 : 44;
+  const px = marker.selected ? 36 : marker.small ? 28 : 44;
   return window.L.divIcon({
     className: "",
-    html: `<div class="${markerClass(marker)}">${renderMapMarkerSvg(marker.icon, marker.small)}</div>`,
+    html: `<div class="${markerClass(marker)}">${renderMapMarkerSvg(marker.icon, marker.small && !marker.selected)}</div>`,
     iconSize: [px, px],
     iconAnchor: [px / 2, px / 2],
   });
@@ -92,6 +142,13 @@ export interface LiveFleetMapRoute {
   selected?: boolean;
 }
 
+export interface LiveFleetMapFocusTarget {
+  key: string;
+  latitude: number;
+  longitude: number;
+  zoom?: number;
+}
+
 interface LiveFleetMapProps {
   markers: LiveFleetMapMarker[];
   loading: boolean;
@@ -101,6 +158,7 @@ interface LiveFleetMapProps {
   routes?: LiveFleetMapRoute[];
   selectedAreaCode?: string | null;
   onRouteClick?: (routeId: string) => void;
+  focusTarget?: LiveFleetMapFocusTarget | null;
   className?: string;
 }
 
@@ -166,16 +224,18 @@ export default function LiveFleetMap({
   routes = [],
   selectedAreaCode = null,
   onRouteClick,
+  focusTarget = null,
   className = "relative h-[680px] w-full overflow-hidden bg-gray-100",
 }: LiveFleetMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const engineRef = useRef<"mapbox" | "leaflet" | null>(null);
-  const driverMarkersRef = useRef(new Map<string, any>());
+  const driverMarkersRef = useRef(new Map<string, DriverMarkerEntry>());
   const routesLayerRef = useRef<any>(null);
   const onMarkerClickRef = useRef(onMarkerClick);
   const onRouteClickRef = useRef(onRouteClick);
   const lastFitSignatureRef = useRef("");
+  const lastFocusKeyRef = useRef<string | null>(null);
   const hasInitialFitRef = useRef(false);
   const prevSelectedAreaRef = useRef<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -278,17 +338,38 @@ export default function LiveFleetMap({
       map.on("error", (event) => {
         if (!cancelled && !map.loaded()) setMapError(event.error?.message ?? "Unable to load the fleet map.");
       });
+      const resizeObserver =
+        typeof ResizeObserver !== "undefined"
+          ? new ResizeObserver(() => {
+              if (!cancelled) map.resize();
+            })
+          : null;
+      resizeObserver?.observe(container);
       mapRef.current = map;
       engineRef.current = "mapbox";
 
       return () => {
         cancelled = true;
+        resizeObserver?.disconnect();
+        driverMarkersRef.current.forEach((entry) => entry.marker?.remove?.());
         driverMarkersRef.current.clear();
+        routesLayerRef.current = null;
         map.remove();
         mapRef.current = null;
         engineRef.current = null;
       };
     }
+
+    let cleanupWheel: (() => void) | null = null;
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            if (!cancelled && mapRef.current && engineRef.current === "leaflet") {
+              mapRef.current.invalidateSize?.();
+            }
+          })
+        : null;
+    resizeObserver?.observe(container);
 
     ensureLeaflet()
       .then((L) => {
@@ -318,6 +399,7 @@ export default function LiveFleetMap({
         };
         const el = containerRef.current;
         el?.addEventListener("wheel", wheelHandler, { passive: false });
+        cleanupWheel = () => el?.removeEventListener("wheel", wheelHandler);
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
           maxZoom: 19,
@@ -333,6 +415,9 @@ export default function LiveFleetMap({
 
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
+      cleanupWheel?.();
+      driverMarkersRef.current.forEach((entry) => entry.marker?.remove?.());
       driverMarkersRef.current.clear();
       if (routesLayerRef.current) {
         routesLayerRef.current.remove?.();
@@ -518,66 +603,89 @@ export default function LiveFleetMap({
       driverMarkersRef.current.delete(key);
     });
     validMarkers.forEach((fleetMarker) => {
-      const coordinate: [number, number] = [fleetMarker.longitude, fleetMarker.latitude];
+      const lng = Number(fleetMarker.longitude);
+      const lat = Number(fleetMarker.latitude);
+      const coordinate: [number, number] = [lng, lat];
+      const nextClass = markerClass(fleetMarker);
+      const nextStateKey = `${nextClass}:${fleetMarker.icon ?? "truck"}:${fleetMarker.small ? "s" : "m"}:${fleetMarker.selected ? "1" : "0"}`;
       const existing = driverMarkersRef.current.get(fleetMarker.key);
+
       if (existing) {
-        // Only update coordinate if it actually changed (keeps stationary bins 100% fixed)
+        // Only update geographic position when actual coordinates change.
         const coordChanged =
-          existing.lastLng == null ||
-          Math.abs(existing.lastLng - fleetMarker.longitude) > 0.000001 ||
-          Math.abs(existing.lastLat - fleetMarker.latitude) > 0.000001;
+          Math.abs(existing.lastLng - lng) > 1e-7 ||
+          Math.abs(existing.lastLat - lat) > 1e-7;
 
         if (coordChanged) {
-          existing.lastLng = fleetMarker.longitude;
-          existing.lastLat = fleetMarker.latitude;
+          existing.lastLng = lng;
+          existing.lastLat = lat;
           if (engine === "mapbox") {
             existing.marker.setLngLat(coordinate);
           } else {
-            existing.marker.setLatLng([coordinate[1], coordinate[0]]);
+            existing.marker.setLatLng([lat, lng]);
           }
         }
 
-        // Only update styling / class / icon when tone, delayed state, or icon kind changes
-        const nextClass = markerClass(fleetMarker);
-        const nextStateKey = `${nextClass}:${fleetMarker.icon ?? "truck"}:${fleetMarker.small ? "s" : "m"}`;
+        if (existing.lastLabel !== fleetMarker.label) {
+          existing.lastLabel = fleetMarker.label;
+          if (engine === "mapbox" && existing.button) {
+            existing.button.title = fleetMarker.label;
+            existing.button.setAttribute("aria-label", `View ${fleetMarker.label}`);
+          } else if (engine === "leaflet") {
+            existing.marker.setTooltipContent?.(fleetMarker.label);
+          }
+        }
+
+        // Only update styling / class / icon when tone, delayed state, icon kind, or selection changes.
         if (existing.lastClass !== nextStateKey) {
           existing.lastClass = nextStateKey;
-          if (engine === "mapbox") {
-            existing.element.className = nextClass;
-            existing.element.innerHTML = renderMapMarkerSvg(fleetMarker.icon, fleetMarker.small);
-          } else {
+          if (engine === "mapbox" && existing.wrapper && existing.button) {
+            existing.button.className = nextClass;
+            existing.wrapper.style.zIndex = fleetMarker.selected ? "10" : "";
+            existing.button.innerHTML = renderMapMarkerSvg(
+              fleetMarker.icon,
+              fleetMarker.small && !fleetMarker.selected,
+            );
+          } else if (engine === "leaflet") {
             existing.marker.setIcon(leafletIcon(fleetMarker));
+            existing.marker.setZIndexOffset?.(fleetMarker.selected ? 1000 : 0);
           }
         }
         return;
       }
 
       if (engine === "mapbox") {
-        const element = document.createElement("button");
-        element.type = "button";
-        element.innerHTML = renderMapMarkerSvg(fleetMarker.icon, fleetMarker.small);
-        element.title = fleetMarker.label;
-        element.setAttribute("aria-label", `View ${fleetMarker.label}`);
-        element.className = markerClass(fleetMarker);
-        element.addEventListener("click", () => onMarkerClickRef.current(fleetMarker.key));
-        const marker = new mapboxgl.Marker({ element, anchor: "center" }).setLngLat(coordinate).addTo(map);
+        const { wrapper, button } = createMapboxMarkerNodes(
+          fleetMarker,
+          nextClass,
+          (key) => onMarkerClickRef.current(key),
+        );
+        const marker = new mapboxgl.Marker({ element: wrapper, anchor: "center" })
+          .setLngLat(coordinate)
+          .addTo(map);
         driverMarkersRef.current.set(fleetMarker.key, {
           marker,
-          element,
-          lastLng: fleetMarker.longitude,
-          lastLat: fleetMarker.latitude,
-          lastClass: `${element.className}:${fleetMarker.icon ?? "truck"}:${fleetMarker.small ? "s" : "m"}`,
+          wrapper,
+          button,
+          lastLng: lng,
+          lastLat: lat,
+          lastClass: nextStateKey,
+          lastLabel: fleetMarker.label,
         });
       } else {
-        const marker = window.L.marker([coordinate[1], coordinate[0]], { icon: leafletIcon(fleetMarker) })
-          .bindTooltip(fleetMarker.label, { direction: "top", offset: [0, fleetMarker.small ? -14 : -22] })
+        const marker = window.L.marker([lat, lng], {
+          icon: leafletIcon(fleetMarker),
+          zIndexOffset: fleetMarker.selected ? 1000 : 0,
+        })
+          .bindTooltip(fleetMarker.label, { direction: "top", offset: [0, fleetMarker.small && !fleetMarker.selected ? -14 : -22] })
           .on("click", () => onMarkerClickRef.current(fleetMarker.key))
           .addTo(map);
         driverMarkersRef.current.set(fleetMarker.key, {
           marker,
-          lastLng: fleetMarker.longitude,
-          lastLat: fleetMarker.latitude,
-          lastClass: `${markerClass(fleetMarker)}:${fleetMarker.icon ?? "truck"}:${fleetMarker.small ? "s" : "m"}`,
+          lastLng: lng,
+          lastLat: lat,
+          lastClass: nextStateKey,
+          lastLabel: fleetMarker.label,
         });
       }
     });
@@ -600,6 +708,36 @@ export default function LiveFleetMap({
       }
     }
   }, [mapReady, markers, selectedAreaCode, showLandfill, landfillSite.lat, landfillSite.lng, landfillSite.name]);
+
+  // Pan/zoom to an explicitly focused marker (e.g. selected bin in Area view)
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !engineRef.current) return;
+    if (!focusTarget) {
+      lastFocusKeyRef.current = null;
+      return;
+    }
+    if (!isCoordinateValid(focusTarget.latitude, focusTarget.longitude)) return;
+    if (lastFocusKeyRef.current === focusTarget.key) return;
+    lastFocusKeyRef.current = focusTarget.key;
+
+    const map = mapRef.current;
+    const engine = engineRef.current;
+    const targetZoom = focusTarget.zoom ?? 16;
+
+    if (engine === "mapbox") {
+      const currentZoom = typeof map.getZoom === "function" ? map.getZoom() : 13;
+      map.flyTo({
+        center: [focusTarget.longitude, focusTarget.latitude],
+        zoom: Math.max(currentZoom, targetZoom),
+        duration: 500,
+      });
+    } else if (engine === "leaflet") {
+      const currentZoom = typeof map.getZoom === "function" ? map.getZoom() : 13;
+      map.setView([focusTarget.latitude, focusTarget.longitude], Math.max(currentZoom, targetZoom), {
+        animate: true,
+      });
+    }
+  }, [focusTarget, mapReady]);
 
   return (
     <div className={className} style={{ touchAction: isUnlocked ? "none" : "pan-y" }}>

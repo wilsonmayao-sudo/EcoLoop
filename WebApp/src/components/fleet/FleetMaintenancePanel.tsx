@@ -95,8 +95,10 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
   const {
     vehicles,
     drivers,
+    routes,
     maintenanceRecords,
     maintenanceTypes,
+    operationsConfig,
     vehicleById,
     driverById,
     createVehicle,
@@ -153,15 +155,67 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
     return map;
   }, [driverById, driverIdByVehicleId]);
 
+  const activeDrivers = useMemo(
+    () =>
+      drivers.filter((d) => {
+        const status = normalizeStatus(d.status);
+        return status !== "inactive" && status !== "suspended";
+      }),
+    [drivers],
+  );
+
   const driverSelectOptions = useMemo(
     () => [
       { value: "", label: "Unassigned" },
-      ...drivers
-        .filter((d) => normalizeStatus(d.status) !== "inactive")
-        .map((d) => ({ value: String(d.id), label: d.name })),
+      ...activeDrivers.map((d) => {
+        const seenMs = d.last_seen_at ? new Date(d.last_seen_at).getTime() : 0;
+        const isOnline =
+          seenMs > 0 &&
+          Date.now() - seenMs <= operationsConfig.driverOfflineSeconds * 1000 &&
+          normalizeStatus(d.status) !== "offline";
+        return {
+          value: String(d.id),
+          label: d.name,
+          colorClassName: isOnline ? "bg-emerald-500" : "bg-gray-400",
+        };
+      }),
     ],
-    [drivers],
+    [activeDrivers, operationsConfig.driverOfflineSeconds],
   );
+
+  const handleInlineDriverAssign = async (vehicleId: string | number, nextDriverId: string) => {
+    setBusy(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await assignVehicleDriver(String(vehicleId), nextDriverId || null);
+      setNotice("Vehicle driver assignment updated.");
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to update driver assignment.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDriverVehicleAssign = async (driverId: string | number, currentVehicleId: string | number | null | undefined, nextVehicleId: string) => {
+    setBusy(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      if (!nextVehicleId) {
+        if (currentVehicleId != null) {
+          await assignVehicleDriver(String(currentVehicleId), null);
+        }
+      } else {
+        await assignVehicleDriver(String(nextVehicleId), String(driverId));
+      }
+      setNotice("Driver vehicle assignment updated.");
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to update vehicle assignment.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const maintenanceTypeOptions = useMemo(() => {
     const names = maintenanceTypes.map((m) => m.name).filter(Boolean);
@@ -573,6 +627,7 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
               {filteredVehicles.map((vehicle) => {
                 const badge = vehicleStatusBadge(vehicle);
                 const code = vehicle.code || vehicle.truck_code || `TRK-${vehicle.id}`;
+                const assignedDriverId = driverIdByVehicleId.get(String(vehicle.id)) || "";
                 const driverName = driverNameByVehicleId.get(String(vehicle.id)) || "Unassigned";
                 return (
                   <tr key={String(vehicle.id)} className="hover:bg-gray-50/70">
@@ -594,7 +649,22 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-700">{driverName}</td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {canManage ? (
+                        <div className="w-44">
+                          <CustomSelect
+                            size="sm"
+                            ariaLabel={`Assign driver to ${vehicle.label || code}`}
+                            value={assignedDriverId}
+                            disabled={busy}
+                            onChange={(nextDriverId) => void handleInlineDriverAssign(vehicle.id, nextDriverId)}
+                            options={driverSelectOptions}
+                          />
+                        </div>
+                      ) : (
+                        driverName
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>
                         {badge.label}
@@ -651,6 +721,125 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
                 <tr>
                   <td colSpan={canManage ? 6 : 5} className="px-4 py-8 text-center text-gray-500">
                     No trucks match the current filter.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Driver Management & Vehicle Assignment */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">
+        <div className="p-4 sm:p-5 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="size-5 text-emerald-700" aria-hidden="true" />
+            <div>
+              <h3 className="font-semibold text-gray-900 text-base">Driver Management &amp; Vehicle Assignment</h3>
+              <p className="text-xs text-gray-500">
+                Registered Truck Drivers ({activeDrivers.length} active) — available for vehicle and route assignment immediately upon registration.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
+              <tr>
+                <th className="px-4 py-3">Driver</th>
+                <th className="px-4 py-3">Contact</th>
+                <th className="px-4 py-3">Connection Status</th>
+                <th className="px-4 py-3">Availability &amp; Route</th>
+                <th className="px-4 py-3">Assigned Truck</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {activeDrivers.map((driver) => {
+                const seenMs = driver.last_seen_at ? new Date(driver.last_seen_at).getTime() : 0;
+                const isOnline =
+                  seenMs > 0 &&
+                  Date.now() - seenMs <= operationsConfig.driverOfflineSeconds * 1000 &&
+                  normalizeStatus(driver.status) !== "offline";
+                const assignedRoute = routes.find(
+                  (r) => String(r.driver_id) === String(driver.id) && normalizeStatus(r.status) !== "completed",
+                );
+                const assignedVehicleId =
+                  driver.assigned_vehicle_id != null
+                    ? String(driver.assigned_vehicle_id)
+                    : Array.from(driverIdByVehicleId.entries()).find(([, dId]) => dId === String(driver.id))?.[0] ?? "";
+                const assignedVehicle = assignedVehicleId ? vehicleById.get(assignedVehicleId) : null;
+                const driverStatusNorm = normalizeStatus(driver.status);
+                const availabilityLabel =
+                  driverStatusNorm === "on_route"
+                    ? "On Route"
+                    : assignedRoute || assignedVehicle
+                      ? "Assigned"
+                      : "Available";
+                const availabilityCls =
+                  driverStatusNorm === "on_route"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : assignedRoute || assignedVehicle
+                      ? "bg-blue-100 text-blue-800"
+                      : "bg-gray-100 text-gray-800";
+
+                return (
+                  <tr key={String(driver.id)} className="hover:bg-gray-50/70">
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-gray-900">{driver.name}</div>
+                      <div className="text-xs text-gray-500">ID #{driver.id} • Active Driver</div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {driver.phone || driver.phone_number || "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-700">
+                        <span className={`size-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-gray-400"}`} />
+                        <span>{isOnline ? "Online" : "Offline"}</span>
+                      </span>
+                      <div className="text-[11px] text-gray-500 mt-0.5">
+                        {driver.last_seen_at ? `Last seen ${formatDateTime(driver.last_seen_at)}` : "Not connected yet"}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${availabilityCls}`}>
+                        {availabilityLabel}
+                      </span>
+                      {assignedRoute && (
+                        <div className="text-xs text-gray-600 mt-1 truncate max-w-[220px]">
+                          Route: {assignedRoute.name}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {canManage ? (
+                        <div className="w-52">
+                          <CustomSelect
+                            size="sm"
+                            ariaLabel={`Assign truck to ${driver.name}`}
+                            value={assignedVehicleId}
+                            disabled={busy}
+                            onChange={(nextVehId) =>
+                              void handleDriverVehicleAssign(driver.id, assignedVehicleId || null, nextVehId)
+                            }
+                            options={[
+                              { value: "", label: "Unassigned" },
+                              ...vehicleSelectOptions,
+                            ]}
+                          />
+                        </div>
+                      ) : assignedVehicle ? (
+                        `${assignedVehicle.code || `TRK-${assignedVehicle.id}`} — ${assignedVehicle.label || assignedVehicle.plate_number || "Truck"}`
+                      ) : (
+                        "Unassigned"
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {activeDrivers.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                    No active truck drivers registered.
                   </td>
                 </tr>
               )}

@@ -26,12 +26,20 @@ import { supabase } from "../lib/supabase";
 import { SWMO_LANDFILL } from "../utils/navigationRoute";
 import { haversineMeters } from "../utils/geoNav";
 import {
+  SCHEDULE_DAY_CODES,
+  doesScheduleMatchDay,
   extractNormalizedScheduleDays,
+  extractRouteScheduleDays,
   formatCollectionAreaDisplay,
 } from "../utils/areaDisplay";
 import {
+  insertNotificationWithFallback,
   insertOverflowEventWithFallback,
+  isMissingRpcError,
+  normalizeNonEmptyId,
   selectCandidateVehiclesWithFallback,
+  updateDeliveriesStatusWithFallback,
+  updateDriverStatusWithFallback,
   updateVehicleWithFallback,
 } from "../utils/schemaFallback";
 
@@ -129,6 +137,7 @@ export default function HomeScreen() {
   } = usePickups();
   const [busy, setBusy] = useState(false);
   const [showScheduleGuide, setShowScheduleGuide] = useState(false);
+  const [scheduleGuideDayFilter, setScheduleGuideDayFilter] = useState("ALL");
   const [justCompletedAll, setJustCompletedAll] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [incomingOverflowEvent, setIncomingOverflowEvent] = useState(null);
@@ -138,6 +147,23 @@ export default function HomeScreen() {
 
   const currentRoute = useMemo(() => pickCurrentRoute(driverRoutes), [driverRoutes]);
   const resolvedVehicleId = currentRoute?.vehicle_id ?? driver?.assigned_vehicle_id ?? null;
+
+  useEffect(() => {
+    const routeDays = extractRouteScheduleDays(currentRoute);
+    if (routeDays.length === 1) {
+      setScheduleGuideDayFilter(routeDays[0]);
+    } else {
+      setScheduleGuideDayFilter("ALL");
+    }
+  }, [currentRoute]);
+
+  const filteredScheduleStops = useMemo(
+    () =>
+      (assignedScheduleStops ?? []).filter(
+        (stop) => stop?.is_active !== false && doesScheduleMatchDay(stop?.days_of_week, scheduleGuideDayFilter),
+      ),
+    [assignedScheduleStops, scheduleGuideDayFilter],
+  );
 
   const getCapacityColor = useCallback(
     (pct) => {
@@ -353,7 +379,7 @@ export default function HomeScreen() {
       );
       return;
     }
-    const vehicleId = resolvedVehicleId;
+    const vehicleId = normalizeNonEmptyId(resolvedVehicleId ?? driver?.assigned_vehicle_id);
     if (!vehicleId) {
       Alert.alert(
         t("alert_vehicle_req_title", "Vehicle Assignment Required"),
@@ -462,34 +488,37 @@ export default function HomeScreen() {
         }
       }
 
-      // 3. Mark deliveries as OVERFLOW_UNCOLLECTED
+      // 3. Mark deliveries as OVERFLOW_UNCOLLECTED (tolerate DBs without enum value)
       const deliveryIds = uncollectedPickups.map((p) => p.deliveryId).filter(Boolean);
       if (deliveryIds.length > 0) {
-        const { error: delivErr } = await supabase
-          .from("deliveries")
-          .update({ status: "overflow_uncollected" })
-          .in("id", deliveryIds);
+        const { error: delivErr } = await updateDeliveriesStatusWithFallback(
+          supabase,
+          deliveryIds,
+          "overflow_uncollected",
+        );
         if (delivErr) throw delivErr;
       }
 
-      // 4. Update current truck & driver status to full
+      // 4. Update current truck & driver status to full (with schema/enum fallbacks)
       const { error: vehErr } = await updateVehicleWithFallback(supabase, vehicleId, {
         status: "full",
         load_percent: 100,
       });
       if (vehErr) throw vehErr;
 
-      const { error: drvErr } = await supabase.from("drivers").update({ status: "full" }).eq("id", driver.id);
+      const { error: drvErr } = await updateDriverStatusWithFallback(supabase, driver.id, "full", "on_route");
       if (drvErr) throw drvErr;
 
       // 5. Insert overflow_events record
+      const normalizedTargetVehicleId = normalizeNonEmptyId(targetVehicleId);
+      const normalizedTargetDriverId = normalizeNonEmptyId(targetDriverId);
       const eventPayload = {
-        source_vehicle_id: String(vehicleId),
+        source_vehicle_id: vehicleId,
         source_driver_id: String(driver.id),
         source_route_id: String(currentRoute.id),
-        target_vehicle_id: targetVehicleId ? String(targetVehicleId) : null,
-        target_driver_id: targetDriverId ? String(targetDriverId) : null,
-        status: targetDriverId ? "dispatched" : "pending",
+        target_vehicle_id: normalizedTargetVehicleId,
+        target_driver_id: normalizedTargetDriverId,
+        status: normalizedTargetDriverId ? "dispatched" : "pending",
         overflow_bins: overflowBins,
         bins_count: overflowBins.length,
         distance_km: distanceKm,
@@ -506,16 +535,19 @@ export default function HomeScreen() {
       }
 
       // 6. Notify dispatcher
-      await supabase.from("notifications").insert({
+      const { error: notifErr } = await insertNotificationWithFallback(supabase, {
         role: "dispatcher",
         title: "Truck Capacity Full",
-        message: `${driverName} signaled 100% FULL. ${overflowBins.length} uncollected bins transferred to nearest truck.`,
+        message: normalizedTargetDriverId
+          ? `${driverName} signaled 100% FULL. ${overflowBins.length} uncollected bins dispatched to nearest truck.`
+          : `${driverName} signaled 100% FULL. ${overflowBins.length} uncollected bins awaiting dispatcher relief assignment.`,
         type: "warning",
         category: "truck",
         source_table: "overflow_events",
         read: false,
         created_at: new Date().toISOString(),
       });
+      if (notifErr) console.warn("Overflow notification note:", notifErr.message);
 
       // 7. Transition to Disposal Site View ONLY after all DB updates succeed
       setIsFullDispatched(true);
@@ -594,12 +626,23 @@ export default function HomeScreen() {
   // Handler: Target driver accepts incoming overflow request (Screen B)
   const handleAcceptOverflow = async () => {
     if (busy || !incomingOverflowEvent) return;
+    if (!driver?.id) {
+      Alert.alert(
+        t("alert_accept_overflow_err", "Failed Accepting Overflow"),
+        t("err_try_again", "Driver profile unavailable. Please try again."),
+      );
+      return;
+    }
     setBusy(true);
     try {
       const eventId = incomingOverflowEvent.id;
       const targetDriverId = String(driver.id);
-      const targetVehicleId = resolvedVehicleId ? String(resolvedVehicleId) : null;
-      const targetRouteId = currentRoute?.id ? String(currentRoute.id) : null;
+      const targetVehicleId = normalizeNonEmptyId(resolvedVehicleId);
+      const openRouteStatuses = new Set(["active", "pending", "planned"]);
+      const targetRouteId =
+        currentRoute?.id && openRouteStatuses.has(routeNorm(currentRoute.status))
+          ? String(currentRoute.id)
+          : null;
 
       // 1. Concurrency check: verify event is still active and not yet accepted
       const { data: latestEvent, error: fetchErr } = await supabase
@@ -632,23 +675,41 @@ export default function HomeScreen() {
 
       // 2. Try transactional RPC first
       let rpcSucceeded = false;
-      try {
-        const { data: rpcResult, error: rpcError } = await supabase.rpc("accept_overflow_event", {
-          p_event_id: eventId,
-          p_target_driver_id: targetDriverId,
-          p_target_vehicle_id: targetVehicleId,
-          p_target_route_id: targetRouteId,
-        });
+      let shouldFallbackToClient = false;
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("accept_overflow_event", {
+        p_event_id: eventId,
+        p_target_driver_id: targetDriverId,
+        p_target_vehicle_id: targetVehicleId,
+        p_target_route_id: targetRouteId,
+      });
 
-        if (!rpcError && rpcResult?.success) {
-          rpcSucceeded = true;
+      if (!rpcError && rpcResult?.success) {
+        rpcSucceeded = true;
+      } else if (!rpcError && rpcResult && rpcResult.success === false) {
+        const errMsg = String(rpcResult.error || "Unable to accept overflow request.");
+        if (errMsg.toLowerCase().includes("already been accepted")) {
+          setIncomingOverflowEvent(null);
+          await reloadPickups();
+          Alert.alert(
+            t("alert_already_accepted_title", "Already Accepted"),
+            t("alert_already_accepted_msg", "This overflow request has already been accepted."),
+          );
+          return;
         }
-      } catch (err) {
-        console.warn("RPC accept_overflow_event fallback:", err);
+        throw new Error(errMsg);
+      } else if (rpcError) {
+        if (isMissingRpcError(rpcError)) {
+          shouldFallbackToClient = true;
+          console.warn("RPC accept_overflow_event fallback:", rpcError.message);
+        } else {
+          throw new Error(rpcError.message || "Unable to accept overflow request.");
+        }
+      } else {
+        shouldFallbackToClient = true;
       }
 
-      // 3. Fallback: coordinated client-side transaction if RPC not yet deployed
-      if (!rpcSucceeded) {
+      // 3. Fallback: coordinated client-side transaction only if RPC is not yet deployed
+      if (!rpcSucceeded && shouldFallbackToClient) {
         const now = new Date().toISOString();
         let effectiveRouteId = targetRouteId;
 
@@ -700,23 +761,60 @@ export default function HomeScreen() {
           } else {
             delivUpdate = delivUpdate.in("status", ["overflow_uncollected", "pending", "assigned"]);
           }
-          const { error: delivErr } = await delivUpdate;
-          if (delivErr) throw delivErr;
+          const { data: updatedRows, error: delivErr } = await delivUpdate.select("bin_id");
+          if (delivErr) {
+            if (String(delivErr.code ?? "") === "23505") {
+              const { error: upsertErr } = await supabase.from("deliveries").upsert(
+                binIds.map((binId) => ({
+                  route_id: effectiveRouteId,
+                  bin_id: binId,
+                  driver_id: driver.id,
+                  status: "assigned",
+                  updated_at: now,
+                })),
+                { onConflict: "route_id,bin_id" },
+              );
+              if (upsertErr) throw upsertErr;
+            } else {
+              throw delivErr;
+            }
+          } else {
+            const updatedSet = new Set((updatedRows ?? []).map((r) => String(r.bin_id)));
+            const missingBinIds = binIds.filter((bid) => !updatedSet.has(String(bid)));
+            if (missingBinIds.length > 0) {
+              const { error: upsertMissingErr } = await supabase.from("deliveries").upsert(
+                missingBinIds.map((binId) => ({
+                  route_id: effectiveRouteId,
+                  bin_id: binId,
+                  driver_id: driver.id,
+                  status: "assigned",
+                  updated_at: now,
+                })),
+                { onConflict: "route_id,bin_id" },
+              );
+              if (upsertMissingErr) throw upsertMissingErr;
+            }
+          }
 
           const { data: existingStops } = await supabase
             .from("route_stops")
-            .select("stop_order")
+            .select("bin_id, stop_order")
             .eq("route_id", effectiveRouteId);
 
+          const existingBinSet = new Set((existingStops ?? []).map((s) => String(s.bin_id)));
           const maxOrder = (existingStops ?? []).reduce((max, s) => Math.max(max, Number(s.stop_order) || 0), 0);
-          const newRouteStops = overflowBins.map((b, idx) => ({
-            route_id: effectiveRouteId,
-            bin_id: b.bin_id,
-            stop_order: maxOrder + idx + 1,
-          }));
+          const newRouteStops = overflowBins
+            .filter((b) => b?.bin_id != null && !existingBinSet.has(String(b.bin_id)))
+            .map((b, idx) => ({
+              route_id: effectiveRouteId,
+              bin_id: b.bin_id,
+              stop_order: maxOrder + idx + 1,
+            }));
 
-          const { error: rsErr } = await supabase.from("route_stops").insert(newRouteStops);
-          if (rsErr) console.warn("route_stops insert note:", rsErr.message);
+          if (newRouteStops.length > 0) {
+            const { error: rsErr } = await supabase.from("route_stops").insert(newRouteStops);
+            if (rsErr) console.warn("route_stops insert note:", rsErr.message);
+          }
 
           if (latestEvent.source_route_id) {
             await supabase
@@ -741,7 +839,7 @@ export default function HomeScreen() {
 
       // 4. Notify dispatcher
       const nowTime = new Date().toISOString();
-      await supabase.from("notifications").insert({
+      const { error: notifErr } = await insertNotificationWithFallback(supabase, {
         role: "dispatcher",
         title: "Overflow Accepted",
         message: `${driverName} ACCEPTED overflow assistance of ${incomingOverflowEvent.bins_count} stops.`,
@@ -751,6 +849,7 @@ export default function HomeScreen() {
         read: false,
         created_at: nowTime,
       });
+      if (notifErr) console.warn("Overflow accept notification note:", notifErr.message);
 
       setIncomingOverflowEvent(null);
       await reloadPickups();
@@ -789,7 +888,7 @@ export default function HomeScreen() {
         .update({ status: "declined" })
         .eq("id", incomingOverflowEvent.id);
 
-      await supabase.from("notifications").insert({
+      await insertNotificationWithFallback(supabase, {
         role: "dispatcher",
         title: "Overflow Declined",
         message: `${driverName} declined overflow assistance of ${incomingOverflowEvent.bins_count} stops. Dispatcher re-routing required.`,
@@ -1039,7 +1138,7 @@ export default function HomeScreen() {
                   <Text style={[styles.sectionHint, { color: colors.textSecondary, marginTop: 2 }]}>
                     {t("shift_stops_meta", "Shift: {shift} • {count} timed stops", {
                       shift: assignedScheduleStops[0].shift_label,
-                      count: assignedScheduleStops.length,
+                      count: filteredScheduleStops.length,
                     })}
                   </Text>
                 ) : null}
@@ -1052,10 +1151,42 @@ export default function HomeScreen() {
             </TouchableOpacity>
             {showScheduleGuide ? (
               <View style={[styles.assignmentMeta, { borderColor: colors.borderSubtle }]}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginBottom: 8 }}
+                  contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
+                >
+                  {["ALL", ...SCHEDULE_DAY_CODES].map((dayCode) => {
+                    const isSelected = scheduleGuideDayFilter === dayCode;
+                    return (
+                      <TouchableOpacity
+                        key={dayCode}
+                        onPress={() => setScheduleGuideDayFilter(dayCode)}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 5,
+                          borderRadius: 999,
+                          backgroundColor: isSelected ? colors.primary : colors.surfaceMuted || "#F3F4F6",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            fontWeight: "700",
+                            color: isSelected ? "#FFFFFF" : colors.textSecondary,
+                          }}
+                        >
+                          {dayCode === "ALL" ? t("all_days", "All Days") : dayCode}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
                 {assignedScheduleStops[0]?.waste_category ? (
                   <InfoRow label={t("waste_category", "Waste Category")} value={assignedScheduleStops[0].waste_category} colors={colors} />
                 ) : null}
-                {assignedScheduleStops.slice(0, 25).map((stop) => {
+                {filteredScheduleStops.slice(0, 25).map((stop) => {
                   const normalizedDays = extractNormalizedScheduleDays(stop.days_of_week);
                   return (
                     <View key={stop.id ?? `${stop.area_code}-${stop.stop_order}`} style={{ paddingVertical: 4 }}>

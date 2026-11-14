@@ -18,7 +18,7 @@ import type { PageType } from "../../hooks/useLiveData";
 interface SidebarProps {
   currentPage: PageType;
   onNavigate: (page: PageType) => void;
-  onLogout?: () => void;
+  onLogout?: () => void | Promise<void>;
   userName?: string;
   userEmail?: string;
   role?: "admin" | "dispatcher" | "supervisor" | "truck_driver";
@@ -84,6 +84,8 @@ export default function Sidebar({
   onClose,
 }: SidebarProps) {
   const [organization, setOrganization] = useState(() => getRuntimeSystemSettings().organization);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   useEffect(() => {
     return subscribeRuntimeSettings(() => {
@@ -215,14 +217,38 @@ export default function Sidebar({
           </div>
 
           {onLogout && (
-            <button
-              type="button"
-              onClick={onLogout}
-              className="flex w-full min-h-[40px] items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
-            >
-              <LogOut className="size-4" aria-hidden="true" />
-              <span>Logout</span>
-            </button>
+            <div className="space-y-2">
+              {logoutError && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs font-medium text-red-700"
+                >
+                  {logoutError}
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={isLoggingOut}
+                onClick={() => {
+                  void (async () => {
+                    if (isLoggingOut) return;
+                    setLogoutError(null);
+                    setIsLoggingOut(true);
+                    try {
+                      await Promise.resolve(onLogout());
+                    } catch (err: any) {
+                      setLogoutError(err?.message ?? "Unable to log out cleanly. Please try again.");
+                    } finally {
+                      setIsLoggingOut(false);
+                    }
+                  })();
+                }}
+                className="flex w-full min-h-[40px] items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <LogOut className="size-4" aria-hidden="true" />
+                <span>{isLoggingOut ? "Logging out…" : "Logout"}</span>
+              </button>
+            </div>
           )}
         </div>
       </aside>

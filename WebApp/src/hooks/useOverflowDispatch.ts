@@ -48,6 +48,18 @@ export interface OverflowLogEntry {
   type: "signal" | "dispatch" | "accept" | "decline" | "complete";
 }
 
+function isMissingRpcError(error: any) {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const combined = `${String(error.message ?? "")} ${String(error.details ?? "")}`.toLowerCase();
+  return (
+    code === "PGRST202" ||
+    code === "42883" ||
+    combined.includes("could not find the function") ||
+    (combined.includes("function") && combined.includes("does not exist"))
+  );
+}
+
 function finiteNumber(value: unknown) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -298,6 +310,11 @@ export function useOverflowDispatch() {
       routeId: string,
       algorithm: "multi-criteria" | "nearest-baseline" = "multi-criteria",
     ) => {
+      const normalizedVehicleId = String(vehicleId ?? "").trim();
+      if (!normalizedVehicleId || normalizedVehicleId === "null" || normalizedVehicleId === "undefined") {
+        throw new Error("Source vehicle assignment is required to signal truck overflow.");
+      }
+
       // Gather uncollected bins on this route
       const stops = routeStops.filter((s) => String(s.route_id) === String(routeId));
       const completedBinIds = new Set(
@@ -372,7 +389,7 @@ export function useOverflowDispatch() {
       }
 
       const event: Partial<OverflowEventRecord> = {
-        source_vehicle_id: vehicleId,
+        source_vehicle_id: normalizedVehicleId,
         source_driver_id: driverId,
         source_route_id: routeId,
         target_vehicle_id: targetVehicleId,
@@ -460,62 +477,79 @@ export function useOverflowDispatch() {
         return;
       }
 
-      const targetDriverId = event.target_driver_id ? String(event.target_driver_id) : null;
       const targetVehicleId = event.target_vehicle_id ? String(event.target_vehicle_id) : null;
+      const resolvedTargetVehicle = targetVehicleId ? vehicleById.get(targetVehicleId) : null;
+      const targetDriverId = event.target_driver_id
+        ? String(event.target_driver_id)
+        : resolvedTargetVehicle?.driver_id
+          ? String(resolvedTargetVehicle.driver_id)
+          : null;
+
+      if (!targetDriverId) {
+        throw new Error("Assign a relief truck with an active driver before accepting overflow.");
+      }
 
       // 1. Try transactional RPC function first
       let rpcSucceeded = false;
-      try {
-        const { data: rpcResult, error: rpcError } = await supabase.rpc("accept_overflow_event", {
-          p_event_id: eventId,
-          p_target_driver_id: targetDriverId,
-          p_target_vehicle_id: targetVehicleId,
-        });
-        if (!rpcError && (rpcResult as any)?.success) {
-          rpcSucceeded = true;
+      let shouldFallbackToClient = false;
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("accept_overflow_event", {
+        p_event_id: eventId,
+        p_target_driver_id: targetDriverId,
+        p_target_vehicle_id: targetVehicleId,
+      });
+
+      if (!rpcError && (rpcResult as any)?.success) {
+        rpcSucceeded = true;
+      } else if (!rpcError && rpcResult && (rpcResult as any).success === false) {
+        throw new Error(String((rpcResult as any).error || "Unable to accept overflow event."));
+      } else if (rpcError) {
+        if (isMissingRpcError(rpcError)) {
+          shouldFallbackToClient = true;
+          console.warn("RPC accept_overflow_event fallback:", rpcError.message);
+        } else {
+          throw new Error(rpcError.message || "Unable to accept overflow event.");
         }
-      } catch (err) {
-        console.warn("RPC accept_overflow_event fallback:", err);
+      } else {
+        shouldFallbackToClient = true;
       }
 
-      // 2. Coordinated client-side execution if RPC is unavailable
-      if (!rpcSucceeded) {
+      // 2. Coordinated client-side execution only if RPC is unavailable
+      if (!rpcSucceeded && shouldFallbackToClient) {
         const now = new Date().toISOString();
         let targetRouteId: string | null = null;
 
-        if (targetDriverId) {
-          const { data: activeRoutes } = await supabase
-            .from("routes")
-            .select("id")
-            .eq("driver_id", targetDriverId)
-            .in("status", ["active", "pending", "planned"])
-            .order("created_at", { ascending: false })
-            .limit(1);
+        const { data: activeRoutes } = await supabase
+          .from("routes")
+          .select("id")
+          .eq("driver_id", targetDriverId)
+          .in("status", ["active", "pending", "planned"])
+          .order("created_at", { ascending: false })
+          .limit(1);
 
-          if (activeRoutes && activeRoutes.length > 0) {
-            targetRouteId = String(activeRoutes[0].id);
-          } else {
-            const { data: newRoute, error: newRouteErr } = await supabase
-              .from("routes")
-              .insert({
-                name: "Overflow Assistance Route",
-                status: "active",
-                driver_id: targetDriverId,
-                vehicle_id: targetVehicleId,
-                generated_at: now,
-                assignment_updated_at: now,
-                started_at: now,
-              })
-              .select("id")
-              .single();
-            if (!newRouteErr && newRoute) {
-              targetRouteId = String(newRoute.id);
-            }
+        if (activeRoutes && activeRoutes.length > 0) {
+          targetRouteId = String(activeRoutes[0].id);
+        } else {
+          const { data: newRoute, error: newRouteErr } = await supabase
+            .from("routes")
+            .insert({
+              name: "Overflow Assistance Route",
+              status: "active",
+              driver_id: targetDriverId,
+              vehicle_id: targetVehicleId,
+              generated_at: now,
+              assignment_updated_at: now,
+              started_at: now,
+            })
+            .select("id")
+            .single();
+          if (newRouteErr) throw newRouteErr;
+          if (newRoute) {
+            targetRouteId = String(newRoute.id);
           }
         }
 
         const binIds = (event.overflow_bins ?? []).map((b) => b.bin_id).filter(Boolean);
-        if (binIds.length > 0 && targetDriverId && targetRouteId) {
+        if (binIds.length > 0 && targetRouteId) {
           let deliveryUpdateQuery = supabase
             .from("deliveries")
             .update({
@@ -530,21 +564,59 @@ export function useOverflowDispatch() {
           } else {
             deliveryUpdateQuery = deliveryUpdateQuery.in("status", ["overflow_uncollected", "pending", "assigned"]);
           }
-          await deliveryUpdateQuery;
+          const { data: updatedRows, error: delivErr } = await deliveryUpdateQuery.select("bin_id");
+          if (delivErr) {
+            if (String(delivErr.code ?? "") === "23505") {
+              const { error: upsertErr } = await supabase.from("deliveries").upsert(
+                binIds.map((binId) => ({
+                  route_id: targetRouteId,
+                  bin_id: binId,
+                  driver_id: targetDriverId,
+                  status: "assigned",
+                  updated_at: now,
+                })),
+                { onConflict: "route_id,bin_id" },
+              );
+              if (upsertErr) throw upsertErr;
+            } else {
+              throw delivErr;
+            }
+          } else {
+            const updatedSet = new Set((updatedRows ?? []).map((r: any) => String(r.bin_id)));
+            const missingBinIds = binIds.filter((bid) => !updatedSet.has(String(bid)));
+            if (missingBinIds.length > 0) {
+              const { error: upsertMissingErr } = await supabase.from("deliveries").upsert(
+                missingBinIds.map((binId) => ({
+                  route_id: targetRouteId,
+                  bin_id: binId,
+                  driver_id: targetDriverId,
+                  status: "assigned",
+                  updated_at: now,
+                })),
+                { onConflict: "route_id,bin_id" },
+              );
+              if (upsertMissingErr) throw upsertMissingErr;
+            }
+          }
 
           const { data: existingStops } = await supabase
             .from("route_stops")
-            .select("stop_order")
+            .select("bin_id, stop_order")
             .eq("route_id", targetRouteId);
 
+          const existingBinSet = new Set((existingStops ?? []).map((s: any) => String(s.bin_id)));
           const maxOrder = (existingStops ?? []).reduce((max, s) => Math.max(max, Number(s.stop_order) || 0), 0);
-          const newRouteStops = (event.overflow_bins ?? []).map((b, idx) => ({
-            route_id: targetRouteId,
-            bin_id: b.bin_id,
-            stop_order: maxOrder + idx + 1,
-          }));
+          const newRouteStops = (event.overflow_bins ?? [])
+            .filter((b) => b?.bin_id != null && !existingBinSet.has(String(b.bin_id)))
+            .map((b, idx) => ({
+              route_id: targetRouteId,
+              bin_id: b.bin_id,
+              stop_order: maxOrder + idx + 1,
+            }));
 
-          await supabase.from("route_stops").insert(newRouteStops);
+          if (newRouteStops.length > 0) {
+            await supabase.from("route_stops").insert(newRouteStops);
+          }
 
           if (event.source_route_id) {
             await supabase
@@ -558,11 +630,13 @@ export function useOverflowDispatch() {
         await updateOverflowEvent(eventId, {
           status: "accepted",
           accepted_at: now,
+          target_driver_id: targetDriverId,
+          target_vehicle_id: targetVehicleId,
         });
       }
 
-      const targetVehicle = event.target_vehicle_id ? vehicleById.get(String(event.target_vehicle_id)) : null;
-      const targetDriver = event.target_driver_id ? driverById.get(String(event.target_driver_id)) : null;
+      const targetVehicle = targetVehicleId ? vehicleById.get(targetVehicleId) : null;
+      const targetDriver = driverById.get(targetDriverId) ?? null;
 
       await createNotification({
         role: "dispatcher" as const,

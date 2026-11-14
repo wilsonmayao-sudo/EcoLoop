@@ -1428,6 +1428,8 @@ export default function SystemSettings({ onNavigate }: SystemSettingsProps) {
                   fieldErrors={securityErrors}
                   touched={touched}
                   rolePermissions={rolePermissions}
+                  isAdmin={isAdmin}
+                  currentAuthUserId={profile?.auth_user_id ?? null}
                   onChange={setSecurityDraft}
                   onBlurField={markFieldTouched}
                   onNavigate={onNavigate}

@@ -2,7 +2,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Layers, MapPin, Truck, Clock, X, Search, Ban, RotateCcw, Route as RouteIcon, AlertTriangle, Trash2, Recycle } from "lucide-react";
 import PageHeader from "../components/layout/PageHeader";
 import CollectionBinsPanel from "../components/areas/CollectionBinsPanel";
-import LiveFleetMap, { type LiveFleetMapMarker, type LiveFleetMapRoute } from "../components/maps/LiveFleetMap";
+import LiveFleetMap, {
+  type LiveFleetMapFocusTarget,
+  type LiveFleetMapMarker,
+  type LiveFleetMapRoute,
+} from "../components/maps/LiveFleetMap";
 import CustomSelect from "../components/ui/CustomSelect";
 import { formatDateOnly, isBinActive, normalizeStatus, useLiveData, type BinRecord, type PageType } from "../hooks/useLiveData";
 import {
@@ -13,6 +17,7 @@ import {
 } from "../services/streetRouteService";
 import {
   doesAreaMatchScheduleDay,
+  doesBinMatchScheduleDay,
   doesScheduleMatchDay,
   SCHEDULE_DAY_CODES,
 } from "../utils/scheduleDays";
@@ -87,10 +92,21 @@ export default function AreaManagement({ onNavigate, initialTab = "areas" }: Are
   const [activeTab, setActiveTab] = useState<"areas" | "bins">(initialTab);
   const [binAreaOverride, setBinAreaOverride] = useState<string | null>(null);
   const [selectedAreaCode, setSelectedAreaCode] = useState<string | null>(null);
+  const [selectedBinId, setSelectedBinId] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    setSelectedBinId(null);
+  }, [selectedAreaCode]);
+
+  useEffect(() => {
+    if (activeTab !== "areas") {
+      setSelectedBinId(null);
+    }
+  }, [activeTab]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterDay, setFilterDay] = useState<string>("ALL");
   const [filterBarangay, setFilterBarangay] = useState("ALL");
@@ -317,8 +333,37 @@ export default function AreaManagement({ onNavigate, initialTab = "areas" }: Are
 
   const selectedAreaBins = useMemo(() => {
     if (!selectedArea) return [];
-    return bins.filter((b) => isBinActive(b) && selectedArea.associatedBinIds.has(String(b.id)));
-  }, [bins, selectedArea]);
+    return bins.filter(
+      (b) =>
+        isBinActive(b) &&
+        selectedArea.associatedBinIds.has(String(b.id)) &&
+        doesBinMatchScheduleDay(b, filterDay, collectionSchedules),
+    );
+  }, [bins, collectionSchedules, filterDay, selectedArea]);
+
+  const selectedAreaBin = useMemo(
+    () => (selectedBinId ? selectedAreaBins.find((b) => String(b.id) === selectedBinId) ?? null : null),
+    [selectedAreaBins, selectedBinId],
+  );
+
+  useEffect(() => {
+    if (selectedBinId && !selectedAreaBin) {
+      setSelectedBinId(null);
+    }
+  }, [selectedAreaBin, selectedBinId]);
+
+  const focusTarget = useMemo<LiveFleetMapFocusTarget | null>(() => {
+    if (!selectedAreaBin) return null;
+    const lat = Number(selectedAreaBin.latitude);
+    const lng = Number(selectedAreaBin.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return {
+      key: `bin:${selectedAreaBin.id}`,
+      latitude: lat,
+      longitude: lng,
+      zoom: 16,
+    };
+  }, [selectedAreaBin]);
 
   const selectedAreaRoute = useMemo(
     () => (selectedArea ? routeByArea.get(selectedArea.areaCode) ?? null : null),
@@ -346,9 +391,9 @@ export default function AreaManagement({ onNavigate, initialTab = "areas" }: Are
       .filter((r): r is LiveFleetMapRoute => r !== null);
   }, [filteredAreas, selectedArea, streetRoutesByArea]);
 
-  // Map markers: show ONLY associated active bins when an area is selected, or filtered areas' bins in All Areas view
+  // Map markers: show ONLY associated active bins when an area is selected, or filtered areas' bins in All Areas view.
+  // When All Bins ("Show Bins") is OFF, temporarily override visibility to show only the selected bin.
   const mapMarkers = useMemo((): LiveFleetMapMarker[] => {
-    if (!showBinMarkers) return [];
     const hasAreaFilters =
       filterDay !== "ALL" || filterBarangay !== "ALL" || filterStatus !== "ALL" || Boolean(searchQuery.trim());
     const allowedBinIds = new Set<string>();
@@ -356,23 +401,44 @@ export default function AreaManagement({ onNavigate, initialTab = "areas" }: Are
       area.associatedBinIds.forEach((id) => allowedBinIds.add(id));
     });
 
-    const targetBins = selectedArea
-      ? bins.filter((b) => isBinActive(b) && selectedArea.associatedBinIds.has(String(b.id)))
-      : hasAreaFilters
-        ? bins.filter((b) => isBinActive(b) && allowedBinIds.has(String(b.id)))
-        : bins.filter((b) => isBinActive(b));
+    let targetBins: BinRecord[];
+    if (!showBinMarkers) {
+      targetBins = selectedAreaBin ? [selectedAreaBin] : [];
+    } else {
+      targetBins = selectedArea
+        ? bins.filter((b) => isBinActive(b) && selectedArea.associatedBinIds.has(String(b.id)))
+        : hasAreaFilters
+          ? bins.filter((b) => isBinActive(b) && allowedBinIds.has(String(b.id)))
+          : bins.filter((b) => isBinActive(b));
 
-    return targetBins.map((bin) => ({
-      key: `bin:${bin.id}`,
-      label: `${bin.code ?? bin.id} · ${bin.location} (${bin.area_code || "Naga"})`,
-      latitude: Number(bin.latitude),
-      longitude: Number(bin.longitude),
-      delayed: false,
-      tone: selectedArea ? "green" : "blue",
-      icon: "bin",
-      small: true,
-    }));
-  }, [bins, filterBarangay, filterDay, filterStatus, filteredAreas, searchQuery, selectedArea, showBinMarkers]);
+      if (selectedAreaBin && !targetBins.some((b) => String(b.id) === String(selectedAreaBin.id))) {
+        targetBins = [...targetBins, selectedAreaBin];
+      }
+    }
+
+    const seen = new Set<string>();
+    return targetBins
+      .filter((bin) => {
+        const id = String(bin.id);
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      })
+      .map((bin) => {
+        const isSelected = selectedAreaBin != null && String(bin.id) === String(selectedAreaBin.id);
+        return {
+          key: `bin:${bin.id}`,
+          label: `${bin.code ?? bin.id} · ${bin.location} (${bin.area_code || "Naga"})`,
+          latitude: Number(bin.latitude),
+          longitude: Number(bin.longitude),
+          delayed: false,
+          tone: isSelected ? "amber" : selectedArea ? "green" : "blue",
+          icon: "bin",
+          small: !isSelected,
+          selected: isSelected,
+        };
+      });
+  }, [bins, filterBarangay, filterDay, filterStatus, filteredAreas, searchQuery, selectedArea, selectedAreaBin, showBinMarkers]);
 
   const handleToggleAreaStatus = async () => {
     if (!selectedArea) return;
@@ -560,10 +626,16 @@ export default function AreaManagement({ onNavigate, initialTab = "areas" }: Are
               onMarkerClick={(key) => {
                 const binId = key.replace(/^bin:/, "");
                 const b = bins.find((bin) => String(bin.id) === binId);
-                if (b?.area_code) setSelectedAreaCode(b.area_code);
+                if (!b) return;
+                if (selectedArea && selectedArea.associatedBinIds.has(String(b.id))) {
+                  setSelectedBinId((prev) => (prev === String(b.id) ? null : String(b.id)));
+                } else if (b.area_code) {
+                  setSelectedAreaCode(b.area_code);
+                }
               }}
               showLandfill={true}
               selectedAreaCode={selectedAreaCode}
+              focusTarget={focusTarget}
               onRouteClick={(areaCode) => setSelectedAreaCode(areaCode)}
               emptyMessage={selectedArea ? `No active bins found for ${selectedArea.areaCode}.` : "No active bins found."}
               className="relative h-[480px] sm:h-[540px] w-full overflow-hidden bg-gray-100"
@@ -720,41 +792,66 @@ export default function AreaManagement({ onNavigate, initialTab = "areas" }: Are
 
             {/* Associated Active Bins List */}
             <div className="mt-4 border-t border-gray-100 pt-3">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between gap-2 mb-2">
                 <h4 className="text-xs font-semibold uppercase text-gray-500">
                   Associated Active Bins in {selectedArea.areaCode} ({selectedAreaBins.length})
                 </h4>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBinAreaOverride(selectedArea.areaCode);
-                    setActiveTab("bins");
-                  }}
-                  className="text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:underline"
-                >
-                  Manage bins in {selectedArea.areaCode} →
-                </button>
+                <div className="flex items-center gap-3">
+                  {selectedAreaBin && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedBinId(null)}
+                      className="text-xs font-medium text-amber-700 hover:text-amber-800 hover:underline"
+                    >
+                      Clear selection
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBinAreaOverride(selectedArea.areaCode);
+                      setActiveTab("bins");
+                    }}
+                    className="text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:underline"
+                  >
+                    Manage bins in {selectedArea.areaCode} →
+                  </button>
+                </div>
               </div>
               {selectedAreaBins.length > 0 ? (
                 <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {selectedAreaBins.map((bin) => (
-                    <div
-                      key={bin.id}
-                      className="p-2.5 bg-gray-50 hover:bg-gray-100/80 rounded-lg border border-gray-200 text-xs flex items-center justify-between transition-colors"
-                    >
-                      <div className="min-w-0 flex-1 pr-2">
-                        <div className="font-semibold text-gray-900 flex items-center gap-1.5">
-                          <MapPin className="size-3 text-emerald-600 shrink-0" />
-                          <span className="truncate">{bin.code ?? bin.id}</span>
-                          {bin.barangay && <span className="text-[11px] font-normal text-gray-500">· {bin.barangay}</span>}
+                  {selectedAreaBins.map((bin) => {
+                    const isBinSelected = selectedAreaBin != null && String(bin.id) === String(selectedAreaBin.id);
+                    return (
+                      <button
+                        key={bin.id}
+                        type="button"
+                        onClick={() => setSelectedBinId((prev) => (prev === String(bin.id) ? null : String(bin.id)))}
+                        aria-pressed={isBinSelected}
+                        className={`w-full text-left p-2.5 rounded-lg border text-xs flex items-center justify-between transition-colors ${
+                          isBinSelected
+                            ? "bg-amber-50/80 border-amber-400 ring-1 ring-amber-300"
+                            : "bg-gray-50 hover:bg-gray-100/80 border-gray-200"
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 pr-2">
+                          <div className="font-semibold text-gray-900 flex items-center gap-1.5">
+                            <MapPin className={`size-3 shrink-0 ${isBinSelected ? "text-amber-600" : "text-emerald-600"}`} />
+                            <span className="truncate">{bin.code ?? bin.id}</span>
+                            {bin.barangay && <span className="text-[11px] font-normal text-gray-500">· {bin.barangay}</span>}
+                          </div>
+                          <div className="text-gray-600 text-[11px] truncate mt-0.5">{bin.location}</div>
                         </div>
-                        <div className="text-gray-600 text-[11px] truncate mt-0.5">{bin.location}</div>
-                      </div>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-medium shrink-0">
-                        Active
-                      </span>
-                    </div>
-                  ))}
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${
+                            isBinSelected ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
+                          }`}
+                        >
+                          {isBinSelected ? "Selected" : "Active"}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-xs text-gray-500 italic py-2">No active bins currently recorded for this area.</p>

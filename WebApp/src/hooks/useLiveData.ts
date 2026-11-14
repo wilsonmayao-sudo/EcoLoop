@@ -69,6 +69,9 @@ export interface DriverRecord {
   name: string;
   status: string;
   auth_user_id?: string | null;
+  profile_id?: string | null;
+  phone?: string | null;
+  phone_number?: string | null;
   assigned_vehicle_id?: string | number | null;
   last_seen_at?: string | null;
 }
@@ -258,6 +261,7 @@ const LIVE_TABLES = [
   "bins",
   "collection_schedules",
   "drivers",
+  "user_profiles",
   "routes",
   "route_stops",
   "deliveries",
@@ -296,6 +300,28 @@ export function isBinActive(bin?: Pick<BinRecord, "is_active" | "status"> | null
   if (bin.is_active === false) return false;
   const s = normalizeStatus(bin.status);
   return s !== "disabled" && s !== "inactive";
+}
+
+function isMissingColumnError(error: any, columnName: string) {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const combined = `${String(error.message ?? "")} ${String(error.details ?? "")}`.toLowerCase();
+  const isColErr =
+    code === "PGRST204" ||
+    code === "42703" ||
+    combined.includes("schema cache") ||
+    combined.includes("does not exist") ||
+    combined.includes("could not find the");
+  return isColErr && combined.includes(columnName.toLowerCase());
+}
+
+function isInvalidEnumError(error: any, enumValue?: string) {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const combined = `${String(error.message ?? "")} ${String(error.details ?? "")}`.toLowerCase();
+  const isEnumErr = code === "22P02" || combined.includes("invalid input value for enum");
+  if (!isEnumErr) return false;
+  return enumValue ? combined.includes(enumValue.toLowerCase()) : true;
 }
 
 /** Some Supabase schemas require NOT NULL `user_id`; mirror `user_auth_id` when present. */
@@ -550,7 +576,7 @@ function useLiveDataInternal() {
         )
         .order("created_at", { ascending: false })
         .limit(200),
-      supabase.from("drivers").select("id, name, status, auth_user_id, assigned_vehicle_id, last_seen_at").order("name", { ascending: true }),
+      supabase.from("drivers").select("id, name, status, auth_user_id, profile_id, phone, phone_number, assigned_vehicle_id, last_seen_at").order("name", { ascending: true }),
       supabase.from("vehicles").select("id, code, truck_code, plate_number, label, model, is_active, status, driver_id, route_id, capacity_liters, capacity_kg, fuel_percent, latitude, longitude, last_seen_at, updated_at").order("label", { ascending: true }),
     ]);
 
@@ -623,6 +649,7 @@ function useLiveDataInternal() {
     const [
       binsResult,
       driversResult,
+      userProfilesResult,
       routesResult,
       routeStopsResult,
       deliveriesResult,
@@ -641,7 +668,8 @@ function useLiveDataInternal() {
       collectionSchedulesResult,
     ] = await Promise.all([
       supabase.from("bins").select("id, code, location, barangay, area_code, schedule_days, schedule_time_window, waste_category, collection_status, coordinate_status, is_active, type, status, capacity_percent, latitude, longitude, updated_at").order("id", { ascending: true }),
-      supabase.from("drivers").select("id, name, status, auth_user_id, assigned_vehicle_id, last_seen_at").order("name", { ascending: true }),
+      supabase.from("drivers").select("id, name, status, auth_user_id, profile_id, phone, phone_number, assigned_vehicle_id, last_seen_at").order("name", { ascending: true }),
+      supabase.from("user_profiles").select("id, auth_user_id, full_name, role, status, phone, phone_number"),
       supabase
         .from("routes")
         .select(
@@ -699,8 +727,41 @@ function useLiveDataInternal() {
     const allMaintTypes = (allMaintenanceTypesResult.data as ReferenceRecord[]) ?? [];
     const allBTypes = (allBinTypesResult.data as ReferenceRecord[]) ?? [];
 
+    const profileByAuthId = new Map<
+      string,
+      { role: string; status: string; full_name: string; phone: string | null; phone_number: string | null }
+    >();
+    ((userProfilesResult.data as any[]) ?? []).forEach((prof) => {
+      if (prof?.auth_user_id) {
+        profileByAuthId.set(String(prof.auth_user_id), {
+          role: String(prof.role ?? ""),
+          status: String(prof.status ?? ""),
+          full_name: String(prof.full_name ?? ""),
+          phone: prof.phone ?? null,
+          phone_number: prof.phone_number ?? null,
+        });
+      }
+    });
+
+    const filteredDrivers = ((driversResult.data as DriverRecord[]) ?? [])
+      .filter((driver) => {
+        if (!driver.auth_user_id) return true;
+        const prof = profileByAuthId.get(String(driver.auth_user_id));
+        if (!prof) return true;
+        return prof.role === "truck_driver" && prof.status !== "inactive" && prof.status !== "suspended";
+      })
+      .map((driver) => {
+        const prof = driver.auth_user_id ? profileByAuthId.get(String(driver.auth_user_id)) : undefined;
+        return {
+          ...driver,
+          name: prof?.full_name?.trim() || driver.name,
+          phone: driver.phone ?? prof?.phone ?? prof?.phone_number ?? null,
+          phone_number: driver.phone_number ?? prof?.phone_number ?? prof?.phone ?? null,
+        };
+      });
+
     setBins((binsResult.data as BinRecord[]) ?? []);
-    setDrivers((driversResult.data as DriverRecord[]) ?? []);
+    setDrivers(filteredDrivers);
     setRoutes((routesResult.data as RouteRecord[]) ?? []);
     setRouteStops(((routeStopsResult.data ?? []) as any[]).map((stop) => ({
       ...stop,
@@ -780,17 +841,31 @@ function useLiveDataInternal() {
     LIVE_TABLES.forEach((table) => {
       channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload: any) => {
         if (table === "drivers" && payload?.eventType === "UPDATE" && payload?.new) {
-          setDrivers((prev) =>
-            prev.map((d) => (String(d.id) === String(payload.new.id) ? { ...d, ...payload.new } : d)),
-          );
-          return;
+          let foundExisting = false;
+          setDrivers((prev) => {
+            foundExisting = prev.some((d) => String(d.id) === String(payload.new.id));
+            if (!foundExisting) return prev;
+            return prev.map((d) => (String(d.id) === String(payload.new.id) ? { ...d, ...payload.new } : d));
+          });
+          if (foundExisting) return;
         }
         scheduleCoalescedLoad();
       });
     });
     channel.subscribe();
+
+    const handleDriversUpdated = () => {
+      scheduleCoalescedLoad();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("ecoloop:drivers-updated", handleDriversUpdated);
+    }
+
     return () => {
       if (reloadTimer) clearTimeout(reloadTimer);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("ecoloop:drivers-updated", handleDriversUpdated);
+      }
       supabase.removeChannel(channel);
     };
   }, [load, profile?.auth_user_id]);
@@ -938,7 +1013,11 @@ function useLiveDataInternal() {
   };
 
   const createNotification = async (payload: Partial<NotificationRecord>) => {
-    const { error } = await supabase.from("notifications").insert(normalizeNotificationInsert(payload as Record<string, unknown>));
+    const row = normalizeNotificationInsert(payload as Record<string, unknown>);
+    let { error } = await supabase.from("notifications").insert(row);
+    if (error && row.category && isInvalidEnumError(error, String(row.category))) {
+      ({ error } = await supabase.from("notifications").insert({ ...row, category: "route" }));
+    }
     if (error) throw error;
     await load();
   };
@@ -946,9 +1025,13 @@ function useLiveDataInternal() {
   /** Batch insert (e.g. notify every driver with a linked auth account). */
   const createNotifications = async (payloads: Partial<NotificationRecord>[]) => {
     if (payloads.length === 0) return;
-    const { error } = await supabase.from("notifications").insert(
-      payloads.map((p) => normalizeNotificationInsert(p as Record<string, unknown>)),
-    );
+    const rows = payloads.map((p) => normalizeNotificationInsert(p as Record<string, unknown>));
+    let { error } = await supabase.from("notifications").insert(rows);
+    if (error && isInvalidEnumError(error, "truck")) {
+      ({ error } = await supabase
+        .from("notifications")
+        .insert(rows.map((r) => (r.category === "truck" ? { ...r, category: "route" } : r))));
+    }
     if (error) throw error;
     await load();
   };
@@ -985,7 +1068,12 @@ function useLiveDataInternal() {
   };
 
   const updateVehicle = async (id: string, payload: Partial<VehicleRecord>) => {
-    const { error } = await supabase.from("vehicles").update(payload).eq("id", id);
+    let { error } = await supabase.from("vehicles").update(payload).eq("id", id);
+    if (error && "load_percent" in payload && isMissingColumnError(error, "load_percent")) {
+      const { load_percent: _ignored, ...rest } = payload;
+      if (Object.keys(rest).length === 0) return;
+      ({ error } = await supabase.from("vehicles").update(rest).eq("id", id));
+    }
     if (error) throw error;
     await load();
   };
@@ -1166,7 +1254,11 @@ function useLiveDataInternal() {
   };
 
   const createOverflowEvent = async (payload: Partial<OverflowEventRecord>) => {
-    const { error } = await supabase.from("overflow_events").insert(payload);
+    let { error } = await supabase.from("overflow_events").insert(payload);
+    if (error && "reassignment_metadata" in payload && isMissingColumnError(error, "reassignment_metadata")) {
+      const { reassignment_metadata: _ignored, ...rest } = payload as Record<string, unknown>;
+      ({ error } = await supabase.from("overflow_events").insert(rest));
+    }
     if (error) throw error;
     await load();
   };

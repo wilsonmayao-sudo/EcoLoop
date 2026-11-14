@@ -82,7 +82,7 @@ CREATE POLICY "profiles_self_insert" ON public.user_profiles
   WITH CHECK (
     (auth_user_id = auth.uid())
     AND (role = 'truck_driver'::public.app_role)
-    AND (status = 'pending_approval'::public.account_status)
+    AND (status = ANY (ARRAY['active'::public.account_status, 'pending_approval'::public.account_status]))
   );
 
 DROP POLICY IF EXISTS "user_profiles_insert_self" ON public.user_profiles;
@@ -92,7 +92,7 @@ CREATE POLICY "user_profiles_insert_self" ON public.user_profiles
   WITH CHECK (
     (auth.uid() = auth_user_id)
     AND (role = 'truck_driver'::public.app_role)
-    AND (status = 'pending_approval'::public.account_status)
+    AND (status = ANY (ARRAY['active'::public.account_status, 'pending_approval'::public.account_status]))
   );
 
 DROP POLICY IF EXISTS "profiles_self_update" ON public.user_profiles;

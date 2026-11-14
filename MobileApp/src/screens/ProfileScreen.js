@@ -243,7 +243,11 @@ function ProfileSettings({ onChangePassword, onLogout, t }) {
 
   const executeQueuedMutation = async (mutation) => {
     if (mutation.type === "SET_DRIVER_STATUS") {
-      const { error } = await supabase.from("drivers").update({ status: mutation.status }).eq("id", mutation.driverId);
+      const safeStatus =
+        mutation.status === "inactive" || mutation.status === "suspended"
+          ? "on_break"
+          : mutation.status;
+      const { error } = await supabase.from("drivers").update({ status: safeStatus }).eq("id", mutation.driverId);
       if (error) throw error;
     }
   };
@@ -251,7 +255,12 @@ function ProfileSettings({ onChangePassword, onLogout, t }) {
   useEffect(() => {
     const current = String(driver?.status ?? "").toLowerCase();
     if (!current) return;
-    setIsAvailable(current !== "inactive" && current !== "suspended");
+    setIsAvailable(
+      current !== "offline" &&
+        current !== "on_break" &&
+        current !== "inactive" &&
+        current !== "suspended"
+    );
   }, [driver?.status]);
 
   useEffect(() => {
@@ -267,7 +276,7 @@ function ProfileSettings({ onChangePassword, onLogout, t }) {
   const onToggleAvailability = async (next) => {
     setIsAvailable(next);
     if (!driver?.id) return;
-    const nextStatus = next ? "available" : "inactive";
+    const nextStatus = next ? "available" : "on_break";
     setDriverStatus(nextStatus);
     const state = await NetInfo.fetch();
     if (!state.isConnected) {
@@ -355,7 +364,18 @@ function ProfileSettings({ onChangePassword, onLogout, t }) {
                 text: t ? t('log_out', 'Log Out') : 'Log Out',
                 style: 'destructive',
                 onPress: () => {
-                  if (onLogout) onLogout();
+                  void (async () => {
+                    try {
+                      if (onLogout) {
+                        await onLogout();
+                      }
+                    } catch (logoutError) {
+                      Alert.alert(
+                        t ? t('log_out_failed', 'Logout Failed') : 'Logout Failed',
+                        logoutError?.message || 'Unable to log out right now. Please try again.'
+                      );
+                    }
+                  })();
                 },
               },
             ],

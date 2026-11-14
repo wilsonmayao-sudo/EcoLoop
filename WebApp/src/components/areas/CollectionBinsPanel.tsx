@@ -4,7 +4,12 @@ import ConfirmModal from "../feedback/ConfirmModal";
 import { isBinActive, useLiveData, type BinRecord } from "../../hooks/useLiveData";
 import BinLocationPicker from "../maps/BinLocationPicker";
 import CustomSelect from "../ui/CustomSelect";
-import { doesScheduleMatchDay, SCHEDULE_DAY_CODES } from "../../utils/scheduleDays";
+import {
+  doesAreaMatchScheduleDay,
+  doesBinMatchScheduleDay,
+  getEffectiveBinScheduleDays,
+  SCHEDULE_DAY_CODES,
+} from "../../utils/scheduleDays";
 import { formatCollectionAreaDisplay } from "../../utils/areaDisplay";
 
 interface CollectionBinsPanelProps {
@@ -80,12 +85,13 @@ export default function CollectionBinsPanel({ areaFilterOverride }: CollectionBi
     });
 
     return Array.from(schedulesByArea.entries())
+      .filter(([, meta]) => filterDay === "ALL" || meta.rows.length === 0 || doesAreaMatchScheduleDay(meta.rows, filterDay))
       .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
       .map(([code, meta]) => ({
         value: code,
         label: formatCollectionAreaDisplay(code, meta.rawName, meta.rows),
       }));
-  }, [bins, collectionSchedules]);
+  }, [bins, collectionSchedules, filterDay]);
 
   const filteredBins = useMemo(() => {
     return bins.filter((bin) => {
@@ -94,10 +100,10 @@ export default function CollectionBinsPanel({ areaFilterOverride }: CollectionBi
       if (filterStatus === "DISABLED" && active) return false;
       if (filterBarangay !== "ALL" && (bin.barangay ?? "") !== filterBarangay) return false;
       if (filterArea !== "ALL" && (bin.area_code ?? "") !== filterArea) return false;
-      if (filterDay !== "ALL" && !doesScheduleMatchDay(bin.schedule_days, filterDay)) return false;
+      if (filterDay !== "ALL" && !doesBinMatchScheduleDay(bin, filterDay, collectionSchedules)) return false;
       return true;
     });
-  }, [bins, filterArea, filterBarangay, filterDay, filterStatus]);
+  }, [bins, collectionSchedules, filterArea, filterBarangay, filterDay, filterStatus]);
 
   const parseCoordinates = (latValue: string, lngValue: string) => {
     if (!latValue.trim() || !lngValue.trim()) {
@@ -348,38 +354,42 @@ export default function CollectionBinsPanel({ areaFilterOverride }: CollectionBi
                   </div>
                 </div>
 
-                {(bin.schedule_time_window || (bin.schedule_days && bin.schedule_days.length > 0)) && (
-                  <div className="mb-3 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 text-xs text-gray-600 space-y-1">
-                    {bin.schedule_time_window && (
-                      <div>
-                        <span className="font-medium text-gray-700">Schedule: </span>
-                        {bin.schedule_time_window}
+                {(() => {
+                  const effectiveDays = getEffectiveBinScheduleDays(bin, collectionSchedules);
+                  if (!bin.schedule_time_window && effectiveDays.length === 0) return null;
+                  return (
+                    <div className="mb-3 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 text-xs text-gray-600 space-y-1">
+                      {bin.schedule_time_window && (
+                        <div>
+                          <span className="font-medium text-gray-700">Schedule: </span>
+                          {bin.schedule_time_window}
+                        </div>
+                      )}
+                      {effectiveDays.length > 0 && (
+                        <div>
+                          <span className="font-medium text-gray-700">Days: </span>
+                          {effectiveDays.length === 7 ? "Daily (Mon–Sun)" : effectiveDays.join(", ")}
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="font-medium text-gray-700">Collection:</span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-medium capitalize ${
+                            collectionStatus === "completed"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : collectionStatus === "missed"
+                                ? "bg-red-100 text-red-700"
+                                : collectionStatus === "en_route"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {collectionStatus.replace(/_/g, " ")}
+                        </span>
                       </div>
-                    )}
-                    {bin.schedule_days && bin.schedule_days.length > 0 && (
-                      <div>
-                        <span className="font-medium text-gray-700">Days: </span>
-                        {bin.schedule_days.length === 7 ? "Daily (Mon–Sun)" : bin.schedule_days.join(", ")}
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="font-medium text-gray-700">Collection:</span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[11px] font-medium capitalize ${
-                          collectionStatus === "completed"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : collectionStatus === "missed"
-                              ? "bg-red-100 text-red-700"
-                              : collectionStatus === "en_route"
-                                ? "bg-blue-100 text-blue-700"
-                                : "bg-amber-100 text-amber-700"
-                        }`}
-                      >
-                        {collectionStatus.replace(/_/g, " ")}
-                      </span>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {Number.isFinite(latitude) && Number.isFinite(longitude) && (
                   <div className="text-xs text-gray-500 border-t border-gray-200 pt-3 font-mono flex items-center justify-between">

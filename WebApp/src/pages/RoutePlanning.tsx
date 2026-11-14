@@ -21,8 +21,13 @@ import { formatDateOnly, normalizeStatus, useLiveData, type PageType } from "../
 import CustomSelect from "../components/ui/CustomSelect";
 import {
   doesAreaMatchScheduleDay,
+  doesBinMatchScheduleDay,
+  doesRouteMatchScheduleDay,
   doesScheduleMatchDay,
+  extractNormalizedScheduleDays,
+  extractRouteScheduleDays,
   formatScheduleDaysLabel,
+  normalizeScheduleDayFilter,
   SCHEDULE_DAY_CODES,
 } from "../utils/scheduleDays";
 import {
@@ -288,6 +293,8 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
 
   const todayCode = useMemo(() => WEEKDAY_CODES[new Date().getDay()] ?? "Mon", []);
   const [scheduleDayFilter, setScheduleDayFilter] = useState<string>(todayCode);
+  const [createModalDayFilter, setCreateModalDayFilter] = useState<string>(todayCode);
+  const [routeDayFilter, setRouteDayFilter] = useState<string>("ALL");
   const [scheduleAreaFilter, setScheduleAreaFilter] = useState<string>("AREA-1");
   const [scheduleBarangayFilter, setScheduleBarangayFilter] = useState<string>("ALL");
   const [scheduleCoordFilter, setScheduleCoordFilter] = useState<string>("ALL");
@@ -403,47 +410,234 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
     [filteredAreaSummaries, scheduleAreaFilter],
   );
 
-  const applyAreaTemplateToCreateModal = (areaCode: string) => {
-    const areaSummary = scheduleAreaSummaries.find((item) => item.areaCode === areaCode);
-    if (!areaSummary) return;
-    const knownBinIdSet = new Set(knownBins.map((bin) => String(bin.id)));
-    const orderedIds: string[] = [];
-    const seenIds = new Set<string>();
+  const areaSchedulesByCode = useMemo(() => {
+    const map = new Map<string, Array<{ days_of_week?: string[] | null; is_active?: boolean | null }>>();
+    scheduleAreaSummaries.forEach((area) => {
+      map.set(area.areaCode.toUpperCase(), area.schedules);
+    });
+    return map;
+  }, [scheduleAreaSummaries]);
 
-    // Preserve official collection_schedules stop_order first
-    collectionSchedules
-      .filter((row) => row.area_code === areaCode && row.bin_id != null)
-      .sort((a, b) => a.stop_order - b.stop_order)
-      .forEach((row) => {
-        const id = String(row.bin_id);
-        if (knownBinIdSet.has(id) && !seenIds.has(id)) {
+  const computeAreaScheduledBinIds = useCallback(
+    (areaCode: string, dayFilter: string) => {
+      const knownBinIdSet = new Set(knownBins.map((bin) => String(bin.id)));
+      const orderedIds: string[] = [];
+      const seenIds = new Set<string>();
+
+      // 1. Official collection_schedules stops for this area and day in stop_order
+      collectionSchedules
+        .filter(
+          (row) =>
+            row.is_active !== false &&
+            row.area_code === areaCode &&
+            row.bin_id != null &&
+            doesScheduleMatchDay(row.days_of_week, dayFilter),
+        )
+        .sort((a, b) => a.stop_order - b.stop_order)
+        .forEach((row) => {
+          const id = String(row.bin_id);
+          if (knownBinIdSet.has(id) && !seenIds.has(id)) {
+            seenIds.add(id);
+            orderedIds.push(id);
+          }
+        });
+
+      // 2. Active bins in this area matching the day filter not already added
+      knownBins.forEach((bin) => {
+        const id = String(bin.id);
+        if (
+          bin.areaCode === areaCode &&
+          !seenIds.has(id) &&
+          doesBinMatchScheduleDay(
+            {
+              id: bin.id,
+              scheduleDays: bin.scheduleDays,
+              areaCode: bin.areaCode,
+            },
+            dayFilter,
+            collectionSchedules,
+          )
+        ) {
           seenIds.add(id);
           orderedIds.push(id);
         }
       });
 
-    // Append any active bins tagged with this areaCode not explicitly linked by bin_id
-    knownBins.forEach((bin) => {
-      const id = String(bin.id);
-      if (bin.areaCode === areaCode && !seenIds.has(id)) {
-        seenIds.add(id);
-        orderedIds.push(id);
-      }
-    });
+      return orderedIds;
+    },
+    [collectionSchedules, knownBins],
+  );
 
-    const dayTag = scheduleDayFilter !== "ALL" ? scheduleDayFilter : todayCode;
+  const createModalAreaSummaries = useMemo(() => {
+    return scheduleAreaSummaries
+      .filter((area) => area.hasActiveSchedule && doesAreaMatchScheduleDay(area.schedules, createModalDayFilter))
+      .map((area) => {
+        const dayMatchedBinIds = computeAreaScheduledBinIds(area.areaCode, createModalDayFilter);
+        const dayScheduleRows = collectionSchedules.filter(
+          (row) =>
+            row.is_active !== false &&
+            row.area_code === area.areaCode &&
+            doesScheduleMatchDay(row.days_of_week, createModalDayFilter),
+        );
+        return {
+          ...area,
+          dayMatchedBinIds,
+          dayScheduleRowsCount: dayScheduleRows.length,
+        };
+      });
+  }, [collectionSchedules, computeAreaScheduledBinIds, createModalDayFilter, scheduleAreaSummaries]);
+
+  const createModalAvailableBins = useMemo(() => {
+    const selectedSet = new Set(selectedBinIds);
+    return knownBins.filter((bin) => {
+      const id = String(bin.id);
+      if (selectedSet.has(id)) return true;
+      if (newRoute.areaCode && bin.areaCode !== newRoute.areaCode) return false;
+      return doesBinMatchScheduleDay(
+        {
+          id: bin.id,
+          scheduleDays: bin.scheduleDays,
+          areaCode: bin.areaCode,
+        },
+        createModalDayFilter,
+        collectionSchedules,
+      );
+    });
+  }, [collectionSchedules, createModalDayFilter, knownBins, newRoute.areaCode, selectedBinIds]);
+
+  const createModalMatchingRoutes = useMemo(() => {
+    return routes.filter((route) => {
+      if (newRoute.areaCode && route.areaCode && route.areaCode !== newRoute.areaCode) {
+        return false;
+      }
+      return doesRouteMatchScheduleDay(
+        {
+          scheduledDays: route.scheduledDays,
+          name: route.name,
+          areaCode: route.areaCode,
+        },
+        createModalDayFilter,
+        areaSchedulesByCode,
+      );
+    });
+  }, [areaSchedulesByCode, createModalDayFilter, newRoute.areaCode, routes]);
+
+  const filteredRoutes = useMemo(() => {
+    return routes.filter((route) =>
+      doesRouteMatchScheduleDay(
+        {
+          scheduledDays: route.scheduledDays,
+          name: route.name,
+          areaCode: route.areaCode,
+        },
+        routeDayFilter,
+        areaSchedulesByCode,
+      ),
+    );
+  }, [areaSchedulesByCode, routeDayFilter, routes]);
+
+  const applyAreaTemplateToCreateModal = (areaCode: string, preferredDay?: string) => {
+    const areaSummary = scheduleAreaSummaries.find((item) => item.areaCode === areaCode);
+    if (!areaSummary) return;
+
+    const effectiveDay = normalizeScheduleDayFilter(preferredDay ?? (showCreateModal ? createModalDayFilter : scheduleDayFilter));
+    const orderedIds = computeAreaScheduledBinIds(areaCode, effectiveDay);
+    const areaScheduleDays = extractNormalizedScheduleDays(Array.from(areaSummary.daysOfWeek));
+    const scheduledDaysForRoute = effectiveDay === "ALL" ? areaScheduleDays : [effectiveDay];
+    const routeName =
+      effectiveDay === "ALL"
+        ? `${areaSummary.areaName}`.slice(0, 72)
+        : `${areaSummary.areaName} (${effectiveDay})`.slice(0, 72);
+
     createRequestKeyRef.current = null;
+    setCreateModalDayFilter(effectiveDay);
     setNewRoute((prev) => ({
       ...prev,
-      name: `${areaSummary.areaName} (${dayTag})`.slice(0, 72),
+      name: routeName,
       areaCode: areaSummary.areaCode,
-      scheduledDays: [dayTag],
+      scheduledDays: scheduledDaysForRoute,
       shiftLabel: areaSummary.shiftLabel,
       wasteCategory: areaSummary.wasteCategory,
     }));
     setSelectedBinIds(orderedIds);
     setOptimizationError(null);
     setShowCreateModal(true);
+    void syncFromSupabase({ silent: true });
+  };
+
+  const handleCreateModalDayChange = (rawDay: string) => {
+    const nextDay = normalizeScheduleDayFilter(rawDay);
+    createRequestKeyRef.current = null;
+    setOptimizationError(null);
+    setCreateModalDayFilter(nextDay);
+
+    if (newRoute.areaCode) {
+      const areaSummary = scheduleAreaSummaries.find((item) => item.areaCode === newRoute.areaCode);
+      const areaMatchesDay =
+        areaSummary != null &&
+        areaSummary.hasActiveSchedule &&
+        doesAreaMatchScheduleDay(areaSummary.schedules, nextDay);
+
+      if (areaSummary && areaMatchesDay) {
+        const nextOrderedIds = computeAreaScheduledBinIds(areaSummary.areaCode, nextDay);
+        const areaScheduleDays = extractNormalizedScheduleDays(Array.from(areaSummary.daysOfWeek));
+        const nextScheduledDays = nextDay === "ALL" ? areaScheduleDays : [nextDay];
+        setNewRoute((prev) => {
+          const baseName = prev.name.replace(/\s*\((Mon|Tue|Wed|Thu|Fri|Sat|Sun|Daily|All Days)\)\s*$/i, "").trim() || areaSummary.areaName;
+          const nextName =
+            nextDay === "ALL" ? baseName.slice(0, 72) : `${baseName} (${nextDay})`.slice(0, 72);
+          return {
+            ...prev,
+            name: nextName,
+            scheduledDays: nextScheduledDays,
+          };
+        });
+        setSelectedBinIds(nextOrderedIds);
+        return;
+      }
+
+      // Selected area is not scheduled for the newly chosen day -> clear area & filter stops
+      setNewRoute((prev) => ({
+        ...prev,
+        name: "",
+        areaCode: "",
+        scheduledDays: nextDay === "ALL" ? [] : [nextDay],
+        shiftLabel: "",
+        wasteCategory: "",
+      }));
+      setSelectedBinIds((prev) =>
+        prev.filter((binId) => {
+          const bin = knownBins.find((b) => String(b.id) === binId);
+          return bin
+            ? doesBinMatchScheduleDay(
+                { id: bin.id, scheduleDays: bin.scheduleDays, areaCode: bin.areaCode },
+                nextDay,
+                collectionSchedules,
+              )
+            : false;
+        }),
+      );
+      return;
+    }
+
+    setNewRoute((prev) => ({
+      ...prev,
+      scheduledDays: nextDay === "ALL" ? [] : [nextDay],
+    }));
+    if (nextDay !== "ALL") {
+      setSelectedBinIds((prev) =>
+        prev.filter((binId) => {
+          const bin = knownBins.find((b) => String(b.id) === binId);
+          return bin
+            ? doesBinMatchScheduleDay(
+                { id: bin.id, scheduleDays: bin.scheduleDays, areaCode: bin.areaCode },
+                nextDay,
+                collectionSchedules,
+              )
+            : false;
+        }),
+      );
+    }
   };
 
   useEffect(() => {
@@ -453,9 +647,18 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
     return () => clearInterval(timer);
   }, []);
 
+  const activeDrivers = useMemo(
+    () =>
+      drivers.filter((driver) => {
+        const status = normalizeStatus(driver.status);
+        return status !== "inactive" && status !== "suspended";
+      }),
+    [drivers],
+  );
+
   const driverOptions = useMemo(
     () =>
-      drivers.map((driver) => {
+      activeDrivers.map((driver) => {
         const isOnline = isDriverOnline(driver, onlineDriverIds, nowMs, driverStaleThresholdMs);
         return {
           value: driver.name,
@@ -463,16 +666,16 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
           colorClassName: isOnline ? "bg-emerald-500" : "bg-gray-400",
         };
       }),
-    [driverStaleThresholdMs, drivers, onlineDriverIds, nowMs],
+    [activeDrivers, driverStaleThresholdMs, onlineDriverIds, nowMs],
   );
   const alertRecipientOptions = useMemo(
     () => [
       { value: "all", label: "All drivers" },
-      ...drivers
+      ...activeDrivers
         .filter((driver) => Boolean(driver.auth_user_id))
         .map((driver) => ({ value: String(driver.id), label: driver.name })),
     ],
-    [drivers],
+    [activeDrivers],
   );
 
   const syncFromSupabase = useCallback(async (options?: { silent?: boolean }) => {
@@ -485,33 +688,57 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
         setIsLoading(true);
       }
       try {
-        const [{ data: binsData, error: binsError }, { data: driversData, error: driversError }, { data: routesData, error: routesError }] =
-          await Promise.all([
-            supabase
-              .from("bins")
-              .select("id, code, location, barangay, area_code, schedule_days, schedule_time_window, collection_status, coordinate_status, latitude, longitude, is_active, status")
-              .order("id", { ascending: true }),
-            supabase.from("drivers").select("id, name, status, auth_user_id, assigned_vehicle_id, last_seen_at").order("name", { ascending: true }),
-            supabase
-              .from("routes")
-              .select(
-                "id, name, status, area_code, scheduled_days, shift_label, waste_category, distance_km, duration_minutes, driver_id, vehicle_id, center_lat, center_lng, generated_at, assignment_updated_at, started_at, completed_at, optimization_method, cost_source, used_mapbox_traffic",
-              )
-              .order("created_at", { ascending: false }),
-          ]);
+        const [
+          { data: binsData, error: binsError },
+          { data: driversData, error: driversError },
+          { data: driverProfilesData },
+          { data: routesData, error: routesError },
+        ] = await Promise.all([
+          supabase
+            .from("bins")
+            .select("id, code, location, barangay, area_code, schedule_days, schedule_time_window, collection_status, coordinate_status, latitude, longitude, is_active, status")
+            .order("id", { ascending: true }),
+          supabase.from("drivers").select("id, name, status, auth_user_id, assigned_vehicle_id, last_seen_at").order("name", { ascending: true }),
+          supabase.from("user_profiles").select("id, auth_user_id, full_name, role, status"),
+          supabase
+            .from("routes")
+            .select(
+              "id, name, status, area_code, scheduled_days, shift_label, waste_category, distance_km, duration_minutes, driver_id, vehicle_id, center_lat, center_lng, generated_at, assignment_updated_at, started_at, completed_at, optimization_method, cost_source, used_mapbox_traffic",
+            )
+            .order("created_at", { ascending: false }),
+        ]);
 
         if (binsError) throw binsError;
         if (driversError) throw driversError;
         if (routesError) throw routesError;
 
-        const mappedDrivers: Driver[] = (driversData ?? []).map((driver) => ({
-          id: driver.id,
-          name: driver.name,
-          status: driver.status ?? "offline",
-          auth_user_id: driver.auth_user_id ?? null,
-          assigned_vehicle_id: driver.assigned_vehicle_id ?? null,
-          last_seen_at: driver.last_seen_at ?? null,
-        }));
+        const profileByAuthId = new Map<string, { role: string; status: string; full_name: string }>();
+        (driverProfilesData ?? []).forEach((prof: any) => {
+          if (prof?.auth_user_id) {
+            profileByAuthId.set(String(prof.auth_user_id), {
+              role: String(prof.role ?? ""),
+              status: String(prof.status ?? ""),
+              full_name: String(prof.full_name ?? ""),
+            });
+          }
+        });
+
+        const mappedDrivers: Driver[] = (driversData ?? []).map((driver) => {
+          const linkedProfile = driver.auth_user_id ? profileByAuthId.get(String(driver.auth_user_id)) : undefined;
+          const profileBlocked =
+            linkedProfile &&
+            (linkedProfile.role !== "truck_driver" ||
+              linkedProfile.status === "inactive" ||
+              linkedProfile.status === "suspended");
+          return {
+            id: driver.id,
+            name: linkedProfile?.full_name?.trim() || driver.name,
+            status: profileBlocked ? "inactive" : (driver.status ?? "available"),
+            auth_user_id: driver.auth_user_id ?? null,
+            assigned_vehicle_id: driver.assigned_vehicle_id ?? null,
+            last_seen_at: driver.last_seen_at ?? null,
+          };
+        });
         setDrivers(mappedDrivers);
 
         const mappedBins: KnownBin[] = (binsData ?? []).reduce<KnownBin[]>((acc, bin: any) => {
@@ -630,11 +857,13 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
   useEffect(() => {
     void syncFromSupabase();
     const channel = supabase
-      .channel("dispatcher-sync")
+      .channel(`dispatcher-sync-${Date.now()}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "routes" }, scheduleRealtimeSync)
       .on("postgres_changes", { event: "*", schema: "public", table: "route_stops" }, scheduleRealtimeSync)
       .on("postgres_changes", { event: "*", schema: "public", table: "bins" }, scheduleRealtimeSync)
       .on("postgres_changes", { event: "*", schema: "public", table: "drivers" }, scheduleRealtimeSync)
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_profiles" }, scheduleRealtimeSync)
+      .on("postgres_changes", { event: "*", schema: "public", table: "collection_schedules" }, scheduleRealtimeSync)
       .subscribe();
 
     const presenceChannel = supabase.channel("drivers-presence");
@@ -663,9 +892,19 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
         }
       });
 
+    const handleDriversUpdated = () => scheduleRealtimeSync();
+    if (typeof window !== "undefined") {
+      window.addEventListener("ecoloop:drivers-updated", handleDriversUpdated);
+      window.addEventListener("focus", handleDriversUpdated);
+    }
+
     return () => {
       if (realtimeSyncTimerRef.current) {
         clearTimeout(realtimeSyncTimerRef.current);
+      }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("ecoloop:drivers-updated", handleDriversUpdated);
+        window.removeEventListener("focus", handleDriversUpdated);
       }
       supabase.removeChannel(channel);
       supabase.removeChannel(presenceChannel);
@@ -1120,7 +1359,18 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
           onClick={() => {
             createRequestKeyRef.current = null;
             setOptimizationError(null);
+            const normalizedDay = normalizeScheduleDayFilter(scheduleDayFilter);
+            setCreateModalDayFilter(normalizedDay);
+            setNewRoute((prev) => ({
+              ...prev,
+              scheduledDays: prev.areaCode
+                ? prev.scheduledDays
+                : normalizedDay === "ALL"
+                  ? []
+                  : [normalizedDay],
+            }));
             setShowCreateModal(true);
+            void syncFromSupabase({ silent: true });
           }}
           className="inline-flex min-h-[40px] items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
         >
@@ -1478,7 +1728,7 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
               <h3 className="text-gray-900 font-semibold">Current Routes</h3>
               {!isRoutesExpanded && (
                 <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
-                  {routes.length} saved route{routes.length === 1 ? "" : "s"}
+                  {filteredRoutes.length} of {routes.length} saved route{routes.length === 1 ? "" : "s"}
                 </p>
               )}
             </div>
@@ -1493,6 +1743,34 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
             }`}
           >
             <div className="overflow-hidden">
+              <div className="px-4 sm:px-6 py-3 border-t border-gray-200 bg-gray-50/50 flex flex-wrap items-center justify-between gap-3">
+                <div className="inline-flex flex-wrap rounded-lg border border-gray-200 bg-white p-1">
+                  <button
+                    type="button"
+                    onClick={() => setRouteDayFilter("ALL")}
+                    className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${
+                      routeDayFilter === "ALL" ? "bg-emerald-600 text-white" : "text-gray-600 hover:text-gray-900"
+                    }`}
+                  >
+                    All Days
+                  </button>
+                  {FILTER_DAY_CODES.map((day) => (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => setRouteDayFilter(day)}
+                      className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${
+                        routeDayFilter === day ? "bg-emerald-600 text-white" : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {day}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs text-gray-500">
+                  Showing {filteredRoutes.length} of {routes.length} route{routes.length === 1 ? "" : "s"}
+                </span>
+              </div>
               <div className="overflow-x-auto border-t border-gray-200">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
@@ -1508,16 +1786,26 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {routes.map((route) => (
+                {filteredRoutes.map((route) => {
+                  const routeScheduleDays = extractRouteScheduleDays({
+                    scheduledDays: route.scheduledDays,
+                    name: route.name,
+                  });
+                  return (
                   <tr key={route.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 text-sm text-gray-900">{route.id}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">
                       <div>{route.name}</div>
-                      {(route.areaCode || route.shiftLabel) && (
+                      {(route.areaCode || route.shiftLabel || routeScheduleDays.length > 0) && (
                         <div className="flex flex-wrap items-center gap-1.5 mt-1">
                           {route.areaCode && (
                             <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-700">
                               {route.areaCode}
+                            </span>
+                          )}
+                          {routeScheduleDays.length > 0 && (
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700">
+                              {formatScheduleDaysLabel(routeScheduleDays)}
                             </span>
                           )}
                           {route.shiftLabel && <span className="text-xs text-gray-500">{route.shiftLabel}</span>}
@@ -1572,7 +1860,15 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
+                {filteredRoutes.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-8 text-center text-sm text-gray-500">
+                      No routes scheduled for the selected day filter.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
               </div>
@@ -1610,7 +1906,54 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                 }}
               >
                 <div>
-                  <label htmlFor="create-route-area" className="block text-sm text-gray-600 mb-1">Load SWMO Schedule Area (Optional)</label>
+                  <label htmlFor="create-route-day" className="block text-sm text-gray-600 mb-1">Schedule Day</label>
+                  <div className="inline-flex flex-wrap rounded-lg border border-gray-200 bg-gray-50 p-1 mb-2 w-full">
+                    <button
+                      type="button"
+                      disabled={isCreatingRoute}
+                      onClick={() => handleCreateModalDayChange("ALL")}
+                      className={`px-2 py-1 text-xs rounded-md font-medium transition-colors ${
+                        createModalDayFilter === "ALL" ? "bg-emerald-600 text-white" : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      All Days
+                    </button>
+                    {FILTER_DAY_CODES.map((day) => (
+                      <button
+                        key={day}
+                        type="button"
+                        disabled={isCreatingRoute}
+                        onClick={() => handleCreateModalDayChange(day)}
+                        className={`px-2 py-1 text-xs rounded-md font-medium transition-colors ${
+                          createModalDayFilter === day ? "bg-emerald-600 text-white" : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                  <CustomSelect
+                    id="create-route-day"
+                    value={createModalDayFilter}
+                    disabled={isCreatingRoute}
+                    onChange={handleCreateModalDayChange}
+                    options={[
+                      { value: "ALL", label: "All Days (Any / Flexible schedule)" },
+                      ...FILTER_DAY_CODES.map((day) => ({
+                        value: day,
+                        label: day === todayCode ? `${day} (Today)` : day,
+                      })),
+                    ]}
+                    ariaLabel="Schedule Day"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {createModalAreaSummaries.length} active collection area{createModalAreaSummaries.length === 1 ? "" : "s"} • {createModalMatchingRoutes.length} existing route{createModalMatchingRoutes.length === 1 ? "" : "s"} for {createModalDayFilter === "ALL" ? "All Days" : createModalDayFilter}
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="create-route-area" className="block text-sm text-gray-600 mb-1">
+                    Load SWMO Schedule Area ({createModalAreaSummaries.length} available)
+                  </label>
                   <CustomSelect
                     id="create-route-area"
                     value={newRoute.areaCode}
@@ -1619,52 +1962,25 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                       createRequestKeyRef.current = null;
                       setOptimizationError(null);
                       if (!code) {
-                        setNewRoute((prev) => ({ ...prev, areaCode: "", scheduledDays: [], shiftLabel: "", wasteCategory: "" }));
+                        setNewRoute((prev) => ({
+                          ...prev,
+                          areaCode: "",
+                          scheduledDays: createModalDayFilter === "ALL" ? [] : [createModalDayFilter],
+                          shiftLabel: "",
+                          wasteCategory: "",
+                        }));
                         return;
                       }
-                      applyAreaTemplateToCreateModal(code);
+                      applyAreaTemplateToCreateModal(code, createModalDayFilter);
                     }}
                     options={[
                       { value: "", label: "Custom route (select bins manually)" },
-                      ...scheduleAreaSummaries.map((area) => ({
+                      ...createModalAreaSummaries.map((area) => ({
                         value: area.areaCode,
-                        label: `${area.displayTitle} (${area.matchedBinIds.size} matched bins)`,
+                        label: `${area.displayTitle} (${area.dayMatchedBinIds.length} matched bins)`,
                       })),
                     ]}
                     ariaLabel="Load SWMO Schedule Area"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="create-route-day" className="block text-sm text-gray-600 mb-1">Schedule Day</label>
-                  <CustomSelect
-                    id="create-route-day"
-                    value={newRoute.scheduledDays[0] ?? ""}
-                    disabled={isCreatingRoute}
-                    onChange={(chosenDay) => {
-                      createRequestKeyRef.current = null;
-                      setOptimizationError(null);
-                      setNewRoute((prev) => {
-                        let nextName = prev.name;
-                        if (prev.areaCode && chosenDay) {
-                          if (/\((Mon|Tue|Wed|Thu|Fri|Sat|Sun)\)/.test(nextName)) {
-                            nextName = nextName.replace(/\((Mon|Tue|Wed|Thu|Fri|Sat|Sun)\)/, `(${chosenDay})`);
-                          }
-                        }
-                        return {
-                          ...prev,
-                          name: nextName,
-                          scheduledDays: chosenDay ? [chosenDay] : [],
-                        };
-                      });
-                    }}
-                    options={[
-                      { value: "", label: "Any / Flexible schedule" },
-                      ...FILTER_DAY_CODES.map((day) => ({
-                        value: day,
-                        label: day === todayCode ? `${day} (Today)` : day,
-                      })),
-                    ]}
-                    ariaLabel="Schedule Day"
                   />
                 </div>
                 <div>
@@ -1687,7 +2003,7 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                   <div className="rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2 text-xs text-indigo-900 space-y-0.5">
                     <div className="font-medium">
                       Linked Schedule: {newRoute.areaCode}
-                      {newRoute.scheduledDays.length > 0 ? ` (${newRoute.scheduledDays.join(", ")})` : ""}
+                      {newRoute.scheduledDays.length > 0 ? ` (${formatScheduleDaysLabel(newRoute.scheduledDays)})` : ""}
                     </div>
                     {newRoute.shiftLabel && <div>Shift: {newRoute.shiftLabel}</div>}
                     {newRoute.wasteCategory && <div>Category: {newRoute.wasteCategory}</div>}
@@ -1706,9 +2022,11 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1">Route Stops From Live Bins</label>
+                  <label className="block text-sm text-gray-600 mb-1">
+                    Route Stops From Live Bins ({createModalAvailableBins.length} matching {createModalDayFilter === "ALL" ? "All Days" : createModalDayFilter})
+                  </label>
                   <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2 space-y-2">
-                    {knownBins.map((bin) => (
+                    {createModalAvailableBins.map((bin) => (
                       <label key={bin.id} className="flex items-start gap-2 text-sm text-gray-700">
                         <input
                           type="checkbox"
@@ -1729,7 +2047,9 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
                         </span>
                       </label>
                     ))}
-                    {!isLoading && knownBins.length === 0 && <p className="text-sm text-gray-500">No bin records available.</p>}
+                    {!isLoading && createModalAvailableBins.length === 0 && (
+                      <p className="text-sm text-gray-500">No bins scheduled for the selected day/area.</p>
+                    )}
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
                     Selected stops: {selectedBinIds.length} (sent to Mapbox Directions in the order below)
