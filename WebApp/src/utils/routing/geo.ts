@@ -1,4 +1,5 @@
 import type { Coordinate } from "./types";
+import { formatDistanceDisplay, getRuntimeSystemSettings } from "../systemSettings";
 
 const EARTH_RADIUS_METERS = 6371000;
 const AVG_COLLECTION_SPEED_KMPH = 20;
@@ -23,11 +24,12 @@ export function haversineMeters(from: Coordinate, to: Coordinate): number {
 
 export function estimateDurationMinutes(distanceMeters: number, stopCount: number): number {
   const travelMinutes = (distanceMeters / 1000 / AVG_COLLECTION_SPEED_KMPH) * 60;
-  return Math.max(1, Math.round(travelMinutes + stopCount * STOP_HANDLING_MINUTES));
+  const stopHandlingMinutes = getRuntimeSystemSettings().operationsConfig.stopHandlingMinutes;
+  return Math.max(1, Math.round(travelMinutes + stopCount * stopHandlingMinutes));
 }
 
 export function formatDistanceKm(distanceMeters: number): string {
-  return `${(distanceMeters / 1000).toFixed(1)} km`;
+  return formatDistanceDisplay(distanceMeters);
 }
 
 export function formatDurationMinutes(totalMinutes: number): string {

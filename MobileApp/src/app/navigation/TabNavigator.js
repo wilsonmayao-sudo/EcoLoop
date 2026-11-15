@@ -6,13 +6,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "../../context/ThemeContext";
-import { useNotifications } from "../../context/NotificationContext";
+import { useLanguage } from "../../context/LanguageContext";
 import { TAB_BAR_CONTENT_HEIGHT } from "../../constants/layout";
 import HomeScreen from "../../screens/HomeScreen";
 import MapNavigateScreen from "../../screens/MapNavigateScreen";
 import ReportsScreen from "../../screens/ReportsScreen";
 import ProfileScreen from "../../screens/ProfileScreen";
-import SettingsScreen from "../../screens/SettingsScreen";
 
 const Tab = createBottomTabNavigator();
 
@@ -27,8 +26,6 @@ const TabBarIcon = React.memo(({ route, focused, color, size }) => {
     iconName = focused ? "bar-chart" : "bar-chart-outline";
   } else if (route.name === "Profile") {
     iconName = focused ? "person" : "person-outline";
-  } else if (route.name === "Settings") {
-    iconName = focused ? "settings" : "settings-outline";
   }
 
   return (
@@ -40,10 +37,8 @@ const TabBarIcon = React.memo(({ route, focused, color, size }) => {
 
 export default function TabNavigator({ onLogout }) {
   const { colors, tokens, isDarkMode } = useTheme();
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
-  const { unreadCount, enabled: notificationsEnabled } = useNotifications();
-  const homeTabBadge =
-    notificationsEnabled && unreadCount > 0 ? (unreadCount > 99 ? "99+" : String(unreadCount)) : undefined;
 
   const tabBarBottomPad = Math.max(insets.bottom, Platform.OS === "ios" ? 10 : 8);
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + tabBarBottomPad;
@@ -84,26 +79,12 @@ export default function TabNavigator({ onLogout }) {
         <Tab.Screen
           name="Home"
           component={HomeScreen}
-          options={{
-            tabBarBadge: homeTabBadge,
-            tabBarBadgeStyle: {
-              backgroundColor: colors.badge,
-              color: "#fff",
-              fontSize: 10,
-              fontWeight: "800",
-              minWidth: 18,
-              height: 18,
-              borderRadius: 9,
-            },
-          }}
+          options={{ tabBarLabel: t("tab_home", "Home") }}
         />
-        <Tab.Screen name="Map" component={MapNavigateScreen} options={{ tabBarLabel: "Navigate" }} />
-        <Tab.Screen name="Reports" component={ReportsScreen} />
-        <Tab.Screen name="Profile">
+        <Tab.Screen name="Map" component={MapNavigateScreen} options={{ tabBarLabel: t("tab_navigate", "Navigate") }} />
+        <Tab.Screen name="Reports" component={ReportsScreen} options={{ tabBarLabel: t("tab_reports", "Reports") }} />
+        <Tab.Screen name="Profile" options={{ tabBarLabel: t("tab_profile", "Profile") }}>
           {(props) => <ProfileScreen {...props} onLogout={onLogout} />}
-        </Tab.Screen>
-        <Tab.Screen name="Settings">
-          {(props) => <SettingsScreen {...props} onLogout={onLogout} />}
         </Tab.Screen>
       </Tab.Navigator>
     </>

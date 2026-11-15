@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AvatarContext = createContext();
@@ -24,7 +24,7 @@ export const AvatarProvider = ({ children }) => {
     })();
   }, []);
 
-  const updateAvatar = async (uri) => {
+  const updateAvatar = useCallback(async (uri) => {
     try {
       setAvatarUri(uri);
       if (uri) {
@@ -35,10 +35,12 @@ export const AvatarProvider = ({ children }) => {
     } catch (e) {
       // Silent error handling - avatar change may not persist
     }
-  };
+  }, []);
+
+  const value = useMemo(() => ({ avatarUri, setAvatarUri: updateAvatar }), [avatarUri, updateAvatar]);
 
   return (
-    <AvatarContext.Provider value={{ avatarUri, setAvatarUri: updateAvatar }}>
+    <AvatarContext.Provider value={value}>
       {children}
     </AvatarContext.Provider>
   );

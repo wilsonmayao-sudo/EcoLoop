@@ -4,6 +4,7 @@ import * as Location from "expo-location";
 import NetInfo from "@react-native-community/netinfo";
 import { useAuth } from "./AuthContext";
 import { usePickups } from "./PickupContext";
+import { haversineMeters } from "../utils/geoNav";
 import {
   LIVE_LOCATION_MIN_INTERVAL_MS,
   clearDriverLatestLocation,
@@ -37,6 +38,7 @@ export function LiveLocationProvider({ children }) {
   const lastPublishedLocationRef = useRef(null);
   const lastPublishedStatusKeyRef = useRef("");
   const lastHistoryLocationRef = useRef(null);
+  const lastUiLocationRef = useRef(null);
 
   const activeRoute = useMemo(
     () =>
@@ -53,6 +55,8 @@ export function LiveLocationProvider({ children }) {
   const routeId = activeRoute?.id ?? pendingPickups?.[0]?.routeId ?? null;
   const vehicleId = activeRoute?.vehicle_id ?? driver?.assigned_vehicle_id ?? null;
   const trackingEnabled = Boolean(driver?.id && canTrackDriver(driver?.status));
+  const hasActiveAssignment = Boolean(activeRoute || (pendingPickups && pendingPickups.length > 0));
+  const gpsWatcherEnabled = trackingEnabled && (appState === "active" || hasActiveAssignment);
   const statusKey = `${driver?.id ?? "no-driver"}:${vehicleId ?? "no-vehicle"}:${routeId ?? "no-route"}:${normalizeStatus(driver?.status)}`;
 
   const clearLatestLocation = useCallback(() => {
@@ -65,22 +69,35 @@ export function LiveLocationProvider({ children }) {
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
       setAppState(nextState);
-      if (nextState !== "active") clearLatestLocation();
     });
     return () => subscription.remove();
-  }, [clearLatestLocation]);
+  }, []);
 
   useEffect(() => {
-    if (trackingEnabled && appState === "active") return;
+    if (trackingEnabled) return;
+    lastUiLocationRef.current = null;
     setLocation(null);
     clearLatestLocation();
-  }, [appState, clearLatestLocation, trackingEnabled]);
+  }, [clearLatestLocation, trackingEnabled]);
 
   useEffect(() => {
-    if (!trackingEnabled || appState !== "active") return undefined;
+    if (!gpsWatcherEnabled) return undefined;
 
     let cancelled = false;
     let subscription;
+    const applyUiLocation = (fix) => {
+      const prev = lastUiLocationRef.current;
+      if (prev) {
+        const moved = haversineMeters({ lat: fix.lat, lng: fix.lng }, { lat: prev.lat, lng: prev.lng });
+        const elapsed = (fix.ts ?? Date.now()) - (prev.ts ?? 0);
+        if (moved < 2 && elapsed < LIVE_LOCATION_MIN_INTERVAL_MS) {
+          return;
+        }
+      }
+      lastUiLocationRef.current = fix;
+      setLocation(fix);
+    };
+
     void (async () => {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (cancelled) return;
@@ -91,10 +108,13 @@ export function LiveLocationProvider({ children }) {
       }
 
       setLocationPermission(true);
+      await Location.requestBackgroundPermissionsAsync().catch(() => null);
+      if (cancelled) return;
+
       try {
         const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         const fix = normalizeGpsFix(current);
-        if (!cancelled && fix) setLocation(fix);
+        if (!cancelled && fix) applyUiLocation(fix);
       } catch {
         // The continuous watcher can still provide the first valid fix.
       }
@@ -103,7 +123,7 @@ export function LiveLocationProvider({ children }) {
         { accuracy: Location.Accuracy.High, distanceInterval: 8, timeInterval: LIVE_LOCATION_MIN_INTERVAL_MS },
         (nextLocation) => {
           const fix = normalizeGpsFix(nextLocation);
-          if (!cancelled && fix) setLocation(fix);
+          if (!cancelled && fix) applyUiLocation(fix);
         },
       );
       if (cancelled) subscription.remove();
@@ -113,10 +133,10 @@ export function LiveLocationProvider({ children }) {
       cancelled = true;
       subscription?.remove();
     };
-  }, [appState, clearLatestLocation, trackingEnabled]);
+  }, [clearLatestLocation, gpsWatcherEnabled]);
 
   useEffect(() => {
-    if (!trackingEnabled || appState !== "active" || !driver?.id || !location) return undefined;
+    if (!trackingEnabled || !driver?.id || !location) return undefined;
 
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -146,7 +166,7 @@ export function LiveLocationProvider({ children }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [appState, driver?.id, location, routeId, statusKey, trackingEnabled, vehicleId]);
+  }, [driver?.id, location, routeId, statusKey, trackingEnabled, vehicleId]);
 
   useEffect(() => () => clearLatestLocation(), [clearLatestLocation]);
 

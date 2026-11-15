@@ -14,6 +14,16 @@ export default defineConfig({
   build: {
     target: 'esnext',
     outDir: 'build',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-mapbox': ['mapbox-gl'],
+          'vendor-pdf': ['jspdf', 'jspdf-autotable', 'html2canvas'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-react': ['react', 'react-dom'],
+        },
+      },
+    },
   },
   server: {
     port: 3000,
