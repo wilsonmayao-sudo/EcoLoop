@@ -21,7 +21,6 @@ import {
   fetchAdminUserProfiles,
   formatAccountRoleLabel,
   formatAccountStatusLabel,
-  isPendingAccountStatus,
   suspendOrReactivateAccountByAuthId,
   type AdminUserProfileRow,
 } from "../../utils/userProfiles";
@@ -102,9 +101,9 @@ export default function SecurityAuditTab({
   const [accountSummary, setAccountSummary] = useState<{
     loading: boolean;
     active: number | null;
-    pending: number | null;
+    suspended: number | null;
     error: string | null;
-  }>({ loading: true, active: null, pending: null, error: null });
+  }>({ loading: true, active: null, suspended: null, error: null });
 
   const loadSecurityTelemetry = useCallback(async () => {
     setAuditLoading(true);
@@ -135,14 +134,14 @@ export default function SecurityAuditTab({
       setAccountSummary({
         loading: false,
         active: null,
-        pending: null,
+        suspended: null,
         error: profilesRes.error ?? "Account summary unavailable.",
       });
     } else {
-      const pending = profilesRes.data.filter((u) => isPendingAccountStatus(u.status)).length;
+      const suspended = profilesRes.data.filter((u) => String(u.status).toLowerCase() === "suspended").length;
       const active = profilesRes.data.filter((u) => String(u.status).toLowerCase() === "active").length;
       setAccounts(profilesRes.data);
-      setAccountSummary({ loading: false, active, pending, error: null });
+      setAccountSummary({ loading: false, active, suspended, error: null });
     }
   }, []);
 
@@ -318,11 +317,10 @@ export default function SecurityAuditTab({
               </div>
               <div>
                 <h2 id="heading-onboarding-security" className="text-base font-semibold text-gray-900">
-                  Account Approval &amp; RLS Boundary
+                  Account Access &amp; RLS Boundary
                 </h2>
                 <p className="mt-1 text-sm text-gray-600">
-                  Truck Driver accounts activate immediately on registration, while non-driver staff accounts remain in{" "}
-                  <code className="rounded bg-gray-100 px-1 text-xs">pending_approval</code> until an administrator activates them.
+                  All provisioned staff and registered Truck Driver accounts activate immediately, enforced by database Row Level Security policies.
                 </p>
               </div>
             </div>
@@ -334,10 +332,10 @@ export default function SecurityAuditTab({
                   {accountSummary.loading ? "Checking…" : accountSummary.active ?? "Unavailable"}
                 </dd>
               </div>
-              <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3.5">
-                <dt className="text-xs font-medium text-amber-800">Pending Approval</dt>
-                <dd className="mt-1 text-xl font-bold text-amber-900 tabular-nums">
-                  {accountSummary.loading ? "Checking…" : accountSummary.pending ?? "Unavailable"}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3.5">
+                <dt className="text-xs font-medium text-gray-500">Suspended Accounts</dt>
+                <dd className="mt-1 text-xl font-bold text-gray-900 tabular-nums">
+                  {accountSummary.loading ? "Checking…" : accountSummary.suspended ?? "Unavailable"}
                 </dd>
               </div>
             </dl>

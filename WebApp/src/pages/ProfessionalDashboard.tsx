@@ -9,8 +9,6 @@ import { doesBinMatchScheduleDay, doesScheduleMatchDay, SCHEDULE_DAY_CODES, SCHE
 import { cleanCollectionAreaTitle } from "../utils/areaDisplay";
 import {
   fetchAdminUserProfiles,
-  formatAccountRoleLabel,
-  isPendingAccountStatus,
   type AdminUserProfileRow,
 } from "../utils/userProfiles";
 import { resolveReportImageUrl } from "../utils/reportMedia";
@@ -29,7 +27,7 @@ type WebRole = "admin" | "dispatcher" | "supervisor" | "truck_driver";
 
 interface ProfessionalDashboardProps {
   onNavigate: (page: PageType) => void;
-  onNavigateUsers?: (filter: "total" | "pending" | "active") => void;
+  onNavigateUsers?: (filter: "total" | "active") => void;
   role?: WebRole;
 }
 
@@ -283,13 +281,8 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
     }, new Map<AppRole, number>());
     return Array.from(counts.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [adminUsers]);
-  const pendingUsers = useMemo(
-    () => adminUsers.filter((user) => isPendingAccountStatus(user.status)),
-    [adminUsers],
-  );
   const adminStats = [
     { id: "total-users", title: "Total Users", value: adminUsers.length, icon: Users, color: "emerald", page: "users" as PageType, userFilter: "total" as const },
-    { id: "pending-accounts", title: "Pending Accounts", value: pendingUsers.length, icon: AlertCircle, color: "purple", page: "users" as PageType, userFilter: "pending" as const },
     { id: "active-users", title: "Active Users", value: adminUsers.filter((user) => user.status === "active").length, icon: ShieldCheck, color: "blue", page: "users" as PageType, userFilter: "active" as const },
   ];
   const systemActivity = notifications
@@ -331,7 +324,7 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
           <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{adminUsersError ?? error}</div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
           {adminStats.map((stat) => {
             const colors = getColorClasses(stat.color);
             const Icon = stat.icon;
@@ -357,53 +350,6 @@ export default function ProfessionalDashboard({ onNavigate, onNavigateUsers, rol
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white rounded-xl p-5 sm:p-6 border border-gray-200">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Users className="size-5 text-emerald-600" aria-hidden="true" />
-                    <h2 className="font-semibold text-lg text-gray-900">Pending Approvals ({adminUsersLoading ? "..." : pendingUsers.length})</h2>
-                  </div>
-                  <p className="text-xs text-gray-600 mt-1">
-                    All staff invites, role assignments, approvals, and suspensions are managed in Users &amp; Roles.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => (onNavigateUsers ? onNavigateUsers("pending") : onNavigate("users"))}
-                  className="inline-flex min-h-[38px] items-center justify-center rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-emerald-700 shrink-0"
-                >
-                  Open Users &amp; Roles
-                </button>
-              </div>
-              {adminUsersLoading ? (
-                <div className="h-14 animate-pulse rounded-lg bg-gray-100" />
-              ) : pendingUsers.length === 0 ? (
-                <p className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                  No accounts are currently awaiting approval.
-                </p>
-              ) : (
-                <div className="divide-y divide-gray-100 rounded-lg border border-amber-200/80 bg-amber-50/40">
-                  {pendingUsers.slice(0, 3).map((user) => (
-                    <div key={user.auth_user_id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-xs sm:text-sm">
-                      <div className="min-w-0">
-                        <p className="font-medium text-gray-900 truncate">{user.full_name}</p>
-                        <p className="text-xs text-gray-600 truncate">{user.email} · {formatAccountRoleLabel(user.role)}</p>
-                      </div>
-                      <span className="text-xs text-gray-500 tabular-nums">
-                        {user.created_at ? formatDateOnly(user.created_at) : "Pending"}
-                      </span>
-                    </div>
-                  ))}
-                  {pendingUsers.length > 3 && (
-                    <div className="px-4 py-2 text-xs text-amber-800 font-medium">
-                      +{pendingUsers.length - 3} more awaiting review in Users &amp; Roles
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
             <div className="bg-white rounded-xl p-5 sm:p-6 border border-gray-200">
               <div className="flex items-center gap-2 mb-5">
                 <Database className="size-5 text-emerald-600" aria-hidden="true" />

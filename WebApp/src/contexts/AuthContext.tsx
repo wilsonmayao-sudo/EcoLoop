@@ -3,7 +3,7 @@ import { supabase } from "../services/supabaseClient";
 import { getRuntimeSystemSettings, subscribeRuntimeSettings } from "../utils/systemSettings";
 
 export type AppRole = "admin" | "dispatcher" | "supervisor" | "truck_driver";
-export type AccountStatus = "pending_approval" | "active" | "suspended" | "inactive";
+export type AccountStatus = "active" | "suspended" | "inactive";
 
 export interface UserProfile {
   id?: string;
@@ -37,8 +37,6 @@ function getInactiveAccountMessage(status: AccountStatus): string {
       return "Your account has been suspended by an administrator. Contact an administrator to reactivate your access.";
     case "inactive":
       return "Your account is currently inactive. Contact an administrator for assistance.";
-    case "pending_approval":
-      return "Your account is waiting for admin approval.";
     default:
       return "Your account is not active. Contact an administrator for assistance.";
   }

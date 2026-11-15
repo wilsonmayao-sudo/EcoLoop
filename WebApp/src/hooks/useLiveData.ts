@@ -534,7 +534,6 @@ export function getSetting<T>(settings: SystemSetting[], key: string, fallback: 
 
 const LEGACY_PAGE_ALIASES: Record<string, PageType> = {
   "supervisor-dashboard": "dashboard",
-  "user-approvals": "users",
   "bin-locations": "area-management",
   "overflow-dispatch": "live-monitoring",
   "vehicle-monitoring": "live-monitoring",

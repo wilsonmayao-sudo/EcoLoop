@@ -30,9 +30,6 @@ function getMobileAccountBlockedMessage(status) {
       return "Your account has been suspended by an administrator. Contact an administrator to reactivate your access.";
     case "inactive":
       return "Your account is currently inactive. Contact an administrator for assistance.";
-    case "rejected":
-    case "declined":
-      return "Your account registration was rejected. Please contact the administrator.";
     default:
       return "Account not active. Please contact the administrator.";
   }
@@ -93,7 +90,7 @@ export function AuthProvider({ children }) {
       .maybeSingle();
     if (error) throw error;
 
-    if (!data || (data.role === "truck_driver" && (data.status === "pending_approval" || data.status === "pending"))) {
+    if (!data) {
       try {
         await supabase.rpc("ensure_current_driver_account");
       } catch {

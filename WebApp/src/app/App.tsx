@@ -75,7 +75,7 @@ const PAGE_LABELS: Record<PageType, string> = {
 function AppShell() {
   const [currentPage, setCurrentPage] = useState(null as PageType | null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [usersInitialFilter, setUsersInitialFilter] = useState<"total" | "pending" | "active">("total");
+  const [usersInitialFilter, setUsersInitialFilter] = useState<"total" | "active">("total");
   const { loading, session, profile, authError, signOut } = useAuth();
   const { readablePages, loading: permissionsLoading, error: permissionsError } = useRolePermissions(profile?.role);
   const effectiveReadablePages = React.useMemo(() => {
@@ -130,7 +130,7 @@ function AppShell() {
     setSidebarOpen(false);
   };
 
-  const navigateToUsers = (filter: "total" | "pending" | "active") => {
+  const navigateToUsers = (filter: "total" | "active") => {
     setUsersInitialFilter(filter);
     navigateWithRoleGuard("users");
   };

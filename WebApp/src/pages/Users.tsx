@@ -8,18 +8,16 @@ import { formatDateOnly, formatDateTime, type PageType } from "../hooks/useLiveD
 import { getRuntimeSystemSettings, subscribeRuntimeSettings } from "../utils/systemSettings";
 import {
   accountStatusBadgeClass,
-  approveUserProfileByAuthId,
   createStaffAccountByAdmin,
   fetchAdminUserProfiles,
   formatAccountRoleLabel,
   formatAccountStatusLabel,
-  isPendingAccountStatus,
   updateUserProfileRoleByAuthId,
   updateUserProfileStatusByAuthId,
   type AdminUserProfileRow,
 } from "../utils/userProfiles";
 
-type UserFilter = "total" | "pending" | "active";
+type UserFilter = "total" | "active";
 
 interface UsersProps {
   onNavigate?: (page: PageType) => void;
@@ -111,22 +109,6 @@ export default function Users({ onNavigate, initialFilter = "total", role = "adm
     };
   }, [isAdmin, load]);
 
-  const handleApprove = async (authUserId: string) => {
-    if (!isAdmin) return;
-    setBusyId(authUserId);
-    setError(null);
-    setSuccessMessage(null);
-    try {
-      await approveUserProfileByAuthId(authUserId);
-      setSuccessMessage("Account approved and activated.");
-      await load(false);
-    } catch (approveErr: any) {
-      setError(approveErr?.message ?? "Unable to approve account.");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   const handleStatusChange = async (authUserId: string, nextStatus: AccountStatus) => {
     if (!isAdmin) return;
     setBusyId(authUserId);
@@ -196,7 +178,6 @@ export default function Users({ onNavigate, initialFilter = "total", role = "adm
     const query = searchQuery.trim().toLowerCase();
     return rows.filter((row) => {
       if (filter === "active" && row.status !== "active") return false;
-      if (filter === "pending" && !isPendingAccountStatus(row.status)) return false;
       if (!query) return true;
       return (
         row.full_name.toLowerCase().includes(query) ||
@@ -206,14 +187,13 @@ export default function Users({ onNavigate, initialFilter = "total", role = "adm
     });
   }, [filter, rows, searchQuery]);
 
-  const pendingCount = useMemo(() => rows.filter((row) => isPendingAccountStatus(row.status)).length, [rows]);
   const activeCount = useMemo(() => rows.filter((row) => row.status === "active").length, [rows]);
 
   return (
     <div className="space-y-6 w-full max-w-7xl mx-auto">
       <PageHeader
         title="Users"
-        subtitle="Review all registered web and mobile accounts, roles, and approval status."
+        subtitle="Review all registered web and mobile accounts, roles, and account status."
         icon={<UsersIcon className="size-5" aria-hidden="true" />}
         onNavigate={onNavigate as any}
         showDate={false}
@@ -263,15 +243,6 @@ export default function Users({ onNavigate, initialFilter = "total", role = "adm
                 }`}
               >
                 Total ({rows.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilter("pending")}
-                className={`min-h-[34px] px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
-                  filter === "pending" ? "bg-white text-amber-800 shadow-xs font-semibold" : "text-gray-700 hover:bg-white"
-                }`}
-              >
-                Pending ({pendingCount})
               </button>
               <button
                 type="button"
@@ -327,10 +298,9 @@ export default function Users({ onNavigate, initialFilter = "total", role = "adm
                 </tr>
               ) : (
                 filteredRows.map((user) => {
-                  const isPending = isPendingAccountStatus(user.status);
                   const isSuspended = String(user.status ?? "").toLowerCase() === "suspended";
                   return (
-                    <tr key={user.auth_user_id} className={isPending ? "bg-amber-50/40 hover:bg-amber-50/70 transition-colors" : "hover:bg-gray-50/60 transition-colors"}>
+                    <tr key={user.auth_user_id} className="hover:bg-gray-50/60 transition-colors">
                       <td className="px-5 py-3.5 font-medium text-gray-900">{user.full_name}</td>
                       <td className="px-5 py-3.5 text-gray-700">{user.email}</td>
                       <td className="px-5 py-3.5 text-gray-700 min-w-[165px]">
@@ -357,28 +327,7 @@ export default function Users({ onNavigate, initialFilter = "total", role = "adm
                       </td>
                       <td className="px-5 py-3.5 text-right">
                         <div className="inline-flex items-center justify-end gap-2">
-                          {isPending ? (
-                            <>
-                              <button
-                                type="button"
-                                disabled={busyId === user.auth_user_id}
-                                onClick={() => void handleApprove(user.auth_user_id)}
-                                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:opacity-50"
-                              >
-                                <UserCheck className="size-3.5" aria-hidden="true" />
-                                {busyId === user.auth_user_id ? "Saving..." : "Approve"}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busyId === user.auth_user_id}
-                                onClick={() => void handleStatusChange(user.auth_user_id, "suspended")}
-                                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 disabled:opacity-50"
-                              >
-                                <UserX className="size-3.5" aria-hidden="true" />
-                                Reject
-                              </button>
-                            </>
-                          ) : isSuspended ? (
+                          {isSuspended ? (
                             <button
                               type="button"
                               disabled={busyId === user.auth_user_id}

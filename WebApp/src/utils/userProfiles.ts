@@ -11,14 +11,8 @@ export interface AdminUserProfileRow {
   created_at?: string | null;
 }
 
-export function isPendingAccountStatus(status?: string | null): boolean {
-  const normalized = String(status ?? "").trim().toLowerCase();
-  return normalized === "pending_approval" || normalized === "pending";
-}
-
 export function formatAccountStatusLabel(status?: string | null): string {
   const normalized = String(status ?? "").trim().toLowerCase();
-  if (normalized === "pending_approval" || normalized === "pending") return "Pending Approval";
   if (normalized === "active") return "Active";
   if (normalized === "suspended") return "Suspended";
   if (normalized === "inactive") return "Inactive";
@@ -27,9 +21,6 @@ export function formatAccountStatusLabel(status?: string | null): string {
 
 export function accountStatusBadgeClass(status?: string | null): string {
   const normalized = String(status ?? "").trim().toLowerCase();
-  if (normalized === "pending_approval" || normalized === "pending") {
-    return "bg-amber-100 text-amber-800 border border-amber-200";
-  }
   if (normalized === "active") {
     return "bg-emerald-100 text-emerald-800 border border-emerald-200";
   }
@@ -48,17 +39,12 @@ export function formatAccountRoleLabel(role?: string | null): string {
   return role ? String(role).replace(/_/g, " ") : "Unknown";
 }
 
-export async function fetchAdminUserProfiles(options?: { pendingOnly?: boolean }) {
-  let query = supabase
+export async function fetchAdminUserProfiles() {
+  const { data, error } = await supabase
     .from("user_profiles")
     .select("auth_user_id, full_name, email, role, status, created_at")
     .order("created_at", { ascending: false });
 
-  if (options?.pendingOnly) {
-    query = query.eq("status", "pending_approval");
-  }
-
-  const { data, error } = await query;
   if (error) throw error;
   return (data as AdminUserProfileRow[]) ?? [];
 }
@@ -114,26 +100,6 @@ async function ensureDriverRecordForProfile(params: {
       .eq("id", existingDriver.id);
     if (updateError) throw updateError;
   }
-}
-
-export async function approveUserProfileByAuthId(authUserId: string) {
-  const { data, error } = await supabase
-    .from("user_profiles")
-    .update({ status: "active", approved_at: new Date().toISOString() })
-    .eq("auth_user_id", authUserId)
-    .select("id, full_name, role, phone, phone_number")
-    .maybeSingle();
-  if (error) throw error;
-
-  if (data?.role === "truck_driver") {
-    await ensureDriverRecordForProfile({
-      authUserId,
-      profileId: data.id,
-      fullName: data.full_name,
-      phoneNumber: data.phone_number ?? data.phone ?? null,
-    });
-  }
-  notifyDriversUpdated();
 }
 
 export async function suspendOrReactivateAccountByAuthId(authUserId: string, suspend: boolean) {
@@ -197,9 +163,6 @@ export async function updateUserProfileStatusByAuthId(authUserId: string, status
   }
 
   const payload: Record<string, unknown> = { status };
-  if (status === "active") {
-    payload.approved_at = new Date().toISOString();
-  }
   const { data, error } = await supabase
     .from("user_profiles")
     .update(payload)
@@ -220,14 +183,9 @@ export async function updateUserProfileStatusByAuthId(authUserId: string, status
 }
 
 export async function updateUserProfileRoleByAuthId(authUserId: string, role: AppRole, fullName?: string) {
-  const updatePayload: Record<string, unknown> = { role };
-  if (role === "truck_driver") {
-    updatePayload.status = "active";
-    updatePayload.approved_at = new Date().toISOString();
-  }
   const { data, error } = await supabase
     .from("user_profiles")
-    .update(updatePayload)
+    .update({ role })
     .eq("auth_user_id", authUserId)
     .select("id, full_name, phone, phone_number")
     .maybeSingle();
@@ -288,7 +246,6 @@ export async function createStaffAccountByAdmin(params: {
     throw new Error("Account creation did not return a user ID.");
   }
 
-  const nowIso = new Date().toISOString();
   const { data: profileRow, error: profileError } = await supabase
     .from("user_profiles")
     .upsert(
@@ -300,7 +257,6 @@ export async function createStaffAccountByAdmin(params: {
         status: "active",
         phone: trimmedPhone,
         phone_number: trimmedPhone,
-        approved_at: nowIso,
       },
       { onConflict: "auth_user_id" },
     )
