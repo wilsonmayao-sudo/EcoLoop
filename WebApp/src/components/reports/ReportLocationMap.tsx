@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { ExternalLink } from "lucide-react";
 import { parseReportCoordinate } from "../../utils/reportMedia";
 

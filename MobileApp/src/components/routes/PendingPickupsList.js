@@ -5,6 +5,8 @@ import TagChip from "../ui/TagChip";
 import AppButton from "../ui/AppButton";
 import SurfaceCard from "../ui/SurfaceCard";
 import { useTheme } from "../../context/ThemeContext";
+import { useLanguage } from "../../context/LanguageContext";
+import { formatAreaCodeTitle } from "../../utils/areaDisplay";
 
 /**
  * Expandable list of assigned stops with "mark completed" actions.
@@ -12,6 +14,7 @@ import { useTheme } from "../../context/ThemeContext";
  */
 export default function PendingPickupsList({ pendingPickups, colors, onCompletePickup, canComplete = true }) {
   const { tokens } = useTheme();
+  const { t } = useLanguage();
   const [expandedIndex, setExpandedIndex] = useState(null);
 
   useEffect(() => {
@@ -26,9 +29,14 @@ export default function PendingPickupsList({ pendingPickups, colors, onCompleteP
           <View style={[styles.emptyIconWrap, { backgroundColor: colors.surface }]}>
             <Ionicons name="map-outline" size={32} color={colors.primary} />
           </View>
-          <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>No assigned stops</Text>
+          <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>
+            {t("no_assigned_stops", "No assigned stops")}
+          </Text>
           <Text style={[styles.emptyStateSubtitle, { color: colors.textSecondary }]}>
-            When dispatch assigns deliveries in the web dashboard, they appear here and sync automatically.
+            {t(
+              "no_assigned_stops_hint",
+              "When dispatch assigns deliveries in the web dashboard, they appear here and sync automatically.",
+            )}
           </Text>
         </View>
       </SurfaceCard>
@@ -57,7 +65,12 @@ export default function PendingPickupsList({ pendingPickups, colors, onCompleteP
             canComplete={canComplete}
             address={pickup.address}
             street={pickup.street}
+            barangay={pickup.barangay}
+            areaCode={pickup.areaCode}
+            scheduleTimeWindow={pickup.scheduleTimeWindow}
+            wasteCategory={pickup.wasteCategory}
             colors={colors}
+            t={t}
           />
         </View>
       ))}
@@ -66,14 +79,39 @@ export default function PendingPickupsList({ pendingPickups, colors, onCompleteP
 }
 
 const PendingCard = React.memo(
-  ({ isNext, status, deliveryStatus, due, tagColor, hasDelay, expanded, onToggle, onComplete, canComplete, address, street, colors }) => {
+  ({
+    isNext,
+    status,
+    deliveryStatus,
+    due,
+    tagColor,
+    hasDelay,
+    expanded,
+    onToggle,
+    onComplete,
+    canComplete,
+    address,
+    street,
+    barangay,
+    areaCode,
+    scheduleTimeWindow,
+    wasteCategory,
+    colors,
+    t,
+  }) => {
     const isCompleted = deliveryStatus === "completed";
     return (
       <SurfaceCard
         padding={0}
         style={isNext && !isCompleted ? { borderWidth: 1.5, borderColor: colors.mapNext + "99" } : undefined}
       >
-        <TouchableOpacity onPress={onToggle} activeOpacity={0.82}>
+        <TouchableOpacity
+          onPress={onToggle}
+          activeOpacity={0.82}
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          accessibilityLabel={`${status ?? street ?? "Collection point"}${isNext && !isCompleted ? ", Next stop" : ""}`}
+        >
           <View style={styles.pendingCardHeader}>
             <View style={styles.pendingCardContent}>
               <View style={styles.pendingCardTitleRow}>
@@ -83,14 +121,16 @@ const PendingCard = React.memo(
               </View>
               <View style={styles.pendingCardTags}>
                 {isCompleted ? (
-                  <TagChip label="Completed" color={colors.success} />
+                  <TagChip label={t("status_completed", "Completed")} color={colors.success} />
                 ) : isNext ? (
-                  <TagChip label="Next" backgroundColor={colors.chipNextBg} textColor={colors.chipNextText} />
+                  <TagChip label={t("tag_next", "Next")} backgroundColor={colors.chipNextBg} textColor={colors.chipNextText} />
                 ) : null}
+                {areaCode ? <TagChip label={formatAreaCodeTitle(areaCode)} color={colors.info || colors.primary} /> : null}
+                {barangay ? <TagChip label={barangay} color={colors.primary} /> : null}
                 <TagChip label={due} color={tagColor} />
                 {hasDelay ? (
                   <>
-                    <TagChip label="Delays" color={colors.danger} />
+                    <TagChip label={t("tag_delays", "Delays")} color={colors.danger} />
                   </>
                 ) : null}
               </View>
@@ -104,24 +144,48 @@ const PendingCard = React.memo(
           <View style={styles.expandedContent}>
             <View style={[styles.expandedDivider, { backgroundColor: colors.borderSubtle }]} />
             <View style={[styles.locationInfo, { backgroundColor: colors.surface }]}>
-              <Text style={[styles.expandedTitle, { color: colors.textPrimary }]}>Location</Text>
+              <Text style={[styles.expandedTitle, { color: colors.textPrimary }]}>
+                {t("location_schedule", "Location & Schedule")}
+              </Text>
               <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Street</Text>
+                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                  {t("collection_site", "Collection Site")}
+                </Text>
                 <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{street}</Text>
               </View>
               <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Address</Text>
+                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                  {t("address_barangay", "Address / Barangay")}
+                </Text>
                 <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{address}</Text>
               </View>
+              {scheduleTimeWindow ? (
+                <View style={styles.detailRow}>
+                  <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                    {t("swmo_schedule_window", "SWMO Schedule Window")}
+                  </Text>
+                  <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{scheduleTimeWindow}</Text>
+                </View>
+              ) : null}
+              {wasteCategory ? (
+                <View style={styles.detailRow}>
+                  <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                    {t("waste_category", "Waste Category")}
+                  </Text>
+                  <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{wasteCategory}</Text>
+                </View>
+              ) : null}
             </View>
             {isCompleted ? (
               <View style={[styles.completedPill, { backgroundColor: colors.success + "18" }]}>
                 <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-                <Text style={[styles.completedPillText, { color: colors.success }]}>Completed</Text>
+                <Text style={[styles.completedPillText, { color: colors.success }]}>
+                  {t("status_completed", "Completed")}
+                </Text>
               </View>
             ) : (
               <AppButton
-                title={canComplete ? "Complete" : "Accept route assignment"}
+                title={canComplete ? t("complete_btn", "Complete") : t("btn_accept_assignment", "Accept Route Assignment")}
                 icon="checkmark-circle-outline"
                 onPress={onComplete}
                 disabled={!canComplete}
@@ -146,9 +210,9 @@ const styles = StyleSheet.create({
   pendingCardTags: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
   pendingCardTitleRow: { marginBottom: 10, minWidth: 0 },
   chevronWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 1,

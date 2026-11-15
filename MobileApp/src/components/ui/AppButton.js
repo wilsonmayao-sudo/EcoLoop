@@ -13,6 +13,7 @@ export default function AppButton({
   disabled = false,
   loading = false,
   icon,
+  iconSize = 20,
   iconPosition = "left",
   fullWidth = true,
   style,
@@ -67,13 +68,13 @@ export default function AppButton({
       ) : (
         <View style={styles.inner}>
           {icon && iconPosition === "left" ? (
-            <Ionicons name={icon} size={20} color={iconColor} style={styles.iconLeft} />
+            <Ionicons name={icon} size={iconSize} color={iconColor} style={styles.iconLeft} />
           ) : null}
           <Text style={[styles.label, { color: labelColor }, textStyle]} numberOfLines={2}>
             {title}
           </Text>
           {icon && iconPosition === "right" ? (
-            <Ionicons name={icon} size={20} color={iconColor} style={styles.iconRight} />
+            <Ionicons name={icon} size={iconSize} color={iconColor} style={styles.iconRight} />
           ) : null}
         </View>
       )}
@@ -96,13 +97,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 9,
+    gap: 8,
+    maxWidth: "100%",
   },
   label: {
     fontSize: 15,
     fontWeight: "700",
     letterSpacing: -0.1,
     textAlign: "center",
+    flexShrink: 1,
   },
   iconLeft: { marginRight: 0 },
   iconRight: { marginLeft: 0 },

@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import { AppState } from "react-native";
 import { createClient } from "@supabase/supabase-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -17,5 +18,18 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     detectSessionInUrl: false,
   },
+});
+
+// Keep Supabase token auto-refresh tied to foreground state so background timers
+// do not race and invalidate rotating refresh tokens on mobile.
+if (AppState.currentState === "active") {
+  supabase.auth.startAutoRefresh();
+}
+AppState.addEventListener("change", (nextState) => {
+  if (nextState === "active") {
+    supabase.auth.startAutoRefresh();
+  } else {
+    supabase.auth.stopAutoRefresh();
+  }
 });
 

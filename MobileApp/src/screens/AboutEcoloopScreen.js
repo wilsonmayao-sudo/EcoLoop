@@ -24,7 +24,7 @@ const translations = {
       'EcoLoop aims to streamline waste collection operations, reduce environmental impact, and improve day-to-day service for residents and crews.',
     appInfo: 'App Information',
     version: 'Version',
-    versionNumber: '1.2.0',
+    versionNumber: '1.0.0',
     year: 'Year',
     yearValue: '2026',
     copyright: '© 2026 EcoLoop. All rights reserved.',
@@ -47,7 +47,7 @@ const translations = {
       'Layunin ng EcoLoop na gawing mas maayos ang waste collection operations, bawasan ang environmental impact, at pagbutihin ang serbisyo araw-araw para sa mga residente at crew.',
     appInfo: 'Impormasyon ng App',
     version: 'Bersyon',
-    versionNumber: '1.2.0',
+    versionNumber: '1.0.0',
     year: 'Taon',
     yearValue: '2026',
     copyright: '© 2026 EcoLoop. Lahat ng karapatan ay nakalaan.',
@@ -62,7 +62,7 @@ export default function AboutEcoloopScreen({ navigation }) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top']}>
-      <Header title={t.title} />
+      <Header title={t.title} onBack={() => navigation.goBack()} />
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* Introduction Section */}
         <View style={[styles.card, { backgroundColor: colors.card }]}>
@@ -176,13 +176,15 @@ const styles = StyleSheet.create({
     height: 12,
   },
   card: {
-    borderRadius: 14,
+    borderRadius: 18,
     padding: 16,
-    shadowColor: '#000',
+    borderWidth: 1,
+    borderColor: 'rgba(15, 23, 42, 0.08)',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   infoRow: {
     flexDirection: 'row',
