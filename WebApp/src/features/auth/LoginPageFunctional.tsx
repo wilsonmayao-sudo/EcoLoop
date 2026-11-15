@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Mail, Lock, ArrowLeft, Eye, EyeOff, Recycle, Leaf, Shield } from "lucide-react";
 import AuthBrandLogos from "./AuthBrandLogos";
 import { supabase } from "../../services/supabaseClient";
@@ -9,16 +9,21 @@ interface LoginPageFunctionalProps {
   onLogin: (params: { email: string; password: string; role?: WebLoginRole }) => Promise<void>;
   onRegister?: () => void;
   onBack: () => void;
+  initialError?: string | null;
 }
 
-export default function LoginPageFunctional({ onLogin, onBack }: LoginPageFunctionalProps) {
+export default function LoginPageFunctional({ onLogin, onBack, initialError }: LoginPageFunctionalProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
   const [resetStatus, setResetStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    setError(initialError ?? null);
+  }, [initialError]);
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const passwordValid = password.length >= 8;
 

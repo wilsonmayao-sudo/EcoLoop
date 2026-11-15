@@ -1,8 +1,8 @@
-import React, { Suspense, lazy, type ReactNode, useState } from "react";
+import React, { Suspense, lazy, type ReactNode, useEffect, useState } from "react";
 import { Menu } from "lucide-react";
 import svgPaths from "../assets/icons/sidebarLogo";
 import Sidebar from "../components/layout/Sidebar";
-import WelcomeScreen from "../features/auth/WelcomeScreen";
+import WelcomeScreen, { markWelcomeSeen } from "../features/auth/WelcomeScreen";
 import { AuthProvider, useAuth, type AppRole } from "../contexts/AuthContext";
 import { LiveDataProvider, useRolePermissions, type PageType } from "../hooks/useLiveData";
 import { supabaseConfigError } from "../services/supabaseClient";
@@ -104,6 +104,12 @@ function AppShell() {
   const defaultPage = getDefaultPage(effectiveReadablePages);
   const activePage =
     currentPage && effectiveReadablePages.includes(currentPage) ? currentPage : defaultPage;
+
+  useEffect(() => {
+    if (session && profile) {
+      markWelcomeSeen();
+    }
+  }, [session, profile]);
 
   if (loading || (profile && permissionsLoading)) {
     return <div className="w-full h-screen flex items-center justify-center bg-gray-50 text-gray-700">Loading…</div>;

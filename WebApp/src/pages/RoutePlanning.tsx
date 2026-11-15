@@ -7,7 +7,6 @@ import { formatDistanceKm, formatDurationMinutes } from "../utils/routing/geo";
 import TrafficRouteMapPreview, { type RoutePreviewStop } from "../components/maps/TrafficRouteMapPreview";
 import {
   fetchStreetRouteWithFeedback,
-  isMapboxDirectionsConfigured,
   type LngLat,
 } from "../services/streetRouteService";
 import {
@@ -1306,11 +1305,6 @@ export default function RoutePlanning({ onNavigate }: RoutePlanningProps) {
       <PageHeader
         title="Route Planning"
         subtitle="City of Naga Waste Collection Management"
-        description={
-          isMapboxDirectionsConfigured()
-            ? "Routes use Mapbox Directions API for road-following paths, distance, and travel time."
-            : "Routes use road-following directions for distance and travel duration."
-        }
         icon={<MapPin className="size-5" aria-hidden="true" />}
         onNavigate={onNavigate as any}
       />

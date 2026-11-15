@@ -180,11 +180,11 @@ export const MAPBOX_STYLE_OPTIONS: Array<{ value: MapboxStyleId; label: string }
 ];
 
 export const IDLE_TIMEOUT_OPTIONS: Array<{ value: IdleTimeoutOption; label: string }> = [
-  { value: 0, label: "Disabled (Stay signed in until manual sign out)" },
+  { value: 0, label: "Disabled" },
   { value: 15, label: "15 minutes of inactivity" },
   { value: 30, label: "30 minutes of inactivity" },
-  { value: 60, label: "60 minutes (1 hour) of inactivity" },
-  { value: 120, label: "120 minutes (2 hours) of inactivity" },
+  { value: 60, label: "60 minutes of inactivity" },
+  { value: 120, label: "120 minutes of inactivity" },
 ];
 
 function asRecord(raw: unknown): Record<string, unknown> {

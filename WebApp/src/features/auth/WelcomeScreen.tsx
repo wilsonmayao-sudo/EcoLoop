@@ -4,13 +4,41 @@ import svgPaths from "../../assets/icons/ecoloopLogo";
 import LoginPageFunctional from "./LoginPageFunctional";
 import { useAuth } from "../../contexts/AuthContext";
 
+const WELCOME_SEEN_STORAGE_KEY = "ecoloop_welcome_seen";
+
+function hasSeenWelcome(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(WELCOME_SEEN_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markWelcomeSeen(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(WELCOME_SEEN_STORAGE_KEY, "1");
+  } catch {
+    // Ignore storage quota or privacy mode errors.
+  }
+}
+
 interface WelcomeScreenProps {
   initialError?: string | null;
 }
 
 export default function WelcomeScreen({ initialError }: WelcomeScreenProps) {
-  const [screen, setScreen] = useState<"welcome" | "login">("welcome");
   const { authError, signIn } = useAuth();
+  const effectiveError = initialError || authError;
+  const [screen, setScreen] = useState<"welcome" | "login">(() =>
+    hasSeenWelcome() || Boolean(effectiveError) ? "login" : "welcome",
+  );
+
+  const handleContinueToLogin = () => {
+    markWelcomeSeen();
+    setScreen("login");
+  };
 
   if (screen === "welcome") {
     return (
@@ -64,7 +92,7 @@ export default function WelcomeScreen({ initialError }: WelcomeScreenProps) {
             )}
             <button
               type="button"
-              onClick={() => setScreen("login")}
+              onClick={handleContinueToLogin}
               className="min-h-[48px] w-full rounded-xl bg-white px-5 py-3 text-base font-semibold text-emerald-800 shadow-md transition-colors hover:bg-emerald-50 active:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-emerald-700"
             >
               Sign In to Staff Portal
@@ -90,6 +118,7 @@ export default function WelcomeScreen({ initialError }: WelcomeScreenProps) {
     <LoginPageFunctional
       onLogin={signIn}
       onBack={() => setScreen("welcome")}
+      initialError={effectiveError}
     />
   );
 }
