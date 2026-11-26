@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, AppState } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRoute, useFocusEffect } from "@react-navigation/native";
+import { useRoute, useFocusEffect, useNavigation } from "@react-navigation/native";
 import AppButton from "../components/ui/AppButton";
 import NetInfo from "@react-native-community/netinfo";
 import { Ionicons } from "@expo/vector-icons";
@@ -29,10 +29,9 @@ import {
   buildStraightLineGuidance,
 } from "../utils/navigationRoute";
 import {
-  getLeafletMapHtml,
   getMapboxNavigationHtml,
-  buildLeafletLayersScript,
   buildMapboxLayersScript,
+  resolveMobileMapboxToken,
 } from "../utils/mapboxWebMap";
 
 const INITIAL_ZOOM = 13;
@@ -40,15 +39,6 @@ const OFF_ROUTE_THRESHOLD_METERS = 65;
 const OFF_ROUTE_MIN_INTERVAL_MS = 12_000;
 const COARSE_REFRESH_METERS = 300;
 const COARSE_REFRESH_INTERVAL_MS = 30_000;
-
-function pickNonEmptyString(...candidates) {
-  for (const c of candidates) {
-    if (typeof c !== "string") continue;
-    const t = c.trim();
-    if (t.length > 0) return t;
-  }
-  return "";
-}
 
 function remainingRoadDistanceMeters(origin, polylineLatLng, fallbackTarget) {
   if (!origin || !Number.isFinite(origin.lat) || !Number.isFinite(origin.lng)) return null;
@@ -80,6 +70,7 @@ function remainingRoadDistanceMeters(origin, polylineLatLng, fallbackTarget) {
 
 export default function MapNavigateScreen() {
   const navRoute = useRoute();
+  const navigation = useNavigation();
   const { colors, tokens } = useTheme();
   const { t } = useLanguage();
   const {
@@ -88,6 +79,8 @@ export default function MapNavigateScreen() {
     routeAssignedPickups,
     routePendingPickups,
     isOverflowRouteActive,
+    incomingOverflowEvent,
+    pendingOverflowEvents,
     isUnloadingAtLandfill,
     startLandfillUnload,
     completeLandfillUnload,
@@ -96,6 +89,7 @@ export default function MapNavigateScreen() {
     reloadPickups,
     isLoading: pickupsLoading,
   } = usePickups();
+  const pendingAssistanceEvent = incomingOverflowEvent ?? pendingOverflowEvents?.[0] ?? null;
   const { location: userLocation, locationPermission } = useLiveLocation();
   const webViewRef = useRef(null);
   const insets = useSafeAreaInsets();
@@ -116,9 +110,8 @@ export default function MapNavigateScreen() {
     wasUnloadingRef.current = Boolean(isUnloadingAtLandfill);
   }, [isUnloadingAtLandfill]);
 
-  const extra = Constants?.expoConfig?.extra ?? Constants?.manifest?.extra ?? {};
-  const mapboxToken = pickNonEmptyString(
-    extra.mapboxAccessToken,
+  const mapboxToken = resolveMobileMapboxToken(
+    Constants,
     process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN,
   );
 
@@ -129,7 +122,9 @@ export default function MapNavigateScreen() {
     source: "",
   });
   const [fetchError, setFetchError] = useState("");
+  const [mapNotice, setMapNotice] = useState("");
   const [mapReady, setMapReady] = useState(false);
+  const [webViewRecoveryKey, setWebViewRecoveryKey] = useState(0);
   const [routeLineLatLng, setRouteLineLatLng] = useState([]);
   const [geometryLoading, setGeometryLoading] = useState(false);
   const [guidanceSteps, setGuidanceSteps] = useState([]);
@@ -186,7 +181,7 @@ export default function MapNavigateScreen() {
 
   const mapUsesMapbox = Boolean(mapboxToken && String(mapboxToken).trim());
   const mapHTML = useMemo(
-    () => (mapUsesMapbox ? getMapboxNavigationHtml(mapboxToken) : getLeafletMapHtml()),
+    () => (mapUsesMapbox ? getMapboxNavigationHtml(mapboxToken) : ""),
     [mapUsesMapbox, mapboxToken],
   );
 
@@ -289,6 +284,9 @@ export default function MapNavigateScreen() {
     prevConnectedRef.current = isConnected;
     if (wasOffline && isConnected) {
       void reloadPickups?.().catch(() => {});
+      if (mapUsesMapbox && webViewRef.current) {
+        webViewRef.current.injectJavaScript("try{window.__ecoloopRetryMap&&window.__ecoloopRetryMap();}catch(e){}true;");
+      }
       if (activeTarget && !routeMeta.source.startsWith("mapbox")) {
         setFetchRequest((curr) => ({
           destKey: activeDestKey,
@@ -533,7 +531,7 @@ export default function MapNavigateScreen() {
       landfillJson: JSON.stringify(SWMO_LANDFILL),
     };
 
-    const script = mapUsesMapbox ? buildMapboxLayersScript(layerArgs) : buildLeafletLayersScript(layerArgs);
+    const script = buildMapboxLayersScript(layerArgs);
     webViewRef.current.injectJavaScript(script);
   }, [
     mapReady,
@@ -544,7 +542,6 @@ export default function MapNavigateScreen() {
     userLocation,
     routeOrigin,
     followTruck,
-    mapUsesMapbox,
   ]);
 
   useEffect(() => {
@@ -553,35 +550,48 @@ export default function MapNavigateScreen() {
   }, [pushMapLayers]);
 
   const handleWebViewLoad = useCallback(() => {
-    if (!mapUsesMapbox) setMapReady(true);
-  }, [mapUsesMapbox]);
+    // Mapbox signals readiness via onWebViewMessage ("mapbox-ready")
+  }, []);
 
   const onWebViewMessage = useCallback((event) => {
     const data = event?.nativeEvent?.data;
-    if (data === "mapbox-ready") {
+    if (data === "mapbox-ready" || data === "mapbox-recovered") {
       setFetchError("");
+      setMapNotice("");
       setMapReady(true);
       return;
     }
+    if (typeof data === "string" && data.startsWith("mapbox-transient-error:")) {
+      const msg = data.replace(/^mapbox-transient-error:/, "").trim();
+      setMapNotice(msg || "Map tiles delayed — retrying automatically.");
+      return;
+    }
+    if (typeof data === "string" && data.startsWith("mapbox-auth-error:")) {
+      const msg = data.replace(/^mapbox-auth-error:/, "").trim();
+      setFetchError(msg || "Mapbox token rejected.");
+      return;
+    }
     if (typeof data === "string" && data.startsWith("mapbox-error:")) {
-      setFetchError(data.replace(/^mapbox-error:/, "").trim() || "The map could not load. Try reopening this screen.");
+      const msg = data.replace(/^mapbox-error:/, "").trim();
+      if (!/\b(abort|aborted|cancel|canceled|cancelled)\b/i.test(msg)) {
+        setMapNotice(msg || "The map could not load. Tap to retry.");
+      }
     }
   }, []);
 
   const handleRecenter = useCallback(() => {
     setFollowTruck(false);
-    if (!webViewRef.current) return;
+    if (!webViewRef.current || !mapUsesMapbox) return;
     const focus = userLocation?.lat != null ? userLocation : activeTarget ?? SWMO_HIDEOUT;
-    if (mapUsesMapbox) {
-      webViewRef.current.injectJavaScript(
-        `try{window.map&&window.map.easeTo({center:[${focus.lng},${focus.lat}],zoom:15,duration:400});}catch(e){}true;`,
-      );
-    } else {
-      webViewRef.current.injectJavaScript(`map.setView([${focus.lat},${focus.lng}],15); true;`);
-    }
+    webViewRef.current.injectJavaScript(
+      `try{window.map&&window.map.easeTo({center:[${focus.lng},${focus.lat}],zoom:15,duration:400});}catch(e){}true;`,
+    );
   }, [userLocation, activeTarget, mapUsesMapbox]);
 
   const handleRetryDirections = useCallback(() => {
+    if (mapUsesMapbox && webViewRef.current) {
+      webViewRef.current.injectJavaScript("try{window.__ecoloopRetryMap&&window.__ecoloopRetryMap();}catch(e){}true;");
+    }
     if (!activeTarget) return;
     setFetchRequest((curr) => ({
       destKey: activeDestKey,
@@ -590,7 +600,7 @@ export default function MapNavigateScreen() {
       forceRefresh: true,
       seq: curr.seq + 1,
     }));
-  }, [activeDestKey, activeTarget, routeOrigin]);
+  }, [activeDestKey, activeTarget, mapUsesMapbox, routeOrigin]);
 
   const handleCompleteCurrentStop = useCallback(() => {
     if (!activeStop || actionBusy) return;
@@ -711,17 +721,11 @@ export default function MapNavigateScreen() {
   }, [actionBusy, completeLandfillUnload, completeRoute, currentRoute?.id, orderedPickups, t]);
 
   useEffect(() => {
-    if (!followTruck || !mapReady || !webViewRef.current || userLocation?.lat == null) return;
+    if (!followTruck || !mapReady || !webViewRef.current || !mapUsesMapbox || userLocation?.lat == null) return;
     const { lat, lng } = userLocation;
-    if (mapUsesMapbox) {
-      webViewRef.current.injectJavaScript(
-        `try{if(window.map&&window.map.isStyleLoaded()){window.map.easeTo({center:[${lng},${lat}],zoom:17,duration:300});}}catch(e){}true;`,
-      );
-    } else {
-      webViewRef.current.injectJavaScript(
-        `try{if(typeof map!=='undefined'){map.setView([${lat},${lng}],17,{animate:true});}}catch(e){}true;`,
-      );
-    }
+    webViewRef.current.injectJavaScript(
+      `try{if(window.map&&window.map.isStyleLoaded()){window.map.easeTo({center:[${lng},${lat}],zoom:17,duration:300});}}catch(e){}true;`,
+    );
   }, [followTruck, userLocation, mapReady, mapUsesMapbox]);
 
   const dockBottomPad = Math.max(insets.bottom, tokens.space.sm) + tokens.space.md;
@@ -746,28 +750,80 @@ export default function MapNavigateScreen() {
   return (
     <View style={[styles.root, { backgroundColor: colors.surface }]}>
       <View style={styles.mapLayer}>
-        {mapLoading ? (
-          <View style={[styles.mapLoading, { backgroundColor: colors.card }]}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={{ marginTop: 10, color: colors.textSecondary, fontSize: 15 }}>Loading route directions…</Text>
-          </View>
-        ) : (
+        {mapUsesMapbox ? (
           <WebView
-            key={mapUsesMapbox ? "mapbox-gl" : "leaflet-osm"}
+            key={`mapbox-gl-${webViewRecoveryKey}`}
             ref={webViewRef}
             source={{ html: mapHTML }}
+            originWhitelist={["*"]}
             style={StyleSheet.absoluteFillObject}
             javaScriptEnabled
             domStorageEnabled
             mixedContentMode="always"
             onMessage={onWebViewMessage}
             onLoadEnd={handleWebViewLoad}
+            onRenderProcessGone={() => {
+              setMapReady(false);
+              setWebViewRecoveryKey((k) => k + 1);
+            }}
+            onContentProcessDidTerminate={() => {
+              setMapReady(false);
+              setWebViewRecoveryKey((k) => k + 1);
+            }}
           />
+        ) : (
+          <View style={[styles.mapLoading, StyleSheet.absoluteFillObject, { backgroundColor: colors.card }]}>
+            <Ionicons name="map-outline" size={32} color={colors.textSecondary} />
+            <Text style={{ marginTop: 10, color: colors.textSecondary, fontSize: 14, textAlign: "center", paddingHorizontal: 24 }}>
+              Mapbox access token (EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN) is not configured.
+            </Text>
+          </View>
         )}
+        {mapLoading ? (
+          <View style={[styles.mapLoading, StyleSheet.absoluteFillObject, { backgroundColor: colors.card + "E6" }]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={{ marginTop: 10, color: colors.textSecondary, fontSize: 15 }}>Loading route directions…</Text>
+          </View>
+        ) : null}
 
         <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
           <SafeAreaView edges={["top"]} style={styles.safeTop} pointerEvents="box-none">
-            {(fetchError || (!locationPermission && Boolean(activeTarget))) && (
+            {pendingAssistanceEvent ? (
+              <TouchableOpacity
+                onPress={() => navigation.navigate("Home")}
+                activeOpacity={0.88}
+                style={[
+                  styles.errorBar,
+                  {
+                    backgroundColor: (colors.warning || "#D97706") + "24",
+                    borderColor: colors.warning || "#D97706",
+                    borderRadius: tokens.radius.md,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                  },
+                ]}
+              >
+                <Ionicons name="swap-horizontal" size={16} color={colors.warning || "#D97706"} />
+                <Text style={[styles.errorBarText, { color: colors.textPrimary, flex: 1 }]} numberOfLines={2}>
+                  {t(
+                    "nav_pending_assistance_banner",
+                    "New assistance assignment ({count} stops) from {truck} — Tap to review on Home.",
+                    {
+                      count: pendingAssistanceEvent.bins_count ?? pendingAssistanceEvent.overflow_bins?.length ?? 0,
+                      truck:
+                        pendingAssistanceEvent?.reassignment_metadata?.source_vehicle_label ??
+                        (pendingAssistanceEvent?.source_vehicle_id
+                          ? `Truck #${pendingAssistanceEvent.source_vehicle_id}`
+                          : "Nearby Truck"),
+                    },
+                  )}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+            ) : null}
+
+            {(fetchError || mapNotice || (!locationPermission && Boolean(activeTarget))) && (
               <TouchableOpacity
                 onPress={handleRetryDirections}
                 activeOpacity={0.85}
@@ -781,8 +837,8 @@ export default function MapNavigateScreen() {
                 ]}
               >
                 <Text style={[styles.errorBarText, { color: colors.textPrimary }]} numberOfLines={3}>
-                  {fetchError
-                    ? t("tap_to_retry", "{error} Tap to retry.", { error: fetchError })
+                  {fetchError || mapNotice
+                    ? t("tap_to_retry", "{error} Tap to retry.", { error: fetchError || mapNotice })
                     : t("gps_disabled_hint", "GPS disabled: enable location services for turn-by-turn directions from your truck.")}
                 </Text>
               </TouchableOpacity>

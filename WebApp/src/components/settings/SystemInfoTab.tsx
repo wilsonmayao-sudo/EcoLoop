@@ -168,7 +168,7 @@ export default function SystemInfoTab() {
                     mapboxConfigured ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"
                   }`}
                 >
-                  {mapboxConfigured ? "Mapbox GL + Directions Configured" : "OSM / OSRM Fallback Active"}
+                  {mapboxConfigured ? "Mapbox GL + Directions Configured" : "Mapbox Basemap (Missing Token)"}
                 </span>
               </dd>
             </div>

@@ -93,6 +93,18 @@ function toOverflowBinEntries(stops: UncollectedStop[]): OverflowBinEntry[] {
   }));
 }
 
+function isRpcNotDeployedError(err: any): boolean {
+  if (!err) return false;
+  const code = String(err.code ?? "");
+  const msg = String(err.message ?? "").toLowerCase();
+  return (
+    code === "PGRST202" ||
+    code === "42883" ||
+    msg.includes("could not find the function") ||
+    (msg.includes("function") && msg.includes("does not exist"))
+  );
+}
+
 export function useOverflowDispatch() {
   const data = useLiveData();
   const {
@@ -115,6 +127,8 @@ export function useOverflowDispatch() {
   } = data;
 
   const acceptingEventIdsRef = useRef<Set<string>>(new Set());
+  const dispatchingEventIdsRef = useRef<Set<string>>(new Set());
+  const signalingRouteIdsRef = useRef<Set<string>>(new Set());
 
   const normalizeIdString = (value: unknown): string | null => {
     if (value == null) return null;
@@ -522,7 +536,7 @@ export function useOverflowDispatch() {
     [updateVehicle],
   );
 
-  /** Signal truck full: runs Custom Dynamic Reassignment Engine, handles single or multi-truck splits, records metadata, alerts fleet. */
+  /** Signal truck full: runs Custom Dynamic Reassignment Engine and persists atomically via RPC. */
   const signalTruckFull = useCallback(
     async (
       vehicleId: string | number,
@@ -535,201 +549,266 @@ export function useOverflowDispatch() {
         throw new Error("Source vehicle assignment is required to signal truck overflow.");
       }
 
-      const stops = routeStops
-        .filter((s) => String(s.route_id) === String(routeId))
-        .sort((a, b) => a.stop_order - b.stop_order);
-      const completedBinIds = new Set(
-        deliveries
-          .filter(
-            (d) =>
-              String(d.route_id) === String(routeId) &&
-              ["completed", "cancelled"].includes(normalizeStatus(d.status)),
-          )
-          .map((d) => String(d.bin_id)),
-      );
+      const routeKey = normalizeIdString(routeId) ?? normalizedVehicleId;
+      if (signalingRouteIdsRef.current.has(routeKey)) {
+        throw new Error("Overflow dispatch is already being submitted for this truck.");
+      }
+      signalingRouteIdsRef.current.add(routeKey);
 
-      const uncollectedStops = stops.filter((s) => {
-        if (completedBinIds.has(String(s.bin_id))) return false;
-        const bin = s.bins ?? bins.find((b) => String(b.id) === String(s.bin_id));
-        return bin ? isBinActive(bin) : true;
-      });
-      const allOverflowBins: OverflowBinEntry[] = uncollectedStops.map((stop) => {
-        const bin = stop.bins ?? bins.find((b) => String(b.id) === String(stop.bin_id));
-        return {
-          bin_id: stop.bin_id,
-          stop_order: stop.stop_order,
-          lat: Number(bin?.latitude ?? 0),
-          lng: Number(bin?.longitude ?? 0),
-          location: bin?.location ?? "Unknown",
-          capacity_percent: bin?.capacity_percent ?? null,
+      try {
+        const stops = routeStops
+          .filter((s) => String(s.route_id) === String(routeId))
+          .sort((a, b) => a.stop_order - b.stop_order);
+        const completedBinIds = new Set(
+          deliveries
+            .filter(
+              (d) =>
+                String(d.route_id) === String(routeId) &&
+                ["completed", "cancelled"].includes(normalizeStatus(d.status)),
+            )
+            .map((d) => String(d.bin_id)),
+        );
+
+        const uncollectedStops = stops.filter((s) => {
+          if (completedBinIds.has(String(s.bin_id))) return false;
+          const bin = s.bins ?? bins.find((b) => String(b.id) === String(s.bin_id));
+          return bin ? isBinActive(bin) : true;
+        });
+        const allOverflowBins: OverflowBinEntry[] = uncollectedStops.map((stop) => {
+          const bin = stop.bins ?? bins.find((b) => String(b.id) === String(stop.bin_id));
+          return {
+            bin_id: stop.bin_id,
+            stop_order: stop.stop_order,
+            lat: Number(bin?.latitude ?? 0),
+            lng: Number(bin?.longitude ?? 0),
+            location: bin?.location ?? "Unknown",
+            capacity_percent: bin?.capacity_percent ?? null,
+          };
+        });
+
+        if (allOverflowBins.length === 0) return null;
+
+        const algoStops: UncollectedStop[] = allOverflowBins.map((ob, idx) => ({
+          id: `stop-${ob.bin_id}`,
+          binId: ob.bin_id,
+          coordinate: { lat: ob.lat, lng: ob.lng },
+          stopOrder: ob.stop_order ?? idx + 1,
+          location: ob.location,
+          capacityPercent: ob.capacity_percent ?? null,
+        }));
+
+        const candidates = buildCandidateVehicles(vehicleId);
+        const landfill = getConfiguredLandfill();
+        const disposalSite = {
+          name: landfill.name || SWMO_LANDFILL_DISPOSAL_SITE.name,
+          coordinate: { lat: landfill.lat, lng: landfill.lng },
         };
-      });
 
-      if (allOverflowBins.length === 0) return null;
+        const algorithmResult: ReassignmentResult =
+          algorithm === "multi-criteria"
+            ? evaluateMultiCriteriaReassignment(candidates, algoStops, disposalSite)
+            : evaluateNearestTruckBaseline(candidates, algoStops, disposalSite);
 
-      const algoStops: UncollectedStop[] = allOverflowBins.map((ob, idx) => ({
-        id: `stop-${ob.bin_id}`,
-        binId: ob.bin_id,
-        coordinate: { lat: ob.lat, lng: ob.lng },
-        stopOrder: ob.stop_order ?? idx + 1,
-        location: ob.location,
-        capacityPercent: ob.capacity_percent ?? null,
-      }));
+        const sourceDriver = driverById.get(String(driverId));
+        const sourceVehicle = vehicleById.get(String(vehicleId));
+        const route = routeById.get(String(routeId));
+        const sourceLabels = {
+          source_vehicle_label: sourceVehicle?.label || sourceVehicle?.code || sourceVehicle?.truck_code || `Truck ${vehicleId}`,
+          source_driver_name: sourceDriver?.name ?? "Driver",
+          source_route_name: route?.name ?? null,
+        };
 
-      const candidates = buildCandidateVehicles(vehicleId);
-      const landfill = getConfiguredLandfill();
-      const disposalSite = {
-        name: landfill.name || SWMO_LANDFILL_DISPOSAL_SITE.name,
-        coordinate: { lat: landfill.lat, lng: landfill.lng },
-      };
+        const nowIso = new Date().toISOString();
+        const createdEvents: Partial<OverflowEventRecord>[] = [];
+        const rpcAssignments: Array<Record<string, any>> = [];
+        let pendingBinsPayload: OverflowBinEntry[] = [];
+        let pendingMetaPayload: Record<string, any> = {};
 
-      const algorithmResult: ReassignmentResult =
-        algorithm === "multi-criteria"
-          ? evaluateMultiCriteriaReassignment(candidates, algoStops, disposalSite)
-          : evaluateNearestTruckBaseline(candidates, algoStops, disposalSite);
+        if (algorithmResult.assignments.length > 0) {
+          const totalSplits = algorithmResult.assignments.length;
+          for (let idx = 0; idx < totalSplits; idx++) {
+            const assign = algorithmResult.assignments[idx];
+            const assignedVehicle = vehicleById.get(String(assign.vehicleId));
+            const resolvedDriver = assign.driverId
+              ? driverById.get(String(assign.driverId)) ?? null
+              : assignedVehicle
+                ? resolveDriverForVehicle(assignedVehicle)
+                : null;
+            const targetDriverId = normalizeIdString(resolvedDriver?.id ?? assign.driverId);
+            const targetVehicleId = normalizeIdString(assign.vehicleId);
+            const subsetBins = toOverflowBinEntries(assign.assignedStops);
 
-      const createdEvents: Partial<OverflowEventRecord>[] = [];
-      const nowIso = new Date().toISOString();
+            const meta = {
+              ...sourceLabels,
+              algorithm,
+              decision: algorithmResult.message,
+              isMultiTruck: algorithmResult.isMultiTruck,
+              splitIndex: idx + 1,
+              splitCount: totalSplits,
+              processingTimeMs: algorithmResult.processingTimeMs,
+              additionalDistanceKm: assign.additionalDistanceKm,
+              totalAdditionalDistanceKm: algorithmResult.totalAdditionalDistanceKm,
+              projectedLoadPercent: assign.projectedLoadPercent,
+              limitingFactor: assign.limitingFactor,
+              capacityValidated: algorithmResult.capacityValidated,
+              capacityValidationNote: algorithmResult.capacityValidationNote,
+              evaluations: algorithmResult.evaluations,
+              disposalSite: algorithmResult.disposalSite,
+            };
 
-      if (algorithmResult.assignments.length > 0) {
-        const totalSplits = algorithmResult.assignments.length;
-        for (let idx = 0; idx < totalSplits; idx++) {
-          const assign = algorithmResult.assignments[idx];
-          const assignedVehicle = vehicleById.get(String(assign.vehicleId));
-          const resolvedDriver = assign.driverId
-            ? driverById.get(String(assign.driverId)) ?? null
-            : assignedVehicle
-              ? resolveDriverForVehicle(assignedVehicle)
-              : null;
-          const targetDriverId = normalizeIdString(resolvedDriver?.id ?? assign.driverId);
-          const targetVehicleId = normalizeIdString(assign.vehicleId);
-          const subsetBins = toOverflowBinEntries(assign.assignedStops);
+            const eventPayload: Partial<OverflowEventRecord> = {
+              source_vehicle_id: normalizedVehicleId,
+              source_driver_id: normalizeIdString(driverId),
+              source_driver_auth_user_id: sourceDriver?.auth_user_id ?? null,
+              source_route_id: normalizeIdString(routeId),
+              target_vehicle_id: targetVehicleId,
+              target_driver_id: targetDriverId,
+              target_driver_auth_user_id: resolvedDriver?.auth_user_id ?? null,
+              status: targetDriverId ? "dispatched" : "pending",
+              overflow_bins: attachMetaToOverflowBins(subsetBins, meta),
+              bins_count: subsetBins.length,
+              distance_km: assign.distanceToStopsKm,
+              reassignment_metadata: meta,
+              dispatched_at: targetDriverId ? nowIso : null,
+              created_at: nowIso,
+            };
+            createdEvents.push(eventPayload);
+            rpcAssignments.push({
+              target_vehicle_id: targetVehicleId,
+              target_driver_id: targetDriverId,
+              overflow_bins: eventPayload.overflow_bins,
+              bins_count: subsetBins.length,
+              distance_km: assign.distanceToStopsKm,
+              reassignment_metadata: meta,
+            });
+          }
 
-          const meta = {
+          if (algorithmResult.unassignedStops.length > 0) {
+            const leftoverBins = toOverflowBinEntries(algorithmResult.unassignedStops);
+            pendingMetaPayload = {
+              ...sourceLabels,
+              algorithm,
+              decision: `Unassigned overflow remainder (${leftoverBins.length} stops exceed remaining fleet capacity)`,
+              isMultiTruck: true,
+              capacityValidated: algorithmResult.capacityValidated,
+              capacityValidationNote: algorithmResult.capacityValidationNote,
+              evaluations: algorithmResult.evaluations,
+              disposalSite: algorithmResult.disposalSite,
+            };
+            pendingBinsPayload = attachMetaToOverflowBins(leftoverBins, pendingMetaPayload);
+            createdEvents.push({
+              source_vehicle_id: normalizedVehicleId,
+              source_driver_id: normalizeIdString(driverId),
+              source_route_id: normalizeIdString(routeId),
+              target_vehicle_id: null,
+              target_driver_id: null,
+              status: "pending",
+              overflow_bins: pendingBinsPayload,
+              bins_count: leftoverBins.length,
+              distance_km: null,
+              reassignment_metadata: pendingMetaPayload,
+              created_at: nowIso,
+            });
+          }
+        } else {
+          pendingMetaPayload = {
+            ...sourceLabels,
             algorithm,
             decision: algorithmResult.message,
-            isMultiTruck: algorithmResult.isMultiTruck,
-            splitIndex: idx + 1,
-            splitCount: totalSplits,
-            processingTimeMs: algorithmResult.processingTimeMs,
-            additionalDistanceKm: assign.additionalDistanceKm,
-            totalAdditionalDistanceKm: algorithmResult.totalAdditionalDistanceKm,
-            projectedLoadPercent: assign.projectedLoadPercent,
-            limitingFactor: assign.limitingFactor,
+            isMultiTruck: false,
             capacityValidated: algorithmResult.capacityValidated,
             capacityValidationNote: algorithmResult.capacityValidationNote,
             evaluations: algorithmResult.evaluations,
             disposalSite: algorithmResult.disposalSite,
           };
-
-          const eventPayload: Partial<OverflowEventRecord> = {
+          pendingBinsPayload = attachMetaToOverflowBins(allOverflowBins, pendingMetaPayload);
+          createdEvents.push({
             source_vehicle_id: normalizedVehicleId,
             source_driver_id: normalizeIdString(driverId),
             source_route_id: normalizeIdString(routeId),
-            target_vehicle_id: targetVehicleId,
-            target_driver_id: targetDriverId,
-            status: targetDriverId ? "dispatched" : "pending",
-            overflow_bins: attachMetaToOverflowBins(subsetBins, meta),
-            bins_count: subsetBins.length,
-            distance_km: assign.distanceToStopsKm,
-            reassignment_metadata: meta,
-            created_at: nowIso,
-          };
-
-          await createOverflowEvent(eventPayload);
-          createdEvents.push(eventPayload);
-        }
-
-        if (algorithmResult.unassignedStops.length > 0) {
-          const leftoverBins = toOverflowBinEntries(algorithmResult.unassignedStops);
-          const leftoverMeta = {
-            algorithm,
-            decision: `Unassigned overflow remainder (${leftoverBins.length} stops exceed remaining fleet capacity)`,
-            isMultiTruck: true,
-            capacityValidated: algorithmResult.capacityValidated,
-            capacityValidationNote: algorithmResult.capacityValidationNote,
-            evaluations: algorithmResult.evaluations,
-            disposalSite: algorithmResult.disposalSite,
-          };
-          const pendingRemainder: Partial<OverflowEventRecord> = {
-            source_vehicle_id: normalizedVehicleId,
-            source_driver_id: driverId,
-            source_route_id: routeId,
             target_vehicle_id: null,
             target_driver_id: null,
             status: "pending",
-            overflow_bins: attachMetaToOverflowBins(leftoverBins, leftoverMeta),
-            bins_count: leftoverBins.length,
+            overflow_bins: pendingBinsPayload,
+            bins_count: allOverflowBins.length,
             distance_km: null,
-            reassignment_metadata: leftoverMeta,
+            reassignment_metadata: pendingMetaPayload,
             created_at: nowIso,
-          };
-          await createOverflowEvent(pendingRemainder);
-          createdEvents.push(pendingRemainder);
+          });
         }
-      } else {
-        // No eligible truck found — record pending event for manual dispatcher review
-        const meta = {
-          algorithm,
-          decision: algorithmResult.message,
-          isMultiTruck: false,
-          capacityValidated: algorithmResult.capacityValidated,
-          capacityValidationNote: algorithmResult.capacityValidationNote,
-          evaluations: algorithmResult.evaluations,
-          disposalSite: algorithmResult.disposalSite,
-        };
-        const pendingEvent: Partial<OverflowEventRecord> = {
-          source_vehicle_id: normalizedVehicleId,
-          source_driver_id: driverId,
-          source_route_id: routeId,
-          target_vehicle_id: null,
-          target_driver_id: null,
-          status: "pending",
-          overflow_bins: attachMetaToOverflowBins(allOverflowBins, meta),
-          bins_count: allOverflowBins.length,
-          distance_km: null,
-          reassignment_metadata: meta,
-          created_at: nowIso,
-        };
-        await createOverflowEvent(pendingEvent);
-        createdEvents.push(pendingEvent);
-      }
 
-      await updateVehicle(String(vehicleId), { status: "full", load_percent: 100 });
+        const { data: rpcResult, error: rpcError } = await supabase.rpc("create_overflow_dispatch", {
+          p_source_vehicle_id: normalizedVehicleId,
+          p_source_driver_id: normalizeIdString(driverId),
+          p_source_route_id: normalizeIdString(routeId),
+          p_assignments: rpcAssignments,
+          p_pending_bins: pendingBinsPayload,
+          p_pending_metadata: pendingMetaPayload,
+          p_mark_deliveries_overflow: false,
+        });
 
-      const sourceDriver = driverById.get(String(driverId));
-      const sourceVehicle = vehicleById.get(String(vehicleId));
-      const route = routeById.get(String(routeId));
-
-      await createNotification({
-        role: "dispatcher" as const,
-        title: "Truck Capacity Full (100%)",
-        message: `${sourceVehicle?.label ?? `Truck ${vehicleId}`} (${sourceDriver?.name ?? "Driver"}) signaled FULL on ${route?.name ?? "route"}. ${algorithmResult.message}`,
-        type: "warning",
-        category: "truck",
-        source_table: "overflow_events",
-        read: false,
-        created_at: new Date().toISOString(),
-      });
-
-      const primaryEvent = createdEvents[0];
-      const primaryAssign: TruckStopAssignment | null = algorithmResult.assignments[0] ?? null;
-
-      return {
-        event: primaryEvent,
-        events: createdEvents,
-        assignments: algorithmResult.assignments,
-        nearest: primaryAssign
-          ? {
-              vehicle: vehicleById.get(String(primaryAssign.vehicleId)) ?? ({ id: primaryAssign.vehicleId, label: primaryAssign.label } as any),
-              driver: primaryAssign.driverId
-                ? driverById.get(String(primaryAssign.driverId)) ?? ({ id: primaryAssign.driverId, name: primaryAssign.driverName } as any)
-                : ({ name: primaryAssign.driverName } as any),
-              distanceKm: primaryAssign.distanceToStopsKm,
+        if (!rpcError && rpcResult?.success === true) {
+          await refreshLiveProgress();
+        } else if (rpcError && isRpcNotDeployedError(rpcError)) {
+          for (const ev of createdEvents) {
+            await createOverflowEvent(ev);
+            if (ev.status === "dispatched" && ev.target_driver_auth_user_id) {
+              try {
+                await createNotification({
+                  user_auth_id: ev.target_driver_auth_user_id,
+                  user_id: ev.target_driver_auth_user_id,
+                  title: "Overflow Assistance Assigned",
+                  message: `${sourceLabels.source_vehicle_label} requested assistance on ${sourceLabels.source_route_name ?? "route"} (${ev.bins_count} stop${ev.bins_count === 1 ? "" : "s"}).`,
+                  type: "warning",
+                  category: "assignment",
+                  source_table: "overflow_events",
+                  read: false,
+                  created_at: nowIso,
+                });
+              } catch (notifErr) {
+                console.warn("Assisting driver notification fallback note:", notifErr);
+              }
             }
-          : null,
-        algorithmResult,
-      };
+          }
+          await updateVehicle(String(vehicleId), { status: "full", load_percent: 100 });
+          await createNotification({
+            role: "dispatcher" as const,
+            title: "Truck Capacity Full (100%)",
+            message: `${sourceLabels.source_vehicle_label} (${sourceLabels.source_driver_name}) signaled FULL on ${route?.name ?? "route"}. ${algorithmResult.message}`,
+            type: "warning",
+            category: "assignment",
+            source_table: "overflow_events",
+            read: false,
+            created_at: new Date().toISOString(),
+          });
+        } else {
+          throw new Error(
+            String((rpcResult as any)?.error || rpcError?.message || "Unable to create overflow dispatch."),
+          );
+        }
+
+        const primaryEvent = createdEvents[0];
+        const primaryAssign: TruckStopAssignment | null = algorithmResult.assignments[0] ?? null;
+
+        return {
+          event: primaryEvent,
+          events: createdEvents,
+          assignments: algorithmResult.assignments,
+          idempotent: Boolean((rpcResult as any)?.idempotent),
+          nearest: primaryAssign
+            ? {
+                vehicle: vehicleById.get(String(primaryAssign.vehicleId)) ?? ({ id: primaryAssign.vehicleId, label: primaryAssign.label } as any),
+                driver: primaryAssign.driverId
+                  ? driverById.get(String(primaryAssign.driverId)) ?? ({ id: primaryAssign.driverId, name: primaryAssign.driverName } as any)
+                  : ({ name: primaryAssign.driverName } as any),
+                distanceKm: primaryAssign.distanceToStopsKm,
+              }
+            : null,
+          algorithmResult,
+        };
+      } finally {
+        signalingRouteIdsRef.current.delete(routeKey);
+      }
     },
     [
       bins,
@@ -738,6 +817,7 @@ export function useOverflowDispatch() {
       createOverflowEvent,
       deliveries,
       driverById,
+      refreshLiveProgress,
       resolveDriverForVehicle,
       routeById,
       routeStops,
@@ -819,18 +899,20 @@ export function useOverflowDispatch() {
 
         await refreshLiveProgress();
 
-        const targetVehicle = targetVehicleId ? vehicleById.get(targetVehicleId) : null;
-        await createNotification({
-          role: "dispatcher" as const,
-          title: "Overflow Accepted",
-          message: `${targetDriver?.name ?? "Driver"} (${targetVehicle?.label ?? "Truck"}) ACCEPTED overflow dispatch of ${event.bins_count} bins.`,
-          type: "success",
-          category: "truck",
-          source_table: "overflow_events",
-          source_id: eventId,
-          read: false,
-          created_at: new Date().toISOString(),
-        });
+        if ((rpcResult as any)?.dispatcher_notified !== true) {
+          const targetVehicle = targetVehicleId ? vehicleById.get(targetVehicleId) : null;
+          await createNotification({
+            role: "dispatcher" as const,
+            title: "Overflow Accepted",
+            message: `${targetDriver?.name ?? "Driver"} (${targetVehicle?.label ?? "Truck"}) ACCEPTED overflow dispatch of ${event.bins_count} bins.`,
+            type: "success",
+            category: "assignment",
+            source_table: "overflow_events",
+            source_id: eventId,
+            read: false,
+            created_at: new Date().toISOString(),
+          });
+        }
       } finally {
         acceptingEventIdsRef.current.delete(eventId);
       }
@@ -842,14 +924,29 @@ export function useOverflowDispatch() {
       refreshLiveProgress,
       resolveDriverForVehicle,
       syncAssistingRouteWithMapbox,
-      updateOverflowEvent,
       vehicleById,
     ],
   );
 
-  /** Decline overflow dispatch. */
+  /** Decline overflow dispatch atomically via RPC (with safe fallback). */
   const declineOverflow = useCallback(
     async (eventId: string) => {
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("decline_overflow_event", {
+        p_event_id: eventId,
+      });
+
+      if (!rpcError && (rpcResult as any)?.success === true) {
+        await refreshLiveProgress();
+        return;
+      }
+
+      if (rpcError && !isRpcNotDeployedError(rpcError)) {
+        throw new Error(rpcError.message || "Unable to decline overflow dispatch.");
+      }
+      if (rpcResult && (rpcResult as any).success === false) {
+        throw new Error(String((rpcResult as any).error || "Unable to decline overflow dispatch."));
+      }
+
       await updateOverflowEvent(eventId, { status: "declined" });
 
       const event = overflowEvents.find((e) => e.id === eventId);
@@ -860,7 +957,7 @@ export function useOverflowDispatch() {
           title: "Overflow Declined",
           message: `${targetDriver?.name ?? "Driver"} declined overflow dispatch of ${event.bins_count} bins. Reassignment needed.`,
           type: "warning",
-          category: "truck",
+          category: "assignment",
           source_table: "overflow_events",
           source_id: eventId,
           read: false,
@@ -868,7 +965,7 @@ export function useOverflowDispatch() {
         });
       }
     },
-    [createNotification, driverById, overflowEvents, updateOverflowEvent],
+    [createNotification, driverById, overflowEvents, refreshLiveProgress, updateOverflowEvent],
   );
 
   /** Complete overflow event. */
@@ -883,15 +980,19 @@ export function useOverflowDispatch() {
   );
 
   /**
-   * Reassign a pending/declined overflow event:
+   * Reassign a pending/declined/dispatched overflow event atomically via `dispatch_overflow_event`:
    * - If `targetVehicleId` is omitted or `"AUTO"`, runs Custom Dynamic Reassignment Engine (supporting multi-truck split).
-   * - If a specific `targetVehicleId` is selected, validates eligibility (online/fresh GPS, active driver, not busy) and capacity first.
+   * - If a specific `targetVehicleId` is selected, validates structural eligibility and capacity, allowing dispatch even when the assisting driver's app is closed.
    */
   const reassignOverflow = useCallback(
     async (eventId: string, targetVehicleId?: string) => {
+      if (dispatchingEventIdsRef.current.has(eventId)) {
+        throw new Error("This overflow dispatch is already being assigned.");
+      }
+
       const event = overflowEvents.find((e) => e.id === eventId);
       if (!event) throw new Error("Overflow event not found.");
-      if (event.status === "accepted" || event.status === "completed") {
+      if (event.status === "accepted" || event.status === "completed" || event.status === "cancelled") {
         throw new Error(`Cannot reassign an overflow event that is already ${event.status}.`);
       }
 
@@ -935,28 +1036,83 @@ export function useOverflowDispatch() {
         throw new Error("Selected relief truck was not found.");
       }
 
-      if (!isAuto) {
-        const elig = evaluateCandidateEligibility(scopedCandidates[0]);
-        if (!elig.eligible) {
-          throw new Error(`Cannot assign ${scopedCandidates[0].label}: ${elig.reason}`);
+      let algoRes: ReassignmentResult;
+      if (isAuto) {
+        algoRes = evaluateMultiCriteriaReassignment(scopedCandidates, algoStops, disposalSite);
+        if (algoRes.assignments.length === 0) {
+          const evalEntry = algoRes.evaluations[0];
+          throw new Error(
+            evalEntry?.ineligibleReason ||
+              algoRes.message ||
+              "No eligible truck with sufficient remaining capacity was found.",
+          );
         }
-      }
+      } else {
+        const selectedCand = scopedCandidates[0];
+        if (selectedCand.isActive === false) {
+          throw new Error(`Cannot assign ${selectedCand.label}: Vehicle is inactive`);
+        }
+        const vStatus = normalizeStatus(selectedCand.status);
+        if (["full", "maintenance", "inactive", "out_of_service", "suspended", "assisting_overflow", "unloading"].includes(vStatus)) {
+          throw new Error(`Cannot assign ${selectedCand.label}: Status is ${selectedCand.status}`);
+        }
+        if (selectedCand.hasActiveOverflowAssignment) {
+          throw new Error(`Cannot assign ${selectedCand.label}: Already assisting another active overflow event`);
+        }
+        if (!selectedCand.driverId) {
+          throw new Error(`Cannot assign ${selectedCand.label}: No assigned active driver`);
+        }
+        const dStatus = normalizeStatus(selectedCand.driverStatus);
+        if (["inactive", "suspended", "full"].includes(dStatus)) {
+          throw new Error(`Cannot assign ${selectedCand.label}: Assigned driver is ${selectedCand.driverStatus}`);
+        }
+        if (event.source_driver_id != null && String(event.source_driver_id) === String(selectedCand.driverId)) {
+          throw new Error("Cannot assign the requesting driver to their own overflow event.");
+        }
 
-      const algoRes = evaluateMultiCriteriaReassignment(scopedCandidates, algoStops, disposalSite);
-      if (algoRes.assignments.length === 0) {
-        const evalEntry = algoRes.evaluations[0];
-        throw new Error(
-          evalEntry?.ineligibleReason ||
-            algoRes.message ||
-            "No eligible truck with sufficient remaining capacity was found.",
-        );
-      }
+        // For manual dispatcher selection, allow assigning even if driver's app is closed (GPS stale/offline or load unverified)
+        const manualCandidate: CandidateVehicle = {
+          ...selectedCand,
+          driverStatus: dStatus === "offline" ? "available" : selectedCand.driverStatus,
+          status: vStatus === "offline" ? "available" : selectedCand.status,
+          currentLocation: selectedCand.currentLocation ?? disposalSite.coordinate,
+          currentLoadPercent:
+            selectedCand.currentLoadPercent != null && selectedCand.loadSource !== "unverified"
+              ? selectedCand.currentLoadPercent
+              : 0,
+          loadSource:
+            selectedCand.loadSource && selectedCand.loadSource !== "unverified"
+              ? selectedCand.loadSource
+              : "route_progress_estimated",
+          isGpsFresh: true,
+        };
 
-      if (!isAuto && algoRes.unassignedStops.length > 0) {
-        const assignedCount = algoRes.assignments[0]?.stopsCount ?? 0;
-        throw new Error(
-          `${scopedCandidates[0].label} only has capacity for ${assignedCount} of ${algoStops.length} stops (${algoRes.assignments[0]?.remainingCapacityPercent ?? 0}% remaining). Use Auto-Assign Optimal to distribute across multiple trucks.`,
-        );
+        algoRes = evaluateMultiCriteriaReassignment([manualCandidate], algoStops, disposalSite);
+        if (algoRes.assignments.length === 0) {
+          const evalEntry = algoRes.evaluations[0];
+          throw new Error(
+            evalEntry?.ineligibleReason ||
+              algoRes.message ||
+              "Selected relief truck does not have sufficient capacity.",
+          );
+        }
+        if (algoRes.unassignedStops.length > 0) {
+          const assignedCount = algoRes.assignments[0]?.stopsCount ?? 0;
+          throw new Error(
+            `${selectedCand.label} only has capacity for ${assignedCount} of ${algoStops.length} stops (${algoRes.assignments[0]?.remainingCapacityPercent ?? 0}% remaining). Use Auto-Assign Optimal to distribute across multiple trucks.`,
+          );
+        }
+        if (!selectedCand.currentLocation) {
+          algoRes = {
+            ...algoRes,
+            assignments: algoRes.assignments.map((a) => ({
+              ...a,
+              distanceToStopsKm: null as any,
+              additionalDistanceKm: 0,
+            })),
+            message: `Manual dispatcher assignment to ${selectedCand.label} (${selectedCand.driverName}). Pending live GPS sync when driver opens app.`,
+          };
+        }
       }
 
       const primary = algoRes.assignments[0];
@@ -969,9 +1125,20 @@ export function useOverflowDispatch() {
         throw new Error(`Selected truck ${primary.label} has no active driver assigned.`);
       }
 
+      const sourceVeh = event.source_vehicle_id != null ? vehicleById.get(String(event.source_vehicle_id)) : null;
+      const sourceDrv = event.source_driver_id != null ? driverById.get(String(event.source_driver_id)) : null;
+      const sourceRoute = event.source_route_id != null ? routeById.get(String(event.source_route_id)) : null;
+      const sourceLabels = {
+        source_vehicle_label: sourceVeh?.label || sourceVeh?.code || sourceVeh?.truck_code || `Truck ${event.source_vehicle_id}`,
+        source_driver_name: sourceDrv?.name ?? "Driver",
+        source_route_name: sourceRoute?.name ?? null,
+      };
+
       const primaryBins = toOverflowBinEntries(primary.assignedStops);
       const primaryMeta = {
+        ...sourceLabels,
         algorithm: "multi-criteria",
+        manualAssignment: !isAuto,
         decision: algoRes.message,
         isMultiTruck: algoRes.isMultiTruck,
         splitIndex: 1,
@@ -987,18 +1154,7 @@ export function useOverflowDispatch() {
         disposalSite: algoRes.disposalSite,
       };
 
-      await updateOverflowEvent(eventId, {
-        target_vehicle_id: primaryVehicleId,
-        target_driver_id: primaryDriverId,
-        status: "dispatched",
-        overflow_bins: attachMetaToOverflowBins(primaryBins, primaryMeta),
-        bins_count: primaryBins.length,
-        distance_km: primary.distanceToStopsKm,
-        reassignment_metadata: primaryMeta,
-      });
-
-      // Create follow-up dispatched events for additional trucks in a multi-truck split
-      const nowIso = new Date().toISOString();
+      const extraSplits: Array<Record<string, any>> = [];
       for (let idx = 1; idx < algoRes.assignments.length; idx++) {
         const extra = algoRes.assignments[idx];
         const extraVeh = vehicleById.get(String(extra.vehicleId));
@@ -1013,58 +1169,163 @@ export function useOverflowDispatch() {
           projectedLoadPercent: extra.projectedLoadPercent,
           limitingFactor: extra.limitingFactor,
         };
-        await createOverflowEvent({
-          source_vehicle_id: event.source_vehicle_id,
-          source_driver_id: event.source_driver_id,
-          source_route_id: event.source_route_id,
+        extraSplits.push({
           target_vehicle_id: extraVehicleId,
           target_driver_id: extraDriverId,
-          status: extraDriverId ? "dispatched" : "pending",
           overflow_bins: attachMetaToOverflowBins(extraBins, extraMeta),
           bins_count: extraBins.length,
           distance_km: extra.distanceToStopsKm,
           reassignment_metadata: extraMeta,
-          created_at: nowIso,
         });
       }
 
       if (algoRes.unassignedStops.length > 0) {
         const leftoverBins = toOverflowBinEntries(algoRes.unassignedStops);
-        await createOverflowEvent({
-          source_vehicle_id: event.source_vehicle_id,
-          source_driver_id: event.source_driver_id,
-          source_route_id: event.source_route_id,
+        extraSplits.push({
           target_vehicle_id: null,
           target_driver_id: null,
-          status: "pending",
           overflow_bins: leftoverBins,
           bins_count: leftoverBins.length,
           distance_km: null,
-          created_at: nowIso,
+          reassignment_metadata: {
+            ...sourceLabels,
+            algorithm: "multi-criteria",
+            decision: `Unassigned overflow remainder (${leftoverBins.length} stops)`,
+          },
         });
       }
 
-      await createNotification({
-        role: "dispatcher" as const,
-        title: isAuto ? "Overflow Dynamically Reassigned" : "Overflow Relief Reassigned",
-        message: algoRes.message,
-        type: "info",
-        category: "truck",
-        source_table: "overflow_events",
-        source_id: eventId,
-        read: false,
-        created_at: new Date().toISOString(),
-      });
+      dispatchingEventIdsRef.current.add(eventId);
+      try {
+        const { data: rpcResult, error: rpcError } = await supabase.rpc("dispatch_overflow_event", {
+          p_event_id: eventId,
+          p_target_vehicle_id: primaryVehicleId,
+          p_target_driver_id: primaryDriverId,
+          p_overflow_bins: attachMetaToOverflowBins(primaryBins, primaryMeta),
+          p_distance_km: primary.distanceToStopsKm ?? null,
+          p_reassignment_metadata: primaryMeta,
+          p_extra_splits: extraSplits,
+        });
 
-      return algoRes;
+        if (!rpcError && rpcResult?.success === true) {
+          await refreshLiveProgress();
+          return {
+            ...algoRes,
+            driverNotified: Boolean((rpcResult as any).driver_notified),
+            idempotent: Boolean((rpcResult as any).idempotent),
+          };
+        }
+
+        if (rpcError && !isRpcNotDeployedError(rpcError)) {
+          throw new Error(rpcError.message || "Unable to persist overflow assignment.");
+        }
+        if (rpcResult && (rpcResult as any).success === false) {
+          throw new Error(String((rpcResult as any).error || "Unable to persist overflow assignment."));
+        }
+
+        // Safe fallback only when RPC migration is not yet applied
+        const nowIso = new Date().toISOString();
+        await updateOverflowEvent(eventId, {
+          target_vehicle_id: primaryVehicleId,
+          target_driver_id: primaryDriverId,
+          target_driver_auth_user_id: primaryDriver?.auth_user_id ?? null,
+          status: "dispatched",
+          dispatched_at: nowIso,
+          overflow_bins: attachMetaToOverflowBins(primaryBins, primaryMeta),
+          bins_count: primaryBins.length,
+          distance_km: primary.distanceToStopsKm ?? null,
+          reassignment_metadata: primaryMeta,
+        });
+
+        let driverNotified = false;
+        if (primaryDriver?.auth_user_id) {
+          try {
+            await createNotification({
+              user_auth_id: primaryDriver.auth_user_id,
+              user_id: primaryDriver.auth_user_id,
+              title: "Overflow Assistance Assigned",
+              message: `${sourceLabels.source_vehicle_label} requested assistance${sourceLabels.source_route_name ? ` on ${sourceLabels.source_route_name}` : ""} (${primaryBins.length} stop${primaryBins.length === 1 ? "" : "s"}).`,
+              type: "warning",
+              category: "assignment",
+              source_table: "overflow_events",
+              source_id: eventId,
+              read: false,
+              created_at: nowIso,
+            });
+            driverNotified = true;
+            await updateOverflowEvent(eventId, { driver_notified_at: nowIso });
+          } catch (notifErr) {
+            console.warn("Driver notification fallback note:", notifErr);
+          }
+        }
+
+        for (const split of extraSplits) {
+          const splitDriver = split.target_driver_id ? driverById.get(String(split.target_driver_id)) : null;
+          await createOverflowEvent({
+            source_vehicle_id: event.source_vehicle_id,
+            source_driver_id: event.source_driver_id,
+            source_route_id: event.source_route_id,
+            target_vehicle_id: split.target_vehicle_id,
+            target_driver_id: split.target_driver_id,
+            target_driver_auth_user_id: splitDriver?.auth_user_id ?? null,
+            status: split.target_driver_id ? "dispatched" : "pending",
+            overflow_bins: split.overflow_bins,
+            bins_count: split.bins_count,
+            distance_km: split.distance_km,
+            reassignment_metadata: split.reassignment_metadata,
+            dispatched_at: split.target_driver_id ? nowIso : null,
+            created_at: nowIso,
+          });
+          if (splitDriver?.auth_user_id) {
+            try {
+              await createNotification({
+                user_auth_id: splitDriver.auth_user_id,
+                user_id: splitDriver.auth_user_id,
+                title: "Overflow Assistance Assigned",
+                message: `${sourceLabels.source_vehicle_label} requested assistance (${split.bins_count} stop${split.bins_count === 1 ? "" : "s"}).`,
+                type: "warning",
+                category: "assignment",
+                source_table: "overflow_events",
+                read: false,
+                created_at: nowIso,
+              });
+            } catch {
+              /* non-fatal */
+            }
+          }
+        }
+
+        await createNotification({
+          role: "dispatcher" as const,
+          title: isAuto ? "Overflow Dynamically Reassigned" : "Overflow Relief Reassigned",
+          message: algoRes.message,
+          type: "info",
+          category: "assignment",
+          source_table: "overflow_events",
+          source_id: eventId,
+          read: false,
+          created_at: new Date().toISOString(),
+        });
+
+        return {
+          ...algoRes,
+          driverNotified,
+          idempotent: false,
+        };
+      } finally {
+        dispatchingEventIdsRef.current.delete(eventId);
+      }
     },
     [
       bins,
       buildCandidateVehicles,
       createNotification,
       createOverflowEvent,
+      driverById,
       overflowEvents,
+      refreshLiveProgress,
       resolveDriverForVehicle,
+      routeById,
       updateOverflowEvent,
       vehicleById,
     ],
@@ -1100,7 +1361,7 @@ export function useOverflowDispatch() {
         });
 
         if (event.target_vehicle_id && (event.status === "dispatched" || event.status === "accepted" || event.status === "completed")) {
-          const dispatchIso = new Date(new Date(event.created_at).getTime() + 60_000).toISOString();
+          const dispatchIso = event.dispatched_at ?? new Date(new Date(event.created_at).getTime() + 60_000).toISOString();
           const dispatchTime = new Date(dispatchIso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
           const splitNote = event.reassignment_metadata?.isMultiTruck
             ? ` (Split ${event.reassignment_metadata.splitIndex ?? 1}/${event.reassignment_metadata.splitCount ?? 2})`
@@ -1108,16 +1369,18 @@ export function useOverflowDispatch() {
           entries.push({
             id: `${event.id}-dispatch`,
             timestamp: dispatchIso,
-            message: `${dispatchTime} — System routed ${event.bins_count} remaining bins${splitNote} to ${targetVehicle?.label ?? `Truck ${event.target_vehicle_id}`} (${event.distance_km ?? "?"} km away).`,
+            message: `${dispatchTime} — ${event.driver_notified_at ? "Notified & routed" : "System routed"} ${event.bins_count} remaining bins${splitNote} to ${targetVehicle?.label ?? `Truck ${event.target_vehicle_id}`}${event.distance_km != null ? ` (${event.distance_km} km away)` : ""}.`,
             type: "dispatch",
           });
         }
 
         if (event.status === "declined") {
+          const declineIso = event.declined_at ?? event.created_at;
+          const declineTime = new Date(declineIso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
           entries.push({
             id: `${event.id}-decline`,
-            timestamp: event.created_at,
-            message: `${time} — ${targetDriver?.name ?? "Driver"} DECLINED overflow dispatch.`,
+            timestamp: declineIso,
+            message: `${declineTime} — ${targetDriver?.name ?? "Driver"} DECLINED overflow dispatch.`,
             type: "decline",
           });
         }

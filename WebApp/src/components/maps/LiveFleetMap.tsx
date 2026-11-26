@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Lock, Unlock } from "lucide-react";
+import { Lock, RefreshCw, Unlock } from "lucide-react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import {
+  classifyMapboxError,
+  getWebMapboxToken,
+  MISSING_MAPBOX_TOKEN_MESSAGE,
+  recoverMapboxStyleInPlace,
+  safeResizeMap,
+} from "../../utils/mapboxRuntime";
 import {
   getConfiguredLandfill,
   getMapboxStyleUrl,
@@ -112,16 +119,6 @@ function createMapboxMarkerNodes(
   return { wrapper, button };
 }
 
-function leafletIcon(marker: LiveFleetMapMarker) {
-  const px = marker.selected ? 36 : marker.small ? 28 : 44;
-  return window.L.divIcon({
-    className: "",
-    html: `<div class="${markerClass(marker)}">${renderMapMarkerSvg(marker.icon, marker.small && !marker.selected)}</div>`,
-    iconSize: [px, px],
-    iconAnchor: [px / 2, px / 2],
-  });
-}
-
 /** Official SWMO Sanitary Landfill destination where waste collection trucks go for disposal. */
 export const SWMO_LANDFILL_MARKER: LiveFleetMapMarker = {
   key: "facility:swmo-landfill",
@@ -162,13 +159,6 @@ interface LiveFleetMapProps {
   className?: string;
 }
 
-declare global {
-  interface Window {
-    L?: any;
-    __ecoloopLeafletPromise?: Promise<any>;
-  }
-}
-
 const DEFAULT_NAGA_CENTER: [number, number] = [123.1948, 13.6218];
 const NAGA_CITY_BOUNDS: [[number, number], [number, number]] = [
   [123.1, 13.52],
@@ -183,36 +173,11 @@ function isWithinNagaBounds(lng: number, lat: number) {
     lat <= NAGA_CITY_BOUNDS[1][1]
   );
 }
-const LEAFLET_SCRIPT_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-const LEAFLET_STYLE_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 
 function isCoordinateValid(latitude: unknown, longitude: unknown) {
   const lat = Number(latitude);
   const lng = Number(longitude);
   return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
-}
-
-function ensureLeaflet() {
-  if (window.L) return Promise.resolve(window.L);
-  if (window.__ecoloopLeafletPromise) return window.__ecoloopLeafletPromise;
-
-  window.__ecoloopLeafletPromise = new Promise((resolve, reject) => {
-    if (!document.querySelector(`link[href="${LEAFLET_STYLE_URL}"]`)) {
-      const style = document.createElement("link");
-      style.rel = "stylesheet";
-      style.href = LEAFLET_STYLE_URL;
-      document.head.appendChild(style);
-    }
-
-    const script = document.createElement("script");
-    script.src = LEAFLET_SCRIPT_URL;
-    script.async = true;
-    script.onload = () => resolve(window.L);
-    script.onerror = () => reject(new Error("Unable to load the OpenStreetMap library."));
-    document.body.appendChild(script);
-  });
-
-  return window.__ecoloopLeafletPromise;
 }
 
 export default function LiveFleetMap({
@@ -228,10 +193,8 @@ export default function LiveFleetMap({
   className = "relative h-[680px] w-full overflow-hidden bg-gray-100",
 }: LiveFleetMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
-  const engineRef = useRef<"mapbox" | "leaflet" | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
   const driverMarkersRef = useRef(new Map<string, DriverMarkerEntry>());
-  const routesLayerRef = useRef<any>(null);
   const markersRef = useRef(markers);
   markersRef.current = markers;
   const onMarkerClickRef = useRef(onMarkerClick);
@@ -240,10 +203,14 @@ export default function LiveFleetMap({
   const lastFocusKeyRef = useRef<string | null>(null);
   const hasInitialFitRef = useRef(false);
   const prevSelectedAreaRef = useRef<string | null>(null);
+  const routeListenersBoundRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
+  const [styleVersion, setStyleVersion] = useState(0);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [mapNotice, setMapNotice] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim();
+  const mapboxToken = getWebMapboxToken();
 
   useEffect(() => {
     onMarkerClickRef.current = onMarkerClick;
@@ -255,25 +222,14 @@ export default function LiveFleetMap({
 
   // Sync interactive state to prevent accidental dragging/zooming while scrolling the page
   useEffect(() => {
-    if (!mapReady || !mapRef.current || !engineRef.current) return;
+    if (!mapReady || !mapRef.current) return;
     const map = mapRef.current;
-    const engine = engineRef.current;
-    if (engine === "mapbox") {
-      if (isUnlocked) {
-        map.dragPan?.enable();
-        map.scrollZoom?.enable();
-      } else {
-        map.dragPan?.disable();
-        map.scrollZoom?.disable();
-      }
-    } else if (engine === "leaflet") {
-      if (isUnlocked) {
-        map.dragging?.enable();
-        map.touchZoom?.enable();
-      } else {
-        map.dragging?.disable();
-        map.touchZoom?.disable();
-      }
+    if (isUnlocked) {
+      map.dragPan?.enable();
+      map.scrollZoom?.enable();
+    } else {
+      map.dragPan?.disable();
+      map.scrollZoom?.disable();
     }
   }, [isUnlocked, mapReady]);
 
@@ -291,6 +247,8 @@ export default function LiveFleetMap({
 
   const [mapDefaults, setMapDefaults] = useState(() => getRuntimeSystemSettings().mapDefaults);
   const [landfillSite, setLandfillSite] = useState(() => getConfiguredLandfill());
+  const initDefaultsRef = useRef(mapDefaults);
+  const currentStyleUrlRef = useRef(getMapboxStyleUrl(mapDefaults.mapboxStyle));
 
   useEffect(() => {
     return subscribeRuntimeSettings(() => {
@@ -303,25 +261,39 @@ export default function LiveFleetMap({
     const container = containerRef.current;
     if (!container) return undefined;
 
+    if (!mapboxToken) {
+      setMapReady(false);
+      setMapNotice(null);
+      setMapError(MISSING_MAPBOX_TOKEN_MESSAGE);
+      return undefined;
+    }
+
     let cancelled = false;
+    let transientRecoveryTimer: number | null = null;
     setMapError(null);
+    setMapNotice(null);
     setMapReady(false);
+    routeListenersBoundRef.current = false;
     lastFitSignatureRef.current = "";
     hasInitialFitRef.current = false;
     prevSelectedAreaRef.current = null;
 
+    const defaults = initDefaultsRef.current;
     const initialCenter: [number, number] = [
-      Number.isFinite(mapDefaults.centerLongitude) ? mapDefaults.centerLongitude : DEFAULT_NAGA_CENTER[0],
-      Number.isFinite(mapDefaults.centerLatitude) ? mapDefaults.centerLatitude : DEFAULT_NAGA_CENTER[1],
+      Number.isFinite(defaults.centerLongitude) ? defaults.centerLongitude : DEFAULT_NAGA_CENTER[0],
+      Number.isFinite(defaults.centerLatitude) ? defaults.centerLatitude : DEFAULT_NAGA_CENTER[1],
     ];
-    const initialZoom = Number.isFinite(mapDefaults.defaultZoom) ? mapDefaults.defaultZoom : 13;
+    const initialZoom = Number.isFinite(defaults.defaultZoom) ? defaults.defaultZoom : 13;
     const constrainNagaBounds = isWithinNagaBounds(initialCenter[0], initialCenter[1]);
 
-    if (mapboxToken) {
+    try {
       mapboxgl.accessToken = mapboxToken;
+      const initialStyleUrl = getMapboxStyleUrl(defaults.mapboxStyle);
+      currentStyleUrlRef.current = initialStyleUrl;
+
       const map = new mapboxgl.Map({
         container,
-        style: getMapboxStyleUrl(mapDefaults.mapboxStyle),
+        style: initialStyleUrl,
         center: initialCenter,
         zoom: initialZoom,
         minZoom: 11,
@@ -329,186 +301,219 @@ export default function LiveFleetMap({
         maxBounds: constrainNagaBounds ? NAGA_CITY_BOUNDS : undefined,
         renderWorldCopies: false,
         cooperativeGestures: true,
+        fadeDuration: 150,
+        preserveDrawingBuffer: false,
       });
       // Start in stationary scroll-safe mode so scrolling bins list never moves or zooms the map
       map.dragPan.disable();
       map.scrollZoom.disable();
       map.addControl(new mapboxgl.NavigationControl(), "top-right");
-      map.on("load", () => {
-        if (!cancelled) setMapReady(true);
+
+      const handleLoadedOrStyle = () => {
+        if (cancelled) return;
+        if (transientRecoveryTimer !== null) {
+          window.clearTimeout(transientRecoveryTimer);
+          transientRecoveryTimer = null;
+        }
+        setMapError(null);
+        setMapNotice(null);
+        setMapReady(true);
+        setStyleVersion((v) => v + 1);
+        safeResizeMap(map, container);
+        requestAnimationFrame(() => {
+          if (!cancelled) safeResizeMap(map, container);
+        });
+      };
+
+      map.on("load", handleLoadedOrStyle);
+      map.on("style.load", handleLoadedOrStyle);
+      map.on("idle", () => {
+        if (cancelled) return;
+        if (typeof map.isStyleLoaded !== "function" || map.isStyleLoaded()) {
+          setMapNotice(null);
+        }
       });
       map.on("error", (event) => {
-        if (!cancelled && !map.loaded()) setMapError(event.error?.message ?? "Unable to load the fleet map.");
+        if (cancelled) return;
+        const classified = classifyMapboxError(event);
+        if (classified.kind === "ignore") return;
+        if (classified.kind === "auth") {
+          setMapError(classified.message);
+          setMapNotice(null);
+          return;
+        }
+        if (classified.kind === "webgl") {
+          setMapNotice(classified.message);
+          return;
+        }
+        setMapNotice("Map tiles delayed — retrying automatically…");
+        if (typeof map.isStyleLoaded === "function" && !map.isStyleLoaded() && transientRecoveryTimer === null) {
+          transientRecoveryTimer = window.setTimeout(() => {
+            transientRecoveryTimer = null;
+            if (!cancelled) {
+              recoverMapboxStyleInPlace(map, currentStyleUrlRef.current);
+            }
+          }, 4000);
+        }
       });
+
+      const canvas = map.getCanvas?.();
+      const handleContextLost = (e: Event) => {
+        e.preventDefault();
+        if (!cancelled) setMapNotice("Restoring map graphics…");
+      };
+      const handleContextRestored = () => {
+        if (cancelled) return;
+        setMapNotice(null);
+        safeResizeMap(map, container);
+        map.triggerRepaint?.();
+      };
+      canvas?.addEventListener("webglcontextlost", handleContextLost);
+      canvas?.addEventListener("webglcontextrestored", handleContextRestored);
+
+      const handleOffline = () => {
+        if (!cancelled) {
+          setMapNotice("Connection interrupted — map will refresh when back online.");
+        }
+      };
+      const handleOnline = () => {
+        if (cancelled) return;
+        setMapNotice("Back online — refreshing map tiles…");
+        recoverMapboxStyleInPlace(map, currentStyleUrlRef.current);
+        safeResizeMap(map, container);
+      };
+      window.addEventListener("offline", handleOffline);
+      window.addEventListener("online", handleOnline);
+
       const resizeObserver =
         typeof ResizeObserver !== "undefined"
           ? new ResizeObserver(() => {
-              if (!cancelled) map.resize();
+              if (!cancelled) safeResizeMap(map, container);
             })
           : null;
       resizeObserver?.observe(container);
+      requestAnimationFrame(() => {
+        if (!cancelled) safeResizeMap(map, container);
+      });
+
       mapRef.current = map;
-      engineRef.current = "mapbox";
 
       return () => {
         cancelled = true;
+        if (transientRecoveryTimer !== null) window.clearTimeout(transientRecoveryTimer);
         resizeObserver?.disconnect();
+        window.removeEventListener("offline", handleOffline);
+        window.removeEventListener("online", handleOnline);
+        canvas?.removeEventListener("webglcontextlost", handleContextLost);
+        canvas?.removeEventListener("webglcontextrestored", handleContextRestored);
+        routeListenersBoundRef.current = false;
         driverMarkersRef.current.forEach((entry) => entry.marker?.remove?.());
         driverMarkersRef.current.clear();
-        routesLayerRef.current = null;
         map.remove();
         mapRef.current = null;
-        engineRef.current = null;
       };
+    } catch (initError: any) {
+      const classified = classifyMapboxError(initError);
+      setMapError(classified.message || "Unable to initialize the fleet map.");
+      return undefined;
     }
+  }, [mapboxToken, retryNonce]);
 
-    let cleanupWheel: (() => void) | null = null;
-    const resizeObserver =
-      typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(() => {
-            if (!cancelled && mapRef.current && engineRef.current === "leaflet") {
-              mapRef.current.invalidateSize?.();
-            }
-          })
-        : null;
-    resizeObserver?.observe(container);
-
-    ensureLeaflet()
-      .then((L) => {
-        if (cancelled || !containerRef.current) return;
-        const leafletBounds = [
-          [NAGA_CITY_BOUNDS[0][1], NAGA_CITY_BOUNDS[0][0]],
-          [NAGA_CITY_BOUNDS[1][1], NAGA_CITY_BOUNDS[1][0]],
-        ];
-        const map = L.map(containerRef.current, {
-          minZoom: 11,
-          maxZoom: 19,
-          maxBounds: constrainNagaBounds ? leafletBounds : undefined,
-          maxBoundsViscosity: 1,
-          scrollWheelZoom: false,
-          dragging: false,
-          touchZoom: false,
-        }).setView([initialCenter[1], initialCenter[0]], initialZoom);
-        const wheelHandler = (e: WheelEvent) => {
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            if (e.deltaY < 0) {
-              map.zoomIn();
-            } else {
-              map.zoomOut();
-            }
-          }
-        };
-        const el = containerRef.current;
-        el?.addEventListener("wheel", wheelHandler, { passive: false });
-        cleanupWheel = () => el?.removeEventListener("wheel", wheelHandler);
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-          maxZoom: 19,
-        }).addTo(map);
-        mapRef.current = map;
-        engineRef.current = "leaflet";
-        window.setTimeout(() => map.invalidateSize(), 0);
-        setMapReady(true);
-      })
-      .catch((error) => {
-        if (!cancelled) setMapError(error?.message ?? "Unable to load the fleet map.");
-      });
-
-    return () => {
-      cancelled = true;
-      resizeObserver?.disconnect();
-      cleanupWheel?.();
-      driverMarkersRef.current.forEach((entry) => entry.marker?.remove?.());
-      driverMarkersRef.current.clear();
-      if (routesLayerRef.current) {
-        routesLayerRef.current.remove?.();
-        routesLayerRef.current = null;
-      }
-      mapRef.current?.remove?.();
-      mapRef.current = null;
-      engineRef.current = null;
-    };
-  }, [mapboxToken, mapDefaults.mapboxStyle, mapDefaults.centerLatitude, mapDefaults.centerLongitude, mapDefaults.defaultZoom]);
+  // Apply Mapbox style changes in place without tearing down WebGL context
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const nextStyleUrl = getMapboxStyleUrl(mapDefaults.mapboxStyle);
+    if (currentStyleUrlRef.current === nextStyleUrl) return;
+    currentStyleUrlRef.current = nextStyleUrl;
+    mapRef.current.setStyle(nextStyleUrl);
+  }, [mapDefaults.mapboxStyle, mapReady]);
 
   // Handle Street-Level Routes Layer (no geographic polygons)
   useEffect(() => {
-    if (!mapReady || !mapRef.current || !engineRef.current) return;
+    if (!mapReady || !mapRef.current) return;
     const map = mapRef.current;
-    const engine = engineRef.current;
 
     const validRoutes = (routes ?? []).filter(
       (r) => Array.isArray(r.coordinates) && r.coordinates.length >= 2,
     );
 
-    if (engine === "mapbox") {
-      const sourceId = "street-routes";
-      const casingLayerId = "street-routes-casing";
-      const lineLayerId = "street-routes-line";
-
-      const featureCollection: GeoJSON.FeatureCollection = {
-        type: "FeatureCollection",
-        features: validRoutes.map((r) => ({
-          type: "Feature",
-          id: r.id,
-          properties: {
-            id: r.id,
-            label: r.label,
-            color: r.color,
-            selected: Boolean(r.selected || (selectedAreaCode && r.id === selectedAreaCode)),
-          },
-          geometry: {
-            type: "LineString",
-            coordinates: r.coordinates,
-          },
-        })),
+    if (typeof map.isStyleLoaded === "function" && !map.isStyleLoaded()) {
+      const onStyleLoad = () => setStyleVersion((v) => v + 1);
+      map.once("style.load", onStyleLoad);
+      return () => {
+        map.off("style.load", onStyleLoad);
       };
+    }
 
-      const existingSource = map.getSource(sourceId) as mapboxgl.GeoJSONSource | undefined;
-      if (!existingSource) {
-        map.addSource(sourceId, {
-          type: "geojson",
-          data: featureCollection,
-        });
+    const sourceId = "street-routes";
+    const casingLayerId = "street-routes-casing";
+    const lineLayerId = "street-routes-line";
 
-        const beforeLayer = map.getLayer("road-label") ? "road-label" : undefined;
+    const featureCollection: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: validRoutes.map((r) => ({
+        type: "Feature",
+        id: r.id,
+        properties: {
+          id: r.id,
+          label: r.label,
+          color: r.color,
+          selected: Boolean(r.selected || (selectedAreaCode && r.id === selectedAreaCode)),
+        },
+        geometry: {
+          type: "LineString",
+          coordinates: r.coordinates,
+        },
+      })),
+    };
 
-        map.addLayer(
-          {
-            id: casingLayerId,
-            type: "line",
-            source: sourceId,
-            layout: {
-              "line-cap": "round",
-              "line-join": "round",
-            },
-            paint: {
-              "line-color": "#ffffff",
-              "line-width": ["case", ["get", "selected"], 8, 5.5],
-              "line-opacity": 0.9,
-            },
+    const existingSource = map.getSource(sourceId) as mapboxgl.GeoJSONSource | undefined;
+    if (!existingSource) {
+      map.addSource(sourceId, {
+        type: "geojson",
+        data: featureCollection,
+      });
+
+      const beforeLayer = map.getLayer("road-label") ? "road-label" : undefined;
+
+      map.addLayer(
+        {
+          id: casingLayerId,
+          type: "line",
+          source: sourceId,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round",
           },
-          beforeLayer,
-        );
-
-        map.addLayer(
-          {
-            id: lineLayerId,
-            type: "line",
-            source: sourceId,
-            layout: {
-              "line-cap": "round",
-              "line-join": "round",
-            },
-            paint: {
-              "line-color": ["get", "color"],
-              "line-width": ["case", ["get", "selected"], 5, 3],
-              "line-opacity": ["case", ["get", "selected"], 0.95, 0.82],
-            },
+          paint: {
+            "line-color": "#ffffff",
+            "line-width": ["case", ["get", "selected"], 8, 5.5],
+            "line-opacity": 0.9,
           },
-          beforeLayer,
-        );
+        },
+        beforeLayer,
+      );
 
+      map.addLayer(
+        {
+          id: lineLayerId,
+          type: "line",
+          source: sourceId,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round",
+          },
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": ["case", ["get", "selected"], 5, 3],
+            "line-opacity": ["case", ["get", "selected"], 0.95, 0.82],
+          },
+        },
+        beforeLayer,
+      );
+
+      if (!routeListenersBoundRef.current) {
+        routeListenersBoundRef.current = true;
         map.on("click", lineLayerId, (e: any) => {
           const feature = e.features?.[0];
           if (feature?.properties?.id) {
@@ -521,41 +526,9 @@ export default function LiveFleetMap({
         map.on("mouseleave", lineLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
-      } else {
-        existingSource.setData(featureCollection);
       }
-    } else if (engine === "leaflet") {
-      if (routesLayerRef.current) {
-        routesLayerRef.current.remove();
-        routesLayerRef.current = null;
-      }
-      if (validRoutes.length > 0 && window.L) {
-        const group = window.L.layerGroup();
-        validRoutes.forEach((route) => {
-          const isSelected = Boolean(route.selected || (selectedAreaCode && route.id === selectedAreaCode));
-          const latLngs = route.coordinates.map(([lng, lat]) => [lat, lng]);
-          window.L.polyline(latLngs, {
-            color: "#ffffff",
-            weight: isSelected ? 8 : 5.5,
-            opacity: 0.9,
-            lineCap: "round",
-            lineJoin: "round",
-          }).addTo(group);
-
-          const line = window.L.polyline(latLngs, {
-            color: route.color,
-            weight: isSelected ? 5 : 3,
-            opacity: isSelected ? 0.95 : 0.82,
-            lineCap: "round",
-            lineJoin: "round",
-          });
-          line.bindTooltip(route.label, { sticky: true });
-          line.on("click", () => onRouteClickRef.current?.(route.id));
-          line.addTo(group);
-        });
-        group.addTo(map);
-        routesLayerRef.current = group;
-      }
+    } else {
+      existingSource.setData(featureCollection);
     }
 
     if (selectedAreaCode) {
@@ -571,24 +544,16 @@ export default function LiveFleetMap({
       const fitSig = `area:${selectedAreaCode}:${targetCoords.length}`;
       if (targetCoords.length > 0 && lastFitSignatureRef.current !== fitSig) {
         lastFitSignatureRef.current = fitSig;
-        if (engine === "mapbox") {
-          const bounds = new mapboxgl.LngLatBounds();
-          targetCoords.forEach((coord) => bounds.extend(coord));
-          map.fitBounds(bounds, { padding: 70, maxZoom: 15, duration: 500 });
-        } else if (engine === "leaflet") {
-          map.fitBounds(
-            targetCoords.map(([lng, lat]) => [lat, lng]),
-            { padding: [55, 55], maxZoom: 15 },
-          );
-        }
+        const bounds = new mapboxgl.LngLatBounds();
+        targetCoords.forEach((coord) => bounds.extend(coord));
+        map.fitBounds(bounds, { padding: 70, maxZoom: 15, duration: 500 });
       }
     }
-  }, [mapReady, routes, selectedAreaCode]);
+  }, [mapReady, styleVersion, routes, selectedAreaCode]);
 
   useEffect(() => {
-    if (!mapReady || !mapRef.current || !engineRef.current) return;
+    if (!mapReady || !mapRef.current) return;
     const map = mapRef.current;
-    const engine = engineRef.current;
     const activeLandfillMarker: LiveFleetMapMarker = {
       ...SWMO_LANDFILL_MARKER,
       label: `${landfillSite.name} (Truck Disposal Site)`,
@@ -621,75 +586,49 @@ export default function LiveFleetMap({
         if (coordChanged) {
           existing.lastLng = lng;
           existing.lastLat = lat;
-          if (engine === "mapbox") {
-            existing.marker.setLngLat(coordinate);
-          } else {
-            existing.marker.setLatLng([lat, lng]);
-          }
+          existing.marker.setLngLat(coordinate);
         }
 
         if (existing.lastLabel !== fleetMarker.label) {
           existing.lastLabel = fleetMarker.label;
-          if (engine === "mapbox" && existing.button) {
+          if (existing.button) {
             existing.button.title = fleetMarker.label;
             existing.button.setAttribute("aria-label", `View ${fleetMarker.label}`);
-          } else if (engine === "leaflet") {
-            existing.marker.setTooltipContent?.(fleetMarker.label);
           }
         }
 
         // Only update styling / class / icon when tone, delayed state, icon kind, or selection changes.
         if (existing.lastClass !== nextStateKey) {
           existing.lastClass = nextStateKey;
-          if (engine === "mapbox" && existing.wrapper && existing.button) {
+          if (existing.wrapper && existing.button) {
             existing.button.className = nextClass;
             existing.wrapper.style.zIndex = fleetMarker.selected ? "10" : "";
             existing.button.innerHTML = renderMapMarkerSvg(
               fleetMarker.icon,
               fleetMarker.small && !fleetMarker.selected,
             );
-          } else if (engine === "leaflet") {
-            existing.marker.setIcon(leafletIcon(fleetMarker));
-            existing.marker.setZIndexOffset?.(fleetMarker.selected ? 1000 : 0);
           }
         }
         return;
       }
 
-      if (engine === "mapbox") {
-        const { wrapper, button } = createMapboxMarkerNodes(
-          fleetMarker,
-          nextClass,
-          (key) => onMarkerClickRef.current(key),
-        );
-        const marker = new mapboxgl.Marker({ element: wrapper, anchor: "center" })
-          .setLngLat(coordinate)
-          .addTo(map);
-        driverMarkersRef.current.set(fleetMarker.key, {
-          marker,
-          wrapper,
-          button,
-          lastLng: lng,
-          lastLat: lat,
-          lastClass: nextStateKey,
-          lastLabel: fleetMarker.label,
-        });
-      } else {
-        const marker = window.L.marker([lat, lng], {
-          icon: leafletIcon(fleetMarker),
-          zIndexOffset: fleetMarker.selected ? 1000 : 0,
-        })
-          .bindTooltip(fleetMarker.label, { direction: "top", offset: [0, fleetMarker.small && !fleetMarker.selected ? -14 : -22] })
-          .on("click", () => onMarkerClickRef.current(fleetMarker.key))
-          .addTo(map);
-        driverMarkersRef.current.set(fleetMarker.key, {
-          marker,
-          lastLng: lng,
-          lastLat: lat,
-          lastClass: nextStateKey,
-          lastLabel: fleetMarker.label,
-        });
-      }
+      const { wrapper, button } = createMapboxMarkerNodes(
+        fleetMarker,
+        nextClass,
+        (key) => onMarkerClickRef.current(key),
+      );
+      const marker = new mapboxgl.Marker({ element: wrapper, anchor: "center" })
+        .setLngLat(coordinate)
+        .addTo(map);
+      driverMarkersRef.current.set(fleetMarker.key, {
+        marker,
+        wrapper,
+        button,
+        lastLng: lng,
+        lastLat: lat,
+        lastClass: nextStateKey,
+        lastLabel: fleetMarker.label,
+      });
     });
 
     // Auto-fit bounds ONLY on initial load or when resetting an area selection
@@ -701,19 +640,15 @@ export default function LiveFleetMap({
     if ((isInitialFit || isAreaDeselected) && !selectedAreaCode) {
       hasInitialFitRef.current = true;
       lastFitSignatureRef.current = "";
-      if (engine === "mapbox") {
-        const bounds = new mapboxgl.LngLatBounds();
-        validMarkers.forEach((marker) => bounds.extend([marker.longitude, marker.latitude]));
-        map.fitBounds(bounds, { padding: 70, maxZoom: 15, duration: 500 });
-      } else {
-        map.fitBounds(validMarkers.map((marker) => [marker.latitude, marker.longitude]), { padding: [60, 60], maxZoom: 15 });
-      }
+      const bounds = new mapboxgl.LngLatBounds();
+      validMarkers.forEach((marker) => bounds.extend([marker.longitude, marker.latitude]));
+      map.fitBounds(bounds, { padding: 70, maxZoom: 15, duration: 500 });
     }
   }, [mapReady, markers, selectedAreaCode, showLandfill, landfillSite.lat, landfillSite.lng, landfillSite.name]);
 
   // Pan/zoom to an explicitly focused marker (e.g. selected bin in Area view)
   useEffect(() => {
-    if (!mapReady || !mapRef.current || !engineRef.current) return;
+    if (!mapReady || !mapRef.current) return;
     if (!focusTarget) {
       lastFocusKeyRef.current = null;
       return;
@@ -723,22 +658,13 @@ export default function LiveFleetMap({
     lastFocusKeyRef.current = focusTarget.key;
 
     const map = mapRef.current;
-    const engine = engineRef.current;
     const targetZoom = focusTarget.zoom ?? 16;
-
-    if (engine === "mapbox") {
-      const currentZoom = typeof map.getZoom === "function" ? map.getZoom() : 13;
-      map.flyTo({
-        center: [focusTarget.longitude, focusTarget.latitude],
-        zoom: Math.max(currentZoom, targetZoom),
-        duration: 500,
-      });
-    } else if (engine === "leaflet") {
-      const currentZoom = typeof map.getZoom === "function" ? map.getZoom() : 13;
-      map.setView([focusTarget.latitude, focusTarget.longitude], Math.max(currentZoom, targetZoom), {
-        animate: true,
-      });
-    }
+    const currentZoom = typeof map.getZoom === "function" ? map.getZoom() : 13;
+    map.flyTo({
+      center: [focusTarget.longitude, focusTarget.latitude],
+      zoom: Math.max(currentZoom, targetZoom),
+      duration: 500,
+    });
   }, [focusTarget, mapReady]);
 
   return (
@@ -777,9 +703,36 @@ export default function LiveFleetMap({
         </button>
       </div>
 
+      {mapNotice && !mapError && (
+        <div className="absolute bottom-3 right-3 z-20 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/95 px-3 py-1.5 text-xs text-amber-900 shadow-sm">
+          <span>{mapNotice}</span>
+          <button
+            type="button"
+            onClick={() => {
+              if (mapRef.current) {
+                recoverMapboxStyleInPlace(mapRef.current, currentStyleUrlRef.current);
+                safeResizeMap(mapRef.current, containerRef.current);
+              }
+            }}
+            className="inline-flex items-center gap-1 rounded border border-amber-300 bg-white px-2 py-0.5 font-medium text-amber-900 hover:bg-amber-100"
+          >
+            <RefreshCw className="size-3" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
       {mapError && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/90 p-6 text-center text-sm text-red-600">
-          {mapError}
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-white/90 p-6 text-center text-sm text-red-600">
+          <p className="max-w-md">{mapError}</p>
+          <button
+            type="button"
+            onClick={() => setRetryNonce((n) => n + 1)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 shadow-xs hover:bg-red-50"
+          >
+            <RefreshCw className="size-3.5" />
+            <span>Reload Map</span>
+          </button>
         </div>
       )}
       {!mapError && !loading && markers.length === 0 && (

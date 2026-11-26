@@ -37,6 +37,11 @@ supabase/schemas/
 
 # Graphify local AST/stat caches
 graphify-out/cache/
+graphify-out/.graphify_analysis.json
+graphify-out/.graphify_labels.json
+graphify-out/.graphify_labels.json.sig
+graphify-out/GRAPH_REPORT.md
+graphify-out/graph.html
 
 # Local IDE/CLI launchers & signing keys
 scripts/launch-agy.ps1

@@ -373,7 +373,11 @@ export function getRuntimeSystemSettings(): ResolvedSystemSettings {
 }
 
 export function syncRuntimeSystemSettings(records: SystemSettingRecord[]): ResolvedSystemSettings {
-  runtimeSettings = resolveAllSystemSettings(records);
+  const nextSettings = resolveAllSystemSettings(records);
+  if (JSON.stringify(nextSettings) === JSON.stringify(runtimeSettings)) {
+    return runtimeSettings;
+  }
+  runtimeSettings = nextSettings;
   runtimeListeners.forEach((listener) => listener());
   return runtimeSettings;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Layers, MapPin, Truck, Clock, X, Search, Ban, RotateCcw, Route as RouteIcon, AlertTriangle, Trash2, Recycle } from "lucide-react";
 import PageHeader from "../components/layout/PageHeader";
 import CollectionBinsPanel from "../components/areas/CollectionBinsPanel";
@@ -117,6 +117,19 @@ export default function AreaManagement({ onNavigate, initialTab = "areas" }: Are
   const [streetRoutesByArea, setStreetRoutesByArea] = useState<Record<string, StreetRouteResult>>({});
   const [unresolvedRouteAreas, setUnresolvedRouteAreas] = useState<string[]>([]);
   const [routesLoading, setRoutesLoading] = useState(false);
+  const [onlineRouteRetryTick, setOnlineRouteRetryTick] = useState(0);
+  const unresolvedRouteAreasRef = useRef<string[]>([]);
+  unresolvedRouteAreasRef.current = unresolvedRouteAreas;
+
+  useEffect(() => {
+    const handleOnline = () => {
+      if (unresolvedRouteAreasRef.current.length > 0) {
+        setOnlineRouteRetryTick((t) => t + 1);
+      }
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, []);
 
   const binsById = useMemo(() => {
     const map = new Map<string, BinRecord>();
@@ -281,7 +294,7 @@ export default function AreaManagement({ onNavigate, initialTab = "areas" }: Are
     return () => {
       cancelled = true;
     };
-  }, [binsById, collectionSchedules, derivedAreas, selectedAreaCode]);
+  }, [binsById, collectionSchedules, derivedAreas, selectedAreaCode, onlineRouteRetryTick]);
 
   const allBarangays = useMemo(() => {
     const set = new Set<string>();

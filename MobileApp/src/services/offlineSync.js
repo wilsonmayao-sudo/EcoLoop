@@ -68,12 +68,20 @@ export async function flushOfflineQueue(executeMutation) {
   }
 }
 
-export function subscribeConnectivity(executeMutation, onFlushed) {
+export function subscribeConnectivity(executeMutation, onFlushed, onReconnect) {
+  let wasConnected = null;
   return NetInfo.addEventListener(async (state) => {
-    if (state.isConnected) {
+    const isNowConnected = Boolean(state?.isConnected && state?.isInternetReachable !== false);
+    const reconnected = wasConnected === false && isNowConnected;
+    wasConnected = isNowConnected;
+
+    if (isNowConnected) {
       const count = await flushOfflineQueue(executeMutation);
       if (count > 0 && typeof onFlushed === "function") {
         onFlushed();
+      }
+      if (reconnected && typeof onReconnect === "function") {
+        onReconnect();
       }
     }
   });

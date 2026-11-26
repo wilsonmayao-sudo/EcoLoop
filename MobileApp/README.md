@@ -15,7 +15,7 @@ A React Native mobile application for waste management route tracking and report
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
+- Node.js (v18 LTS or higher)
 - npm or yarn
 - Expo CLI (`npm install -g expo-cli` or use `npx expo`)
 - iOS Simulator (for iOS) or Android Emulator (for Android)
@@ -76,7 +76,7 @@ MobileApp/
 - **React Navigation**: Navigation library (bottom tabs + stack)
 - **@expo/vector-icons**: Icon library (Ionicons)
 - **React Native Safe Area Context**: Safe area handling
-- **React Native WebView**: Interactive map rendering with Mapbox / Leaflet
+- **React Native WebView**: Interactive map rendering with Mapbox GL JS
 - **@react-native-async-storage/async-storage**: Local data persistence
 - **expo-location**: Foreground/background route GPS telemetry
 - **expo-notifications**: Dev/production local route notifications (guarded in Expo Go)
@@ -119,7 +119,7 @@ MobileApp/
 ## Development Notes
 
 - The app uses Supabase Auth and live database tables for driver accounts and assigned pickups
-- Map functionality uses WebView with Mapbox GL JS / Leaflet for cross-platform compatibility
+- Map functionality uses WebView with Mapbox GL JS for cross-platform compatibility
 - Street routing uses Mapbox Directions API with keyless public OSRM and cached polyline fallbacks
 - AsyncStorage is used for preferences, avatar cache, and offline mutation queue
 - Error boundaries are implemented for graceful error handling

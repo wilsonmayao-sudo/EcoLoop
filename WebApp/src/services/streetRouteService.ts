@@ -1,4 +1,5 @@
 import type { BinRecord, CollectionScheduleRecord } from "../hooks/useLiveData";
+import { getWebMapboxToken } from "../utils/mapboxRuntime";
 import { getConfiguredLandfill, getRuntimeSystemSettings } from "../utils/systemSettings";
 
 export type LngLat = [number, number];
@@ -75,8 +76,7 @@ const memoryCache = new Map<string, { expiresAt: number; data: StreetRouteResult
 const inflightRequests = new Map<string, Promise<StreetRouteResponse>>();
 
 function getMapboxToken(): string | undefined {
-  return (import.meta as ImportMeta & { env?: { VITE_MAPBOX_ACCESS_TOKEN?: string } }).env
-    ?.VITE_MAPBOX_ACCESS_TOKEN?.trim() || undefined;
+  return getWebMapboxToken() || undefined;
 }
 
 export function isMapboxDirectionsConfigured(): boolean {

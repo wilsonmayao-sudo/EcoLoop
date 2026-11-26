@@ -1377,7 +1377,7 @@ export default function SystemSettings({ onNavigate }: SystemSettingsProps) {
                           Mapbox Basemap Style
                         </label>
                         <p id="hint-map-style" className="text-xs text-gray-500">
-                          Used when Mapbox token is configured; falls back cleanly to OpenStreetMap if unconfigured.
+                          Mapbox basemap style applied across all WebApp maps.
                         </p>
                         <CustomSelect
                           id="map-style"

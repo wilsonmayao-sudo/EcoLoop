@@ -169,6 +169,20 @@ export function AuthProvider({ children }) {
     if (data.status === "suspended") {
       throw new Error("Driver account is not active.");
     }
+    if (String(data.status ?? "").toLowerCase() === "offline") {
+      const nowIso = new Date().toISOString();
+      try {
+        const { error: onlineErr } = await supabase
+          .from("drivers")
+          .update({ status: "available", last_seen_at: nowIso })
+          .eq("id", data.id);
+        if (!onlineErr) {
+          data = { ...data, status: "available", last_seen_at: nowIso };
+        }
+      } catch {
+        /* non-fatal status refresh */
+      }
+    }
     setDriver(data);
     return data;
   };

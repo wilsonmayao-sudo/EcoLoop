@@ -114,6 +114,7 @@ export default function HomeScreen() {
     routePendingPickups,
     incomingOverflowEvent,
     setIncomingOverflowEvent,
+    pendingOverflowEvents,
     activeSourceOverflowEvent,
     isOverflowRouteActive,
     acceptOverflowDispatch,
@@ -123,6 +124,8 @@ export default function HomeScreen() {
     startRoute,
     completeRoute,
     isLoading: pickupsLoading,
+    loadError,
+    overflowLoadError,
     reloadPickups,
   } = usePickups();
   const [busy, setBusy] = useState(false);
@@ -593,29 +596,13 @@ export default function HomeScreen() {
         SWMO_LANDFILL_DISPOSAL_SITE,
       );
 
-      // 3. Mark deliveries as OVERFLOW_UNCOLLECTED (tolerate DBs without enum value)
-      const deliveryIds = uncollectedPickups.map((p) => p.deliveryId).filter(Boolean);
-      if (deliveryIds.length > 0) {
-        const { error: delivErr } = await updateDeliveriesStatusWithFallback(
-          supabase,
-          deliveryIds,
-          "overflow_uncollected",
-        );
-        if (delivErr) throw delivErr;
-      }
-
-      // 4. Update current truck & driver status to full (with schema/enum fallbacks)
-      const { error: vehErr } = await updateVehicleWithFallback(supabase, vehicleId, {
-        status: "full",
-        load_percent: 100,
-      });
-      if (vehErr) throw vehErr;
-
-      const { error: drvErr } = await updateDriverStatusWithFallback(supabase, driver.id, "full", "on_route");
-      if (drvErr) throw drvErr;
-
-      // 5. Insert overflow_events record(s) from Dynamic Reassignment Engine (single or multi-truck split)
+      // 3. Build payload for atomic create_overflow_dispatch RPC (with sequential fallback if RPC not deployed)
       const nowIso = new Date().toISOString();
+      const sourceMetaLabels = {
+        source_vehicle_label: `Truck #${vehicleId}`,
+        source_driver_name: driverName,
+        source_route_name: currentRoute?.name ?? null,
+      };
       const mapStopToBinEntry = (stop, idx, meta = null) => {
         const base = {
           bin_id: stop.binId,
@@ -628,10 +615,12 @@ export default function HomeScreen() {
       };
 
       const createdPayloads = [];
+      const rpcAssignments = [];
       for (const assignment of reassignmentResult.assignments) {
         const normalizedTargetVehicleId = normalizeNonEmptyId(assignment.vehicleId);
         const normalizedTargetDriverId = normalizeNonEmptyId(assignment.driverId);
         const assignmentMeta = {
+          ...sourceMetaLabels,
           reported_capacity_percent: 100,
           algorithm: "dynamic_capacity_reassignment_v2",
           is_multi_truck: reassignmentResult.isMultiTruck,
@@ -653,23 +642,14 @@ export default function HomeScreen() {
         const assignedBins = assignment.assignedStops.map((s, idx) =>
           mapStopToBinEntry(s, idx, assignmentMeta),
         );
-        const eventPayload = {
-          source_vehicle_id: vehicleId,
-          source_driver_id: String(driver.id),
-          source_route_id: String(currentRoute.id),
+        rpcAssignments.push({
           target_vehicle_id: normalizedTargetVehicleId,
           target_driver_id: normalizedTargetDriverId,
-          status: normalizedTargetDriverId ? "dispatched" : "pending",
           overflow_bins: assignedBins,
           bins_count: assignedBins.length,
           distance_km: assignment.additionalDistanceKm,
           reassignment_metadata: assignmentMeta,
-          created_at: nowIso,
-        };
-        const { error: eventError } = await insertOverflowEventWithFallback(supabase, eventPayload);
-        if (eventError) {
-          throw new Error(eventError.message || "Failed inserting overflow event.");
-        }
+        });
         createdPayloads.push(assignment);
       }
 
@@ -677,57 +657,119 @@ export default function HomeScreen() {
         reassignmentResult.assignments.length === 0
           ? uncollectedStops
           : reassignmentResult.unassignedStops;
-      if (pendingStops.length > 0) {
-        const pendingMeta = {
-          reported_capacity_percent: 100,
-          algorithm: "dynamic_capacity_reassignment_v2",
-          is_multi_truck: reassignmentResult.isMultiTruck,
-          unassigned_reason:
-            reassignmentResult.assignments.length === 0
-              ? "No eligible assisting truck met GPS, driver, and capacity constraints"
-              : "Remaining stops exceed combined capacity of available fleet",
-          capacity_validated: reassignmentResult.capacityValidated,
-          capacity_validation_note: reassignmentResult.capacityValidationNote,
-        };
-        const pendingBins = pendingStops.map((s, idx) => mapStopToBinEntry(s, idx, pendingMeta));
-        const { error: eventError } = await insertOverflowEventWithFallback(supabase, {
-          source_vehicle_id: vehicleId,
-          source_driver_id: String(driver.id),
-          source_route_id: String(currentRoute.id),
-          target_vehicle_id: null,
-          target_driver_id: null,
-          status: "pending",
-          overflow_bins: pendingBins,
-          bins_count: pendingBins.length,
-          distance_km: null,
-          reassignment_metadata: pendingMeta,
+      const pendingMeta = pendingStops.length > 0
+        ? {
+            ...sourceMetaLabels,
+            reported_capacity_percent: 100,
+            algorithm: "dynamic_capacity_reassignment_v2",
+            is_multi_truck: reassignmentResult.isMultiTruck,
+            unassigned_reason:
+              reassignmentResult.assignments.length === 0
+                ? "No eligible assisting truck met GPS, driver, and capacity constraints"
+                : "Remaining stops exceed combined capacity of available fleet",
+            capacity_validated: reassignmentResult.capacityValidated,
+            capacity_validation_note: reassignmentResult.capacityValidationNote,
+          }
+        : {};
+      const pendingBins = pendingStops.map((s, idx) => mapStopToBinEntry(s, idx, pendingMeta));
+
+      const dispatchRpcRes = await supabase.rpc("create_overflow_dispatch", {
+        p_source_vehicle_id: String(vehicleId),
+        p_source_driver_id: String(driver.id),
+        p_source_route_id: String(currentRoute.id),
+        p_assignments: rpcAssignments,
+        p_pending_bins: pendingBins,
+        p_pending_metadata: pendingMeta,
+        p_mark_deliveries_overflow: true,
+      });
+
+      if (!dispatchRpcRes.error && dispatchRpcRes.data?.success === true) {
+        // Atomic RPC updated vehicle, deliveries, overflow_events, and driver/dispatcher notifications
+      } else if (dispatchRpcRes.error && isMissingRpcError(dispatchRpcRes.error)) {
+        const deliveryIds = uncollectedPickups.map((p) => p.deliveryId).filter(Boolean);
+        if (deliveryIds.length > 0) {
+          const { error: delivErr } = await updateDeliveriesStatusWithFallback(
+            supabase,
+            deliveryIds,
+            "overflow_uncollected",
+          );
+          if (delivErr) throw delivErr;
+        }
+
+        const { error: vehErr } = await updateVehicleWithFallback(supabase, vehicleId, {
+          status: "full",
+          load_percent: 100,
+        });
+        if (vehErr) throw vehErr;
+
+        const { error: drvErr } = await updateDriverStatusWithFallback(supabase, driver.id, "full", "on_route");
+        if (drvErr) throw drvErr;
+
+        for (const assignPayload of rpcAssignments) {
+          const eventPayload = {
+            source_vehicle_id: vehicleId,
+            source_driver_id: String(driver.id),
+            source_route_id: String(currentRoute.id),
+            target_vehicle_id: assignPayload.target_vehicle_id,
+            target_driver_id: assignPayload.target_driver_id,
+            status: assignPayload.target_driver_id ? "dispatched" : "pending",
+            overflow_bins: assignPayload.overflow_bins,
+            bins_count: assignPayload.bins_count,
+            distance_km: assignPayload.distance_km,
+            reassignment_metadata: assignPayload.reassignment_metadata,
+            created_at: nowIso,
+          };
+          const { error: eventError } = await insertOverflowEventWithFallback(supabase, eventPayload);
+          if (eventError) {
+            throw new Error(eventError.message || "Failed inserting overflow event.");
+          }
+        }
+
+        if (pendingBins.length > 0) {
+          const { error: eventError } = await insertOverflowEventWithFallback(supabase, {
+            source_vehicle_id: vehicleId,
+            source_driver_id: String(driver.id),
+            source_route_id: String(currentRoute.id),
+            target_vehicle_id: null,
+            target_driver_id: null,
+            status: "pending",
+            overflow_bins: pendingBins,
+            bins_count: pendingBins.length,
+            distance_km: null,
+            reassignment_metadata: pendingMeta,
+            created_at: nowIso,
+          });
+          if (eventError) {
+            throw new Error(eventError.message || "Failed inserting overflow event.");
+          }
+        }
+
+        const dispatchedCount = createdPayloads.reduce((sum, a) => sum + a.stopsCount, 0);
+        const notifyMsg =
+          createdPayloads.length > 1
+            ? `${driverName} signaled 100% FULL. Dynamic engine split ${dispatchedCount}/${overflowBins.length} stops across ${createdPayloads.length} trucks (${createdPayloads.map((a) => `${a.label}: ${a.stopsCount}`).join(", ")}).`
+            : createdPayloads.length === 1
+              ? `${driverName} signaled 100% FULL. Dynamic engine dispatched ${createdPayloads[0].stopsCount}/${overflowBins.length} stops to ${createdPayloads[0].label}.`
+              : `${driverName} signaled 100% FULL. ${overflowBins.length} uncollected bins awaiting dispatcher relief assignment.`;
+
+        const { error: notifErr } = await insertNotificationWithFallback(supabase, {
+          role: "dispatcher",
+          title: "Truck Capacity Full",
+          message: notifyMsg,
+          type: "warning",
+          category: "assignment",
+          source_table: "overflow_events",
+          read: false,
           created_at: nowIso,
         });
-        if (eventError) {
-          throw new Error(eventError.message || "Failed inserting overflow event.");
-        }
+        if (notifErr) console.warn("Overflow notification note:", notifErr.message);
+      } else {
+        throw new Error(
+          dispatchRpcRes.data?.error ||
+            dispatchRpcRes.error?.message ||
+            "Unable to submit overflow dispatch.",
+        );
       }
-
-      // 6. Notify dispatcher
-      const dispatchedCount = createdPayloads.reduce((sum, a) => sum + a.stopsCount, 0);
-      const notifyMsg =
-        createdPayloads.length > 1
-          ? `${driverName} signaled 100% FULL. Dynamic engine split ${dispatchedCount}/${overflowBins.length} stops across ${createdPayloads.length} trucks (${createdPayloads.map((a) => `${a.label}: ${a.stopsCount}`).join(", ")}).`
-          : createdPayloads.length === 1
-            ? `${driverName} signaled 100% FULL. Dynamic engine dispatched ${createdPayloads[0].stopsCount}/${overflowBins.length} stops to ${createdPayloads[0].label}.`
-            : `${driverName} signaled 100% FULL. ${overflowBins.length} uncollected bins awaiting dispatcher relief assignment.`;
-
-      const { error: notifErr } = await insertNotificationWithFallback(supabase, {
-        role: "dispatcher",
-        title: "Truck Capacity Full",
-        message: notifyMsg,
-        type: "warning",
-        category: "truck",
-        source_table: "overflow_events",
-        read: false,
-        created_at: nowIso,
-      });
-      if (notifErr) console.warn("Overflow notification note:", notifErr.message);
 
       // 7. Transition to Disposal Site View ONLY after all DB updates succeed
       setIsFullDispatched(true);
@@ -803,9 +845,15 @@ export default function HomeScreen() {
     }
   }, [busy, canCompleteCollections, completeLandfillUnload, completeRoute, currentRoute?.id, driver?.id, remainingPickups, t]);
 
+  const pendingAssistanceList = useMemo(
+    () => (Array.isArray(pendingOverflowEvents) ? pendingOverflowEvents : []),
+    [pendingOverflowEvents],
+  );
+  const activeModalOverflowEvent = incomingOverflowEvent ?? null;
+
   // Handler: Target driver accepts incoming overflow request (Screen B)
-  const handleAcceptOverflow = async () => {
-    if (busy || !incomingOverflowEvent) return;
+  const handleAcceptOverflow = async (targetEvent = activeModalOverflowEvent) => {
+    if (busy || !targetEvent) return;
     if (!driver?.id) {
       Alert.alert(
         t("alert_accept_overflow_err", "Failed Accepting Overflow"),
@@ -815,8 +863,8 @@ export default function HomeScreen() {
     }
     setBusy(true);
     try {
-      const acceptedCount = incomingOverflowEvent.bins_count ?? incomingOverflowEvent.overflow_bins?.length ?? 0;
-      const res = await acceptOverflowDispatch(incomingOverflowEvent);
+      const acceptedCount = targetEvent.bins_count ?? targetEvent.overflow_bins?.length ?? 0;
+      const res = await acceptOverflowDispatch(targetEvent);
       navigation.navigate("Map", { startRoute: true, overflowAccepted: true, routeId: res?.targetRouteId });
       Alert.alert(
         t("alert_overflow_assigned_title", "Overflow Assigned"),
@@ -837,11 +885,11 @@ export default function HomeScreen() {
   };
 
   // Handler: Target driver declines incoming overflow request (Screen B)
-  const handleDeclineOverflow = async () => {
-    if (!incomingOverflowEvent) return;
+  const handleDeclineOverflow = async (targetEvent = activeModalOverflowEvent) => {
+    if (busy || !targetEvent) return;
     setBusy(true);
     try {
-      await declineOverflowDispatch(incomingOverflowEvent, driverName);
+      await declineOverflowDispatch(targetEvent, driverName);
     } catch (e) {
       Alert.alert(
         t("alert_decline_overflow_err", "Failed Declining Overflow"),
@@ -880,6 +928,74 @@ export default function HomeScreen() {
         <Text style={[styles.greetingText, { color: colors.textSecondary }]}>
           {getGreeting(t)}, {driverName}
         </Text>
+
+        {loadError || overflowLoadError ? (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => void reloadPickups().catch(() => {})}
+            style={{
+              marginBottom: 12,
+              padding: 12,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: (colors.warning || "#D97706") + "66",
+              backgroundColor: (colors.warning || "#D97706") + "14",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <Ionicons name="refresh-circle-outline" size={20} color={colors.warning || "#D97706"} />
+            <Text style={{ flex: 1, fontSize: 12, fontWeight: "600", color: colors.textPrimary }}>
+              {overflowLoadError || loadError} Tap to refresh assignments.
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {pendingAssistanceList.length > 0 ? (
+          <SurfaceCard style={[styles.disposalCard, { borderColor: colors.warning || "#D97706" }]}>
+            <View style={styles.disposalHeader}>
+              <View style={[styles.disposalIconWrap, { backgroundColor: (colors.warning || "#D97706") + "22" }]}>
+                <Ionicons name="swap-horizontal" size={22} color={colors.warning || "#D97706"} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.disposalTitle, { color: colors.textPrimary }]}>
+                  {pendingAssistanceList.length > 1
+                    ? t("pending_assistance_multi", "{count} Pending Assistance Requests", { count: pendingAssistanceList.length })
+                    : t("pending_assistance_one", "Pending Assistance Assignment")}
+                </Text>
+                <Text style={[styles.disposalSubtitle, { color: colors.textSecondary }]}>
+                  {(pendingAssistanceList[0]?.reassignment_metadata?.source_vehicle_label ??
+                    (pendingAssistanceList[0]?.source_vehicle_id ? `Truck #${pendingAssistanceList[0].source_vehicle_id}` : "Nearby Truck"))}
+                  {pendingAssistanceList[0]?.reassignment_metadata?.source_driver_name
+                    ? ` (${pendingAssistanceList[0].reassignment_metadata.source_driver_name})`
+                    : ""}
+                  {" • "}
+                  {pendingAssistanceList[0]?.bins_count ?? pendingAssistanceList[0]?.overflow_bins?.length ?? 0} stop(s)
+                  {pendingAssistanceList[0]?.distance_km != null ? ` • ~${pendingAssistanceList[0].distance_km} km` : ""}
+                </Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <AppButton
+                title={t("decline_btn", "Decline")}
+                variant="outline"
+                fullWidth={false}
+                onPress={() => void handleDeclineOverflow(pendingAssistanceList[0])}
+                disabled={busy}
+                style={{ flex: 1, minHeight: 44 }}
+              />
+              <AppButton
+                title={t("overflow_accept_btn", "Accept Overflow")}
+                fullWidth={false}
+                onPress={() => void handleAcceptOverflow(pendingAssistanceList[0])}
+                disabled={busy}
+                loading={busy}
+                style={{ flex: 1.4, minHeight: 44, backgroundColor: colors.primary }}
+              />
+            </View>
+          </SurfaceCard>
+        ) : null}
 
         <CurrentAssignmentCard
           route={currentRoute}
@@ -1296,6 +1412,21 @@ export default function HomeScreen() {
               <View style={[styles.overflowAlertBox, { backgroundColor: colors.surface, borderColor: colors.borderSubtle }]}>
                 <View style={styles.overflowInfoItem}>
                   <Text style={[styles.overflowInfoLabel, { color: colors.textSecondary }]}>
+                    {t("overflow_requesting_truck", "Requesting Truck")}
+                  </Text>
+                  <Text style={[styles.overflowInfoValue, { color: colors.textPrimary }]}>
+                    {incomingOverflowEvent?.reassignment_metadata?.source_vehicle_label ??
+                      (incomingOverflowEvent?.source_vehicle_id
+                        ? `Truck #${incomingOverflowEvent.source_vehicle_id}`
+                        : "Assigned Relief Request")}
+                    {incomingOverflowEvent?.reassignment_metadata?.source_driver_name
+                      ? ` (${incomingOverflowEvent.reassignment_metadata.source_driver_name})`
+                      : ""}
+                  </Text>
+                </View>
+
+                <View style={styles.overflowInfoItem}>
+                  <Text style={[styles.overflowInfoLabel, { color: colors.textSecondary }]}>
                     {t("overflow_interrupted_route", "Interrupted Route")}
                   </Text>
                   <Text style={[styles.overflowInfoValue, { color: colors.textPrimary }]}>
@@ -1338,7 +1469,7 @@ export default function HomeScreen() {
             <View style={styles.modalButtonRow}>
               <TouchableOpacity
                 style={[styles.modalCancelButton, { borderColor: colors.borderSubtle }]}
-                onPress={handleDeclineOverflow}
+                onPress={() => void handleDeclineOverflow(incomingOverflowEvent)}
                 disabled={busy}
                 activeOpacity={0.7}
               >
@@ -1349,7 +1480,7 @@ export default function HomeScreen() {
 
               <TouchableOpacity
                 style={[styles.modalConfirmButton, { backgroundColor: colors.primary }]}
-                onPress={handleAcceptOverflow}
+                onPress={() => void handleAcceptOverflow(incomingOverflowEvent)}
                 disabled={busy}
                 activeOpacity={0.8}
               >

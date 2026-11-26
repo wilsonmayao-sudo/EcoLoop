@@ -17,6 +17,7 @@ import AppButton from "../components/ui/AppButton";
 import { useTheme } from "../context/ThemeContext";
 import { useNotifications } from "../context/NotificationContext";
 import { useLanguage } from "../context/LanguageContext";
+import { usePickups } from "../context/PickupContext";
 
 function relativeTime(value) {
   const date = value ? new Date(value) : null;
@@ -72,6 +73,7 @@ export default function NotificationsScreen({ navigation }) {
     markRead,
     markAllRead,
   } = useNotifications();
+  const { reloadPickups } = usePickups();
   const [refreshing, setRefreshing] = useState(false);
 
   const readCount = Math.max(0, items.length - unreadCount);
@@ -87,15 +89,25 @@ export default function NotificationsScreen({ navigation }) {
     }
   };
 
-  const handleMarkRead = async (notification) => {
-    if (!notification || notification.read) return;
-    try {
-      await markRead(notification.id);
-    } catch (err) {
-      Alert.alert(
-        t("notif_err_update_one", "Could not update notification"),
-        err?.message ?? t("err_try_again", "Please try again."),
-      );
+  const handleNotificationPress = async (notification) => {
+    if (!notification) return;
+    if (!notification.read) {
+      try {
+        await markRead(notification.id);
+      } catch (err) {
+        Alert.alert(
+          t("notif_err_update_one", "Could not update notification"),
+          err?.message ?? t("err_try_again", "Please try again."),
+        );
+      }
+    }
+    if (
+      notification.source_table === "overflow_events" ||
+      notification.category === "assignment" ||
+      notification.category === "route"
+    ) {
+      void reloadPickups?.().catch(() => {});
+      navigation?.navigate?.("Main", { screen: "Home" });
     }
   };
 
@@ -197,7 +209,7 @@ export default function NotificationsScreen({ navigation }) {
                 notification={notification}
                 colors={colors}
                 t={t}
-                onPress={() => handleMarkRead(notification)}
+                onPress={() => handleNotificationPress(notification)}
                 showDivider={index < items.length - 1}
               />
             ))}

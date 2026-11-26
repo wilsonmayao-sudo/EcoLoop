@@ -217,18 +217,24 @@ export interface OverflowEventRecord {
   id: string;
   source_vehicle_id: string | number | null;
   source_driver_id: string | number | null;
+  source_driver_auth_user_id?: string | null;
   source_route_id: string | null;
   target_vehicle_id: string | number | null;
   target_driver_id: string | number | null;
+  target_driver_auth_user_id?: string | null;
   target_route_id?: string | number | null;
-  status: "pending" | "dispatched" | "accepted" | "declined" | "completed" | string;
+  status: "pending" | "dispatched" | "accepted" | "declined" | "completed" | "cancelled" | string;
   overflow_bins: OverflowBinEntry[];
   bins_count: number;
   distance_km: number | null;
   reassignment_metadata?: any;
   created_at: string;
+  dispatched_at?: string | null;
+  driver_notified_at?: string | null;
   accepted_at: string | null;
+  declined_at?: string | null;
   completed_at: string | null;
+  updated_at?: string | null;
 }
 
 export interface ReferenceRecord {
@@ -398,9 +404,30 @@ export function getRouteProgress(routeId: string, deliveries: DeliveryRecord[]) 
 const COMPLETED_DELIVERY_STATUSES = new Set(["completed", "collected", "done"]);
 
 const OVERFLOW_EVENTS_EXTENDED_SELECT =
-  "id, source_vehicle_id, source_driver_id, source_route_id, target_vehicle_id, target_driver_id, target_route_id, status, overflow_bins, bins_count, distance_km, reassignment_metadata, created_at, dispatched_at, accepted_at, completed_at";
+  "id, source_vehicle_id, source_driver_id, source_driver_auth_user_id, source_route_id, target_vehicle_id, target_driver_id, target_driver_auth_user_id, target_route_id, status, overflow_bins, bins_count, distance_km, reassignment_metadata, created_at, dispatched_at, driver_notified_at, accepted_at, declined_at, completed_at, updated_at";
+const OVERFLOW_EVENTS_MID_SELECT =
+  "id, source_vehicle_id, source_driver_id, source_route_id, target_vehicle_id, target_driver_id, target_route_id, status, overflow_bins, bins_count, distance_km, reassignment_metadata, created_at, accepted_at, completed_at";
 const OVERFLOW_EVENTS_LEGACY_SELECT =
   "id, source_vehicle_id, source_driver_id, source_route_id, target_vehicle_id, target_driver_id, status, overflow_bins, bins_count, distance_km, created_at, accepted_at, completed_at";
+
+const VEHICLES_EXTENDED_SELECT =
+  "id, code, truck_code, plate_number, label, model, is_active, status, driver_id, route_id, capacity_liters, capacity_kg, fuel_percent, load_percent, latitude, longitude, last_seen_at, updated_at";
+const VEHICLES_LEGACY_SELECT =
+  "id, code, truck_code, plate_number, label, model, is_active, status, driver_id, route_id, capacity_liters, capacity_kg, fuel_percent, latitude, longitude, last_seen_at, updated_at";
+
+async function fetchVehiclesSafe() {
+  let result: { data: any[] | null; error: any } = await supabase
+    .from("vehicles")
+    .select(VEHICLES_EXTENDED_SELECT)
+    .order("label", { ascending: true });
+  if (result.error && isMissingColumnError(result.error, "load_percent")) {
+    result = await supabase
+      .from("vehicles")
+      .select(VEHICLES_LEGACY_SELECT)
+      .order("label", { ascending: true });
+  }
+  return result;
+}
 
 async function fetchOverflowEventsSafe() {
   let result: { data: any[] | null; error: any } = await supabase
@@ -410,9 +437,23 @@ async function fetchOverflowEventsSafe() {
     .limit(100);
   if (
     result.error &&
+    (isMissingColumnError(result.error, "dispatched_at") ||
+      isMissingColumnError(result.error, "driver_notified_at") ||
+      isMissingColumnError(result.error, "declined_at") ||
+      isMissingColumnError(result.error, "updated_at") ||
+      isMissingColumnError(result.error, "target_driver_auth_user_id") ||
+      isMissingColumnError(result.error, "source_driver_auth_user_id"))
+  ) {
+    result = await supabase
+      .from("overflow_events")
+      .select(OVERFLOW_EVENTS_MID_SELECT)
+      .order("created_at", { ascending: false })
+      .limit(100);
+  }
+  if (
+    result.error &&
     (isMissingColumnError(result.error, "target_route_id") ||
-      isMissingColumnError(result.error, "reassignment_metadata") ||
-      isMissingColumnError(result.error, "dispatched_at"))
+      isMissingColumnError(result.error, "reassignment_metadata"))
   ) {
     result = await supabase
       .from("overflow_events")
@@ -640,7 +681,7 @@ function useLiveDataInternal() {
    */
   const refreshLiveProgress = useCallback(async () => {
     if (!profile?.auth_user_id) return;
-    const [routesResult, driversResult, vehiclesResult] = await Promise.all([
+    const [routesResult, driversResult, profilesResult, vehiclesResult, overflowResult] = await Promise.all([
       supabase
         .from("routes")
         .select(
@@ -649,14 +690,24 @@ function useLiveDataInternal() {
         .order("created_at", { ascending: false })
         .limit(200),
       supabase.from("drivers").select("id, name, status, auth_user_id, profile_id, phone, phone_number, assigned_vehicle_id, last_seen_at").order("name", { ascending: true }),
-      supabase.from("vehicles").select("id, code, truck_code, plate_number, label, model, is_active, status, driver_id, route_id, capacity_liters, capacity_kg, fuel_percent, latitude, longitude, last_seen_at, updated_at").order("label", { ascending: true }),
+      supabase.from("user_profiles").select("id, auth_user_id, full_name, role, status, phone, phone_number"),
+      fetchVehiclesSafe(),
+      fetchOverflowEventsSafe(),
     ]);
 
     if (!driversResult.error && driversResult.data) {
-      setDrivers(driversResult.data as DriverRecord[]);
+      setDrivers(
+        filterAndHydrateDrivers(
+          driversResult.data as DriverRecord[],
+          (profilesResult.data as any[]) ?? [],
+        ),
+      );
     }
     if (!vehiclesResult.error && vehiclesResult.data) {
       setVehicles(vehiclesResult.data as VehicleRecord[]);
+    }
+    if (!overflowResult.error && overflowResult.data) {
+      setOverflowEvents(hydrateOverflowEventRows(overflowResult.data as OverflowEventRecord[]));
     }
 
     const latestRoutes = !routesResult.error && routesResult.data ? (routesResult.data as RouteRecord[]) : null;
@@ -750,7 +801,7 @@ function useLiveDataInternal() {
         .order("created_at", { ascending: false }),
       supabase.from("route_stops").select("route_id, bin_id, stop_order, bins(id, code, location, barangay, area_code, schedule_days, schedule_time_window, waste_category, collection_status, coordinate_status, is_active, type, status, capacity_percent, latitude, longitude)").order("stop_order", { ascending: true }),
       supabase.from("deliveries").select("id, route_id, bin_id, driver_id, status, eta, completed_at, updated_at").order("updated_at", { ascending: false }),
-      supabase.from("vehicles").select("id, code, truck_code, plate_number, label, model, is_active, status, driver_id, route_id, capacity_liters, capacity_kg, fuel_percent, latitude, longitude, last_seen_at, updated_at").order("label", { ascending: true }),
+      fetchVehiclesSafe(),
       supabase.from("vehicle_locations_latest").select("vehicle_id, driver_id, route_id, latitude, longitude, speed_kph, heading_deg, updated_at").order("updated_at", { ascending: false }),
       supabase.from("vehicle_gps_logs").select("id, vehicle_id, driver_id, route_id, latitude, longitude, speed_kph, heading_deg, accuracy_m, recorded_at").order("recorded_at", { ascending: false }).limit(200),
       supabase.from("maintenance_records").select("id, vehicle_id, maintenance_type, scheduled_at, estimated_duration_minutes, notes, status, created_at").order("scheduled_at", { ascending: false }),
@@ -920,12 +971,7 @@ function useLiveDataInternal() {
 
       if (tables.has("vehicles")) {
         tasks.push(
-          Promise.resolve(
-            supabase
-              .from("vehicles")
-              .select("id, code, truck_code, plate_number, label, model, is_active, status, driver_id, route_id, capacity_liters, capacity_kg, fuel_percent, latitude, longitude, last_seen_at, updated_at")
-              .order("label", { ascending: true }),
-          ).then(({ data, error }) => {
+          fetchVehiclesSafe().then(({ data, error }) => {
             if (!error && data) setVehicles(data as VehicleRecord[]);
           }),
         );
@@ -1286,7 +1332,7 @@ function useLiveDataInternal() {
     const row = normalizeNotificationInsert(payload as Record<string, unknown>);
     let { error } = await supabase.from("notifications").insert(row);
     if (error && row.category && isInvalidEnumError(error, String(row.category))) {
-      ({ error } = await supabase.from("notifications").insert({ ...row, category: "route" }));
+      ({ error } = await supabase.from("notifications").insert({ ...row, category: "assignment" }));
     }
     if (error) throw error;
     await refreshTables(new Set(["notifications"]));
@@ -1300,7 +1346,7 @@ function useLiveDataInternal() {
     if (error && isInvalidEnumError(error, "truck")) {
       ({ error } = await supabase
         .from("notifications")
-        .insert(rows.map((r) => (r.category === "truck" ? { ...r, category: "route" } : r))));
+        .insert(rows.map((r) => (r.category === "truck" ? { ...r, category: "assignment" } : r))));
     }
     if (error) throw error;
     await refreshTables(new Set(["notifications"]));
@@ -1330,7 +1376,22 @@ function useLiveDataInternal() {
     await refreshTables(new Set(["notifications"]));
   };
 
+  const actorRole = String(profile?.role ?? "").trim().toLowerCase();
+
+  const assertAdminFleetControl = () => {
+    if (actorRole !== "admin") {
+      throw new Error("Only Administrators can add, edit, deactivate, delete trucks, or manage maintenance records.");
+    }
+  };
+
+  const assertDriverAssignmentControl = () => {
+    if (actorRole !== "admin" && actorRole !== "dispatcher") {
+      throw new Error("Only Administrators and Dispatchers can assign drivers to trucks.");
+    }
+  };
+
   const createVehicle = async (payload: Partial<VehicleRecord>) => {
+    assertAdminFleetControl();
     const { data, error } = await supabase.from("vehicles").insert(payload).select("id").single();
     if (error) throw error;
     await refreshTables(new Set(["vehicles", "drivers"]));
@@ -1338,18 +1399,53 @@ function useLiveDataInternal() {
   };
 
   const updateVehicle = async (id: string, payload: Partial<VehicleRecord>) => {
-    let { error } = await supabase.from("vehicles").update(payload).eq("id", id);
+    assertAdminFleetControl();
+    let { data: updatedRows, error } = await supabase
+      .from("vehicles")
+      .update(payload)
+      .eq("id", id)
+      .select("id");
     if (error && "load_percent" in payload && isMissingColumnError(error, "load_percent")) {
       const { load_percent: _ignored, ...rest } = payload;
       if (Object.keys(rest).length === 0) return;
-      ({ error } = await supabase.from("vehicles").update(rest).eq("id", id));
+      ({ data: updatedRows, error } = await supabase
+        .from("vehicles")
+        .update(rest)
+        .eq("id", id)
+        .select("id"));
     }
     if (error) throw error;
+    if (!updatedRows || updatedRows.length === 0) {
+      throw new Error("Unable to update truck. Check fleet registry permissions or verify the truck still exists.");
+    }
     await refreshTables(new Set(["vehicles", "drivers"]));
   };
 
   const assignVehicleDriver = async (vehicleId: string, driverId: string | null) => {
+    assertDriverAssignmentControl();
     const numericVehicleId = Number(vehicleId);
+    const numericDriverId = driverId ? Number(driverId) : null;
+
+    if (Number.isFinite(numericVehicleId) && (driverId == null || Number.isFinite(numericDriverId))) {
+      const { error: rpcErr } = await supabase.rpc("assign_vehicle_driver", {
+        p_vehicle_id: numericVehicleId,
+        p_driver_id: numericDriverId,
+      });
+      if (!rpcErr) {
+        await refreshTables(new Set(["vehicles", "drivers"]));
+        return;
+      }
+      const rpcMsg = String(rpcErr?.message ?? "").toLowerCase();
+      const isMissingRpc =
+        rpcErr?.code === "42883" ||
+        rpcErr?.code === "PGRST202" ||
+        rpcMsg.includes("could not find the function") ||
+        rpcMsg.includes("does not exist");
+      if (!isMissingRpc) {
+        throw rpcErr;
+      }
+    }
+
     const assignedVehicleValue = Number.isFinite(numericVehicleId) ? numericVehicleId : vehicleId;
 
     const { error: clearDriversErr } = await supabase
@@ -1367,24 +1463,33 @@ function useLiveDataInternal() {
       if (clearVehiclesErr) throw clearVehiclesErr;
     }
 
-    const { error: vehErr } = await supabase
+    const { data: updatedVehRows, error: vehErr } = await supabase
       .from("vehicles")
       .update({ driver_id: driverId ? String(driverId) : null })
-      .eq("id", vehicleId);
+      .eq("id", vehicleId)
+      .select("id");
     if (vehErr) throw vehErr;
+    if (!updatedVehRows || updatedVehRows.length === 0) {
+      throw new Error("Unable to update truck driver assignment. Check fleet registry permissions.");
+    }
 
     if (driverId) {
-      const { error: drvErr } = await supabase
+      const { data: updatedDrvRows, error: drvErr } = await supabase
         .from("drivers")
         .update({ assigned_vehicle_id: assignedVehicleValue })
-        .eq("id", driverId);
+        .eq("id", driverId)
+        .select("id");
       if (drvErr) throw drvErr;
+      if (!updatedDrvRows || updatedDrvRows.length === 0) {
+        throw new Error("Unable to update driver record. Check fleet registry permissions.");
+      }
     }
 
     await refreshTables(new Set(["vehicles", "drivers"]));
   };
 
   const deleteVehicle = async (id: string) => {
+    assertAdminFleetControl();
     const { error: clearDriverErr } = await supabase
       .from("drivers")
       .update({ assigned_vehicle_id: null })
@@ -1404,14 +1509,23 @@ function useLiveDataInternal() {
   };
 
   const createMaintenanceRecord = async (payload: Partial<MaintenanceRecord>) => {
+    assertAdminFleetControl();
     const { error } = await supabase.from("maintenance_records").insert(payload);
     if (error) throw error;
     await refreshTables(new Set(["maintenance_records"]));
   };
 
   const updateMaintenanceRecord = async (id: string, payload: Partial<MaintenanceRecord>) => {
-    const { error } = await supabase.from("maintenance_records").update(payload).eq("id", id);
+    assertAdminFleetControl();
+    const { data: updatedRows, error } = await supabase
+      .from("maintenance_records")
+      .update(payload)
+      .eq("id", id)
+      .select("id");
     if (error) throw error;
+    if (!updatedRows || updatedRows.length === 0) {
+      throw new Error("Unable to update maintenance record. Check fleet maintenance permissions.");
+    }
     await refreshTables(new Set(["maintenance_records"]));
   };
 

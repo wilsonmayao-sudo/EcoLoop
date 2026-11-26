@@ -21,6 +21,8 @@ import FleetMaintenancePanel from "../components/fleet/FleetMaintenancePanel";
 import PageHeader from "../components/layout/PageHeader";
 import OverflowEventLog from "../components/overflow/OverflowEventLog";
 import CustomSelect from "../components/ui/CustomSelect";
+import { useAuth } from "../contexts/AuthContext";
+import { getFleetRegistryPermissions } from "../utils/fleetPermissions";
 import { formatCollectionAreaDisplay } from "../utils/areaDisplay";
 import { useOverflowDispatch } from "../hooks/useOverflowDispatch";
 import LiveFleetMap, {
@@ -41,7 +43,9 @@ import {
   normalizeStatus,
   relativeTime,
   useLiveData,
+  type DeliveryRecord,
   type DriverRecord,
+  type OverflowEventRecord,
   type RouteRecord,
   type PageType,
 } from "../hooks/useLiveData";
@@ -92,6 +96,84 @@ function formatRouteStatusLabel(routeStatus?: string | null, isReturningToLandfi
   if (normalized === "pending" || normalized === "planned" || normalized === "assigned") return "Assigned";
   if (normalized === "cancelled") return "Cancelled";
   return normalized.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function getOverflowDispatchStatusMeta(
+  event: OverflowEventRecord,
+  routeById: Map<string, RouteRecord>,
+  deliveries: DeliveryRecord[],
+): { label: string; subLabel?: string; badgeClass: string } {
+  const statusNorm = normalizeStatus(event.status);
+  if (statusNorm === "pending") {
+    return {
+      label: "Awaiting Truck Assignment",
+      subLabel: "Assistance requested",
+      badgeClass: "bg-amber-100 text-amber-800",
+    };
+  }
+  if (statusNorm === "dispatched") {
+    if (event.driver_notified_at) {
+      return {
+        label: "Driver Notified",
+        subLabel: "Truck assigned",
+        badgeClass: "bg-blue-100 text-blue-800",
+      };
+    }
+    return {
+      label: "Truck Assigned",
+      subLabel: "Notification pending",
+      badgeClass: "bg-amber-100 text-amber-800",
+    };
+  }
+  if (statusNorm === "accepted") {
+    const linkedRouteId = event.target_route_id != null
+      ? String(event.target_route_id)
+      : event.reassignment_metadata?.target_route_id != null
+        ? String(event.reassignment_metadata.target_route_id)
+        : null;
+    const linkedRoute = linkedRouteId ? routeById.get(linkedRouteId) : null;
+    const hasDeliveryActivity = linkedRouteId
+      ? deliveries.some(
+          (d) =>
+            String(d.route_id) === linkedRouteId &&
+            ["in_progress", "completed"].includes(normalizeStatus(d.status)),
+        )
+      : false;
+    if (linkedRoute?.started_at || hasDeliveryActivity) {
+      return {
+        label: "Assistance in Progress",
+        subLabel: "Driver accepted",
+        badgeClass: "bg-emerald-100 text-emerald-800",
+      };
+    }
+    return {
+      label: "Driver Accepted",
+      subLabel: "Ready for collection",
+      badgeClass: "bg-teal-100 text-teal-800",
+    };
+  }
+  if (statusNorm === "completed") {
+    return {
+      label: "Assistance Completed",
+      badgeClass: "bg-green-100 text-green-800",
+    };
+  }
+  if (statusNorm === "declined") {
+    return {
+      label: "Declined · Reassign",
+      badgeClass: "bg-red-100 text-red-800",
+    };
+  }
+  if (statusNorm === "cancelled") {
+    return {
+      label: "Cancelled",
+      badgeClass: "bg-gray-100 text-gray-700",
+    };
+  }
+  return {
+    label: event.status,
+    badgeClass: "bg-gray-100 text-gray-700",
+  };
 }
 
 export type TruckOperationalStatus = "on_route" | "available" | "returning_to_landfill" | "stopped" | "offline";
@@ -634,6 +716,7 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
   }, [activeOverflowEvents, filteredTrucks, operationsConfig.gpsDelayedSeconds, selectedTruckId, vehicleById]);
 
   const [liveMapRoutes, setLiveMapRoutes] = useState<LiveFleetMapRoute[]>([]);
+  const [onlineRouteRetryTick, setOnlineRouteRetryTick] = useState(0);
 
   // Resolve road-following Mapbox route polylines for active overflow assisting trucks and selected truck
   const overflowRoutePlan = useMemo(() => {
@@ -718,6 +801,16 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
   overflowRouteRequestsRef.current = overflowRoutePlan.requests;
 
   useEffect(() => {
+    const handleOnline = () => {
+      if (overflowRouteRequestsRef.current.length > 0) {
+        setOnlineRouteRetryTick((t) => t + 1);
+      }
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, []);
+
+  useEffect(() => {
     const requests = overflowRouteRequestsRef.current;
     if (requests.length === 0) {
       setLiveMapRoutes((prev) => (prev.length === 0 ? prev : []));
@@ -744,7 +837,7 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
     return () => {
       cancelled = true;
     };
-  }, [overflowRoutePlan.signature]);
+  }, [overflowRoutePlan.signature, onlineRouteRetryTick]);
 
   // KPIs
   const kpis = useMemo(() => {
@@ -787,14 +880,31 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
   const handleConfirmReassignOverflow = async (eventId: string, overrideVehicleId?: string) => {
     const target = overrideVehicleId ?? reassignVehicleId;
     if (!target) return;
-    await runOverflowAction(
-      () => reassignOverflow(eventId, target),
-      target === "AUTO"
-        ? "Dynamic Reassignment Engine assigned eligible relief truck(s)."
-        : "Relief truck validated, assigned, and notified.",
-    );
-    setReassigningEventId(null);
-    setReassignVehicleId("");
+    setOverflowBusy(true);
+    setOverflowError(null);
+    setOverflowNotice(null);
+    try {
+      const res: any = await reassignOverflow(eventId, target);
+      if (target === "AUTO") {
+        setOverflowNotice("Dynamic Reassignment Engine assigned eligible relief truck(s).");
+      } else if (res?.idempotent) {
+        setOverflowNotice(
+          res?.driverNotified
+            ? "Assignment already active and driver notification confirmed."
+            : "Assignment already active; awaiting driver notification delivery.",
+        );
+      } else if (res?.driverNotified) {
+        setOverflowNotice("Relief truck assigned and driver notified.");
+      } else {
+        setOverflowNotice("Relief truck assigned. Driver will see it upon opening the app.");
+      }
+      setReassigningEventId(null);
+      setReassignVehicleId("");
+    } catch (err) {
+      setOverflowError(err instanceof Error ? err.message : "Overflow dispatch action failed.");
+    } finally {
+      setOverflowBusy(false);
+    }
   };
 
   const runOverflowAction = async (action: () => Promise<unknown>, notice: string) => {
@@ -848,10 +958,15 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
     }
   };
 
-  const canManageFleet = useMemo(() => {
-    const r = String(role || "").toLowerCase();
-    return r === "admin" || r === "dispatcher";
-  }, [role]);
+  const { profile } = useAuth();
+  const effectiveRole = profile?.role ?? role;
+  const fleetPermissions = useMemo(
+    () => getFleetRegistryPermissions(effectiveRole),
+    [effectiveRole],
+  );
+  const canManageFleet = fleetPermissions.canManageFleet;
+  const canAssignDrivers = fleetPermissions.canAssignDriver;
+  const canManageOverflow = fleetPermissions.canDispatchOverflow;
 
   const openMaintenanceCount = useMemo(
     () =>
@@ -905,7 +1020,7 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
       </div>
 
       {activeTab === "fleet" ? (
-        <FleetMaintenancePanel canManage={canManageFleet} />
+        <FleetMaintenancePanel canManage={canManageFleet} canAssignDrivers={canAssignDrivers} />
       ) : (
         <>
 
@@ -1077,12 +1192,22 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
                             )}
                           </td>
                           <td className="px-4 py-3">
-                            <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium capitalize text-amber-800">
-                              {event.status}
-                            </span>
+                            {(() => {
+                              const statusMeta = getOverflowDispatchStatusMeta(event, routeById, deliveries);
+                              return (
+                                <div className="space-y-0.5">
+                                  <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusMeta.badgeClass}`}>
+                                    {statusMeta.label}
+                                  </span>
+                                  {statusMeta.subLabel ? (
+                                    <p className="text-[11px] text-gray-500">{statusMeta.subLabel}</p>
+                                  ) : null}
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            {canManageFleet ? (
+                            {canManageOverflow ? (
                               <div className="flex flex-wrap justify-end gap-1.5">
                                 {event.status === "dispatched" && (
                                   <>
@@ -1122,7 +1247,7 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
                                     <CheckCircle2 className="size-3.5" /> Complete
                                   </button>
                                 )}
-                                {(event.status === "pending" || event.status === "declined") && (
+                                {(event.status === "pending" || event.status === "declined" || event.status === "dispatched") && (
                                   <>
                                     <button
                                       type="button"
@@ -1140,14 +1265,16 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
                                     >
                                       <ArrowRightLeft className="size-3.5" /> Reassign
                                     </button>
-                                    <button
-                                      type="button"
-                                      disabled={overflowBusy}
-                                      onClick={() => void runOverflowAction(() => completeOverflow(event.id), "Overflow event resolved.")}
-                                      className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                                    >
-                                      <CheckCircle2 className="size-3.5" /> Resolve
-                                    </button>
+                                    {event.status !== "dispatched" && (
+                                      <button
+                                        type="button"
+                                        disabled={overflowBusy}
+                                        onClick={() => void runOverflowAction(() => completeOverflow(event.id), "Overflow event resolved.")}
+                                        className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                      >
+                                        <CheckCircle2 className="size-3.5" /> Resolve
+                                      </button>
+                                    )}
                                   </>
                                 )}
                                 <button
@@ -1166,7 +1293,7 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
                             )}
                           </td>
                         </tr>
-                        {reassigningEventId === event.id && canManageFleet && (() => {
+                        {reassigningEventId === event.id && canManageOverflow && (() => {
                           const algoStops: UncollectedStop[] = (event.overflow_bins ?? []).map((ob, idx) => ({
                             id: `stop-${ob.bin_id}`,
                             binId: ob.bin_id,
@@ -1182,13 +1309,24 @@ export default function LiveMonitoring({ onNavigate, role = "admin" }: LiveMonit
                           );
                           const rankedOptions = [...evalRes.evaluations]
                             .sort((a, b) => Number(b.eligible) - Number(a.eligible) || a.rank - b.rank)
-                            .map((ev) => ({
-                              value: ev.vehicleId,
-                              disabled: !ev.eligible,
-                              label: ev.eligible
-                                ? `#${ev.rank} ${ev.label} · ${ev.driverName} (${ev.remainingCapacityPercent}% free, +${ev.additionalDistanceKm} km)`
-                                : `${ev.label} · Unavailable (${ev.ineligibleReason})`,
-                            }));
+                            .map((ev) => {
+                              const reason = String(ev.ineligibleReason ?? "");
+                              const isOfflineOrUnverifiedOnly =
+                                !ev.eligible &&
+                                (reason.includes("GPS") ||
+                                  reason.includes("Offline") ||
+                                  reason.includes("offline") ||
+                                  reason.includes("capacity unverified"));
+                              return {
+                                value: ev.vehicleId,
+                                disabled: !ev.eligible && !isOfflineOrUnverifiedOnly,
+                                label: ev.eligible
+                                  ? `#${ev.rank} ${ev.label} · ${ev.driverName} (${ev.remainingCapacityPercent}% free, +${ev.additionalDistanceKm} km)`
+                                  : isOfflineOrUnverifiedOnly
+                                    ? `${ev.label} · ${ev.driverName} (${reason} — syncs when driver opens app)`
+                                    : `${ev.label} · Unavailable (${ev.ineligibleReason})`,
+                              };
+                            });
                           return (
                             <tr className="bg-amber-50/50">
                               <td colSpan={7} className="px-4 py-3">

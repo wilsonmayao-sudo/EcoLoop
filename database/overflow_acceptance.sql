@@ -54,6 +54,7 @@ declare
   v_bins_json            jsonb;
   v_i                    int;
   v_elem                 jsonb;
+  v_target_vehicle_label text := null;
 begin
   if v_target_driver_txt is null or v_target_driver_txt !~ '^[0-9]+$' then
     return jsonb_build_object('success', false, 'error', 'Valid target driver ID is required to accept overflow');
@@ -107,13 +108,15 @@ begin
     );
   end if;
 
-  if v_event.status in ('declined', 'completed') then
+  if v_event.status in ('declined', 'completed', 'cancelled') then
     return jsonb_build_object('success', false, 'error', 'Overflow event cannot be accepted in current state: ' || v_event.status);
   end if;
 
   if not v_is_staff
-     and nullif(btrim(v_event.target_driver_id), '') is not null
-     and btrim(v_event.target_driver_id) <> v_target_driver_txt
+     and (
+       (nullif(btrim(v_event.target_driver_id), '') is not null and btrim(v_event.target_driver_id) <> v_target_driver_txt)
+       or (v_event.target_driver_auth_user_id is not null and v_event.target_driver_auth_user_id <> auth.uid())
+     )
   then
     return jsonb_build_object('success', false, 'error', 'This overflow dispatch is assigned to a different driver');
   end if;
@@ -132,14 +135,18 @@ begin
     return jsonb_build_object('success', false, 'error', 'Target driver not found');
   end if;
 
-  if lower(coalesce(v_driver.status::text, '')) in ('offline', 'inactive', 'suspended', 'full', 'on_break') then
+  if lower(coalesce(v_driver.status::text, '')) in ('inactive', 'suspended', 'full', 'on_break') then
     return jsonb_build_object('success', false, 'error', 'Target driver is not available (' || coalesce(v_driver.status::text, 'unknown') || ')');
+  end if;
+
+  if v_is_staff and lower(coalesce(v_driver.status::text, '')) = 'offline' then
+    return jsonb_build_object('success', false, 'error', 'Target driver is currently offline');
   end if;
 
   select up.status::text into v_profile_status
   from public.user_profiles up
   where (v_driver.profile_id is not null and up.id = v_driver.profile_id)
-     or up.id = v_driver.auth_user_id
+     or up.auth_user_id = v_driver.auth_user_id
   limit 1;
 
   if v_profile_status is not null and lower(v_profile_status) in ('suspended', 'inactive') then
@@ -196,6 +203,8 @@ begin
     ) then
       return jsonb_build_object('success', false, 'error', 'Target vehicle is unavailable (' || v_vehicle.status || ')');
     end if;
+
+    v_target_vehicle_label := coalesce(nullif(btrim(v_vehicle.label), ''), nullif(btrim(v_vehicle.truck_code), ''), v_vehicle.plate_number, 'Truck #' || v_vehicle.id::text);
   end if;
 
   if v_event.source_route_id is not null and btrim(v_event.source_route_id) ~ '^[0-9]+$' then
@@ -451,10 +460,11 @@ begin
     where id = v_vehicle_bigint;
   end if;
 
-  if v_driver.status::text = 'available' then
+  if v_driver.status::text in ('available', 'offline') then
     update public.drivers
     set
       status = 'on_route',
+      last_seen_at = v_now,
       updated_at = v_now
     where id = v_target_driver_bigint;
   end if;
@@ -465,16 +475,62 @@ begin
     status = 'accepted',
     accepted_at = v_now,
     target_driver_id = v_target_driver_txt,
+    target_driver_auth_user_id = v_driver.auth_user_id,
     target_vehicle_id = coalesce(nullif(btrim(v_vehicle_id_txt), ''), v_event.target_vehicle_id),
     target_route_id = v_target_route_bigint,
     reassignment_metadata = coalesce(reassignment_metadata, '{}'::jsonb)
       || jsonb_build_object(
         'target_route_id', v_target_route_bigint,
         'target_driver_id', v_target_driver_txt,
+        'target_driver_auth_user_id', v_driver.auth_user_id,
         'target_vehicle_id', coalesce(nullif(btrim(v_vehicle_id_txt), ''), v_event.target_vehicle_id),
         'accepted_at', v_now
       )
   where id = p_event_id;
+
+  if v_driver.auth_user_id is not null then
+    update public.notifications
+    set read = true,
+        is_read = true,
+        read_at = coalesce(read_at, v_now)
+    where source_table = 'overflow_events'
+      and source_id = p_event_id::text
+      and user_auth_id = v_driver.auth_user_id
+      and read = false;
+  end if;
+
+  insert into public.notifications (
+    user_auth_id, user_id, role, title, message, type, category,
+    route_id, source_table, source_id, read, created_at
+  )
+  select
+    null,
+    null,
+    'dispatcher',
+    'Overflow Accepted',
+    format(
+      '%s (%s) accepted overflow assistance (%s stop%s).',
+      coalesce(v_driver.name, 'Driver'),
+      coalesce(v_target_vehicle_label, 'Truck'),
+      coalesce(array_length(v_bin_ids, 1), 0),
+      case when coalesce(array_length(v_bin_ids, 1), 0) = 1 then '' else 's' end
+    ),
+    'success'::public.notification_type,
+    'assignment'::public.notification_category,
+    v_target_route_bigint,
+    'overflow_events',
+    p_event_id::text,
+    false,
+    v_now
+  where not exists (
+    select 1
+    from public.notifications n
+    where n.source_table = 'overflow_events'
+      and n.source_id = p_event_id::text
+      and n.role = 'dispatcher'
+      and n.title = 'Overflow Accepted'
+      and n.read = false
+  );
 
   return jsonb_build_object(
     'success', true,
@@ -485,7 +541,8 @@ begin
     'assigned_bin_ids', to_jsonb(v_bin_ids),
     'accepted_at', v_now,
     'bins_transferred', coalesce(array_length(v_bin_ids, 1), 0),
-    'bins_skipped', v_skipped_bins
+    'bins_skipped', v_skipped_bins,
+    'dispatcher_notified', true
   );
 end;
 $$;

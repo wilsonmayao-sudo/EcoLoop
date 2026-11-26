@@ -4,13 +4,14 @@ const appJson = require('./app.json');
 
 const mobileEnv = path.resolve(__dirname, '.env');
 const mobileEnvLocal = path.resolve(__dirname, '.env.local');
+const webEnv = path.resolve(__dirname, '../WebApp/.env');
 const webEnvLocal = path.resolve(__dirname, '../WebApp/.env.local');
 
 /** Read KEY=value from a .env-style file (no multiline values). */
 function readEnvValueFromFile(filePath, key) {
   try {
     if (!fs.existsSync(filePath)) return '';
-    const raw = fs.readFileSync(filePath, 'utf8');
+    const raw = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
     const lines = raw.split(/\r?\n|\r/);
     for (const line of lines) {
       const trimmed = line.replace(/\r/g, '').trim();
@@ -62,6 +63,8 @@ module.exports = ({ config }) => {
     readEnvValueFromFile(mobileEnvLocal, 'VITE_MAPBOX_ACCESS_TOKEN') ||
     readEnvValueFromFile(webEnvLocal, 'VITE_MAPBOX_ACCESS_TOKEN') ||
     readEnvValueFromFile(webEnvLocal, 'EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN') ||
+    readEnvValueFromFile(webEnv, 'VITE_MAPBOX_ACCESS_TOKEN') ||
+    readEnvValueFromFile(webEnv, 'EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN') ||
     (typeof baseExtra.mapboxAccessToken === 'string' ? baseExtra.mapboxAccessToken : '') ||
     '';
 
@@ -72,12 +75,13 @@ module.exports = ({ config }) => {
     extra: {
       ...baseExtra,
       mapboxAccessToken,
-      supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || readEnvValueFromFile(mobileEnv, 'EXPO_PUBLIC_SUPABASE_URL') || readEnvValueFromFile(mobileEnvLocal, 'EXPO_PUBLIC_SUPABASE_URL') || readEnvValueFromFile(webEnvLocal, 'VITE_SUPABASE_URL') || baseExtra.supabaseUrl || '',
+      supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || readEnvValueFromFile(mobileEnv, 'EXPO_PUBLIC_SUPABASE_URL') || readEnvValueFromFile(mobileEnvLocal, 'EXPO_PUBLIC_SUPABASE_URL') || readEnvValueFromFile(webEnvLocal, 'VITE_SUPABASE_URL') || readEnvValueFromFile(webEnv, 'VITE_SUPABASE_URL') || baseExtra.supabaseUrl || '',
       supabaseAnonKey:
         process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
         readEnvValueFromFile(mobileEnv, 'EXPO_PUBLIC_SUPABASE_ANON_KEY') ||
         readEnvValueFromFile(mobileEnvLocal, 'EXPO_PUBLIC_SUPABASE_ANON_KEY') ||
         readEnvValueFromFile(webEnvLocal, 'VITE_SUPABASE_ANON_KEY') ||
+        readEnvValueFromFile(webEnv, 'VITE_SUPABASE_ANON_KEY') ||
         baseExtra.supabaseAnonKey ||
         '',
     },

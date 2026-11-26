@@ -26,6 +26,7 @@ import { formatMassDisplay, formatVolumeDisplay } from "../../utils/systemSettin
 
 interface FleetMaintenancePanelProps {
   canManage: boolean;
+  canAssignDrivers?: boolean;
 }
 
 const VEHICLE_STATUS_OPTIONS = [
@@ -91,7 +92,10 @@ function maintenanceStatusBadge(status: string): { label: string; cls: string } 
   return { label: "Scheduled", cls: "bg-blue-100 text-blue-800" };
 }
 
-export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePanelProps) {
+export default function FleetMaintenancePanel({
+  canManage,
+  canAssignDrivers = canManage,
+}: FleetMaintenancePanelProps) {
   const {
     vehicles,
     drivers,
@@ -184,6 +188,7 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
   );
 
   const handleInlineDriverAssign = async (vehicleId: string | number, nextDriverId: string) => {
+    if (!canAssignDrivers) return;
     setBusy(true);
     setActionError(null);
     setNotice(null);
@@ -198,6 +203,7 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
   };
 
   const handleDriverVehicleAssign = async (driverId: string | number, currentVehicleId: string | number | null | undefined, nextVehicleId: string) => {
+    if (!canAssignDrivers) return;
     setBusy(true);
     setActionError(null);
     setNotice(null);
@@ -302,6 +308,7 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
   }, [maintenanceRecords, vehicles]);
 
   const openAddVehicle = () => {
+    if (!canManage) return;
     setEditingVehicle(null);
     setVehicleForm(emptyVehicleForm);
     setActionError(null);
@@ -309,6 +316,7 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
   };
 
   const openEditVehicle = (vehicle: VehicleRecord) => {
+    if (!canManage) return;
     setEditingVehicle(vehicle);
     setVehicleForm({
       code: vehicle.code || vehicle.truck_code || "",
@@ -426,6 +434,7 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
   };
 
   const openScheduleMaintenance = () => {
+    if (!canManage) return;
     setMaintForm({
       vehicle_id: availableMaintenanceTruckOptions[0]?.value ?? "",
       maintenance_type: maintenanceTypeOptions[0]?.value ?? "Routine Inspection",
@@ -509,7 +518,9 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
     <div className="space-y-6">
       {!canManage && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs sm:text-sm text-blue-800">
-          Read-only view: Only Administrators and Dispatchers can add trucks, change truck availability, or schedule maintenance.
+          {canAssignDrivers
+            ? "Dispatcher view: You can assign or change drivers assigned to trucks. Only Administrators can add, edit, deactivate, delete trucks, or manage maintenance records."
+            : "Read-only view: Only Administrators can manage trucks and maintenance, and Dispatchers can assign drivers."}
         </div>
       )}
 
@@ -650,7 +661,7 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-700">
-                      {canManage ? (
+                      {canAssignDrivers ? (
                         <div className="w-44">
                           <CustomSelect
                             size="sm"
@@ -811,7 +822,7 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {canManage ? (
+                      {canAssignDrivers ? (
                         <div className="w-52">
                           <CustomSelect
                             size="sm"
@@ -988,7 +999,7 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
       </div>
 
       {/* Add / Edit Truck Modal */}
-      {showVehicleModal && (
+      {canManage && showVehicleModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={editingVehicle ? "Edit Truck" : "Add Truck"}>
           <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b border-gray-200 pb-3">
@@ -1127,7 +1138,7 @@ export default function FleetMaintenancePanel({ canManage }: FleetMaintenancePan
       )}
 
       {/* Schedule Maintenance Modal */}
-      {showMaintModal && (
+      {canManage && showMaintModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Schedule Maintenance">
           <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b border-gray-200 pb-3">

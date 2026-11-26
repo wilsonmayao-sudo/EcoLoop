@@ -1,6 +1,7 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import NetInfo from "@react-native-community/netinfo";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "./AuthContext";
 import {
@@ -21,9 +22,10 @@ export const useNotifications = () => {
 
 const STORAGE_KEY = "notifications-enabled";
 
-function notificationVisibleToUser(row, authUserId, appRole, unreadOnly = false) {
+export function notificationVisibleToUser(row, authUserId, appRole, unreadOnly = false) {
   if (!row || (unreadOnly && row.read)) return false;
-  if (row.user_auth_id) return row.user_auth_id === authUserId;
+  const addressedUserId = row.user_auth_id ?? row.user_id ?? null;
+  if (addressedUserId) return String(addressedUserId) === String(authUserId);
   if (row.role != null && row.role !== "") return row.role === appRole;
   return false;
 }
@@ -77,7 +79,7 @@ export const NotificationProvider = ({ children }) => {
     setLoading(true);
     const { data, error: qErr } = await supabase
       .from("notifications")
-      .select("id, user_auth_id, role, title, message, type, category, source_table, source_id, read, created_at")
+      .select("id, user_id, user_auth_id, role, title, message, type, category, source_table, source_id, read, created_at")
       .order("created_at", { ascending: false })
       .limit(80);
     setLoading(false);
@@ -95,25 +97,46 @@ export const NotificationProvider = ({ children }) => {
   }, [load]);
 
   useEffect(() => {
+    let wasConnected = null;
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active" && authUserId) void load();
     });
-    return () => sub.remove();
+    const unsubNet = NetInfo.addEventListener((state) => {
+      const isNowConnected = Boolean(state?.isConnected && state?.isInternetReachable !== false);
+      if (wasConnected === false && isNowConnected && authUserId) {
+        void load();
+      }
+      wasConnected = isNowConnected;
+    });
+    return () => {
+      sub.remove();
+      unsubNet();
+    };
   }, [authUserId, load]);
 
   useEffect(() => {
     if (!authUserId) return undefined;
 
+    let hadSubscribedOnce = false;
     const handlePayload = async (payload) => {
       if (payload.eventType === "INSERT" && payload.new) {
         const row = payload.new;
         if (enabled && notificationVisibleToUser(row, authUserId, appRole, true)) {
-          await presentLocalNotificationWhenAway({
-            id: row.id,
-            title: row.title,
-            body: row.message,
-            data: { notificationId: row.id, category: row.category },
-          });
+          try {
+            await presentLocalNotificationWhenAway({
+              id: row.id,
+              title: row.title,
+              body: row.message,
+              data: {
+                notificationId: row.id,
+                category: row.category,
+                sourceTable: row.source_table,
+                sourceId: row.source_id,
+              },
+            });
+          } catch {
+            /* non-fatal local notification error */
+          }
         }
       }
       void load();
@@ -122,7 +145,14 @@ export const NotificationProvider = ({ children }) => {
     const channel = supabase
       .channel(`mobile-notifications-${authUserId}-${Date.now()}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, handlePayload)
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          if (hadSubscribedOnce) {
+            void load();
+          }
+          hadSubscribedOnce = true;
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);

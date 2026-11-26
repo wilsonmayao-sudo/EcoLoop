@@ -94,8 +94,9 @@ function AppShell() {
       set.add("users");
       set.add("system-settings");
     } else {
-      // Strictly restrict account management to Admin accounts
+      // Strictly restrict Admin-only modules to Admin accounts
       set.delete("users");
+      set.delete("system-settings");
     }
 
     return Array.from(set);

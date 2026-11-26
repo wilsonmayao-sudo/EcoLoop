@@ -17,14 +17,19 @@ import {
   resolveLinkedOverflowEvent,
   sortPickupsForActiveRoute,
 } from "../utils/overflowSync";
-import { insertNotificationWithFallback, updateVehicleWithFallback } from "../utils/schemaFallback";
+import {
+  insertNotificationWithFallback,
+  isMissingColumnSchemaError,
+  isMissingRpcError,
+  updateVehicleWithFallback,
+} from "../utils/schemaFallback";
 import { useAuth } from "./AuthContext";
 
 const PickupContext = createContext();
 const PICKUPS_CACHE_KEY = "pickups_cache_v2";
 const LANDFILL_UNLOAD_STATE_KEY = "landfill_unload_state_v1";
 const OVERFLOW_EVENT_COLUMNS =
-  "id, source_vehicle_id, source_driver_id, source_route_id, target_vehicle_id, target_driver_id, target_route_id, status, overflow_bins, bins_count, distance_km, reassignment_metadata, created_at, dispatched_at, accepted_at, completed_at";
+  "id, source_vehicle_id, source_driver_id, source_driver_auth_user_id, source_route_id, target_vehicle_id, target_driver_id, target_driver_auth_user_id, target_route_id, status, overflow_bins, bins_count, distance_km, reassignment_metadata, created_at, dispatched_at, driver_notified_at, accepted_at, declined_at, completed_at, updated_at";
 
 async function queryOverflowEventsWithFallback(buildQuery) {
   let res = await buildQuery(OVERFLOW_EVENT_COLUMNS);
@@ -95,7 +100,10 @@ async function updateDriverRouteStatus(driverId, status, timestamp) {
 }
 
 export const PickupProvider = ({ children }) => {
-  const { driver } = useAuth();
+  const { driver, profile, session } = useAuth();
+  const authUserId = normalizeNonEmptyId(
+    driver?.auth_user_id ?? profile?.auth_user_id ?? session?.user?.id,
+  );
   const [pendingPickups, setPendingPickups] = useState([]);
   const [assignedPickups, setAssignedPickups] = useState([]);
   const [driverRoutes, setDriverRoutes] = useState([]);
@@ -106,6 +114,7 @@ export const PickupProvider = ({ children }) => {
   const [isUnloadingAtLandfill, setIsUnloadingAtLandfill] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const [overflowLoadError, setOverflowLoadError] = useState(null);
   const [totalAssignedCount, setTotalAssignedCount] = useState(0);
 
   const routeIdsRef = useRef(new Set());
@@ -163,6 +172,7 @@ export const PickupProvider = ({ children }) => {
     try {
       const parsed = JSON.parse(cache);
       if (String(parsed?.driverId ?? "") !== String(driver.id)) {
+        await AsyncStorage.removeItem(PICKUPS_CACHE_KEY);
         return;
       }
       const pending = parsed.pendingPickups ?? [];
@@ -219,6 +229,7 @@ export const PickupProvider = ({ children }) => {
   const loadFromSupabase = useCallback(async () => {
     const requestSeq = ++loadRequestSeqRef.current;
     setLoadError(null);
+    setOverflowLoadError(null);
     if (!driver?.id) {
       setPendingPickups([]);
       setAssignedPickups([]);
@@ -229,6 +240,7 @@ export const PickupProvider = ({ children }) => {
       setAssignedScheduleStops([]);
       setIsUnloadingAtLandfill(false);
       setTotalAssignedCount(0);
+      setOverflowLoadError(null);
       pendingPickupsRef.current = [];
       assignedPickupsRef.current = [];
       driverRoutesRef.current = [];
@@ -322,27 +334,57 @@ export const PickupProvider = ({ children }) => {
     }
 
     // Fetch driver's relevant overflow_events even when they have 0 assigned regular routes
-    const orFilters = [`target_driver_id.eq.${driverIdStr}`, `source_driver_id.eq.${driverIdStr}`];
+    const baseOrFilters = [`target_driver_id.eq.${driverIdStr}`, `source_driver_id.eq.${driverIdStr}`];
     if (effectiveVehicleId) {
-      orFilters.push(`target_vehicle_id.eq.${effectiveVehicleId}`);
-      orFilters.push(`source_vehicle_id.eq.${effectiveVehicleId}`);
+      baseOrFilters.push(`target_vehicle_id.eq.${effectiveVehicleId}`);
+      baseOrFilters.push(`source_vehicle_id.eq.${effectiveVehicleId}`);
     }
-    const { data: rawOverflowRows, error: overflowErr } = await queryOverflowEventsWithFallback((cols) =>
+    const authOrFilters = authUserId
+      ? [
+          ...baseOrFilters,
+          `target_driver_auth_user_id.eq.${authUserId}`,
+          `source_driver_auth_user_id.eq.${authUserId}`,
+        ]
+      : baseOrFilters;
+
+    let { data: rawOverflowRows, error: overflowErr } = await queryOverflowEventsWithFallback((cols) =>
       supabase
         .from("overflow_events")
         .select(cols)
-        .or(orFilters.join(","))
+        .or(authOrFilters.join(","))
         .order("created_at", { ascending: false })
         .limit(30),
     );
 
+    if (
+      overflowErr &&
+      authUserId &&
+      isMissingColumnSchemaError(overflowErr)
+    ) {
+      ({ data: rawOverflowRows, error: overflowErr } = await queryOverflowEventsWithFallback((cols) =>
+        supabase
+          .from("overflow_events")
+          .select(cols)
+          .or(baseOrFilters.join(","))
+          .order("created_at", { ascending: false })
+          .limit(30),
+      ));
+    }
+
     if (requestSeq !== loadRequestSeqRef.current) return null;
+
+    if (overflowErr) {
+      console.warn("Failed loading overflow assignments:", overflowErr.message);
+      setOverflowLoadError(overflowErr.message || "Unable to sync overflow assignments.");
+    } else {
+      setOverflowLoadError(null);
+    }
 
     const scopedOverflowEvents = !overflowErr && Array.isArray(rawOverflowRows)
       ? rawOverflowRows.filter(
           (ev) =>
-            eventBelongsToDriverAsTarget(ev, driverIdStr, effectiveVehicleId) ||
-            eventBelongsToDriverAsSource(ev, driverIdStr, effectiveVehicleId),
+            eventBelongsToDriverAsTarget(ev, driverIdStr, effectiveVehicleId, authUserId) ||
+            eventBelongsToDriverAsSource(ev, driverIdStr, effectiveVehicleId, authUserId),
         )
       : overflowEventsRef.current;
 
@@ -430,7 +472,7 @@ export const PickupProvider = ({ children }) => {
     const acceptedForDriver = scopedOverflowEvents.filter(
       (ev) =>
         normalizeRouteStatus(ev.status) === "accepted" &&
-        eventBelongsToDriverAsTarget(ev, driverIdStr, effectiveVehicleId),
+        eventBelongsToDriverAsTarget(ev, driverIdStr, effectiveVehicleId, authUserId),
     );
     const pickupsByRoute = new Map();
     for (const p of rawMapped) {
@@ -507,7 +549,7 @@ export const PickupProvider = ({ children }) => {
       pendingPickups: mapped,
       assignedPickups: allMapped,
     };
-  }, [driver?.assigned_vehicle_id, driver?.id, persistCache]);
+  }, [authUserId, driver?.assigned_vehicle_id, driver?.id, persistCache]);
 
   const executeQueuedMutation = useCallback(async (mutation) => {
     if (mutation.type === "COMPLETE_DELIVERY") {
@@ -524,6 +566,7 @@ export const PickupProvider = ({ children }) => {
 
   useEffect(() => {
     let cleanup = () => {};
+    let active = true;
 
     const boot = async () => {
       await hydrateFromCache();
@@ -535,18 +578,30 @@ export const PickupProvider = ({ children }) => {
         setIsLoading(false);
       }
       await flushOfflineQueue(executeQueuedMutation);
-      cleanup = subscribeConnectivity(executeQueuedMutation, () => {
+      if (!active) return;
+      const reloadAfterConnectivity = () => {
         void loadFromSupabase().catch(() => {});
-      });
+      };
+      cleanup = subscribeConnectivity(
+        executeQueuedMutation,
+        reloadAfterConnectivity,
+        reloadAfterConnectivity,
+      );
     };
 
-    boot();
-    return () => cleanup();
-  }, [executeQueuedMutation, hydrateFromCache, loadFromSupabase]);
+    void boot();
+    return () => {
+      active = false;
+      cleanup();
+    };
+  }, [executeQueuedMutation, hydrateFromCache, loadFromSupabase, session?.access_token]);
 
-  // Foreground resume & Supabase Realtime sync (including overflow_events)
+  // Foreground resume & Supabase Realtime sync (including overflow_events, notifications, & reconnect recovery)
   useEffect(() => {
     if (!driver?.id) return undefined;
+
+    let debounceTimer = null;
+    let hadSubscribedOnce = false;
 
     const safeReload = async () => {
       try {
@@ -557,9 +612,25 @@ export const PickupProvider = ({ children }) => {
       }
     };
 
+    const scheduleReload = (immediate = false) => {
+      if (immediate) {
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+          debounceTimer = null;
+        }
+        void safeReload();
+        return;
+      }
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        void safeReload();
+      }, 150);
+    };
+
     const appStateSub = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
-        void safeReload();
+        scheduleReload(true);
       }
     });
 
@@ -568,16 +639,16 @@ export const PickupProvider = ({ children }) => {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "deliveries", filter: `driver_id=eq.${driver.id}` },
-        () => void safeReload(),
+        () => scheduleReload(),
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "route_stops" }, (payload) => {
         const rid = payload.new?.route_id ?? payload.old?.route_id;
-        if (rid != null && routeIdsRef.current.has(String(rid))) void safeReload();
+        if (rid != null && routeIdsRef.current.has(String(rid))) scheduleReload();
       })
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "routes", filter: `driver_id=eq.${driver.id}` },
-        () => void safeReload(),
+        () => scheduleReload(),
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "overflow_events" }, (payload) => {
         const newRec = payload?.new;
@@ -588,36 +659,63 @@ export const PickupProvider = ({ children }) => {
         }
         const touchedThisDriver =
           (newRec &&
-            (eventBelongsToDriverAsTarget(newRec, driver.id, vehId) ||
-              eventBelongsToDriverAsSource(newRec, driver.id, vehId))) ||
+            (eventBelongsToDriverAsTarget(newRec, driver.id, vehId, authUserId) ||
+              eventBelongsToDriverAsSource(newRec, driver.id, vehId, authUserId))) ||
           (oldRec &&
-            (eventBelongsToDriverAsTarget(oldRec, driver.id, vehId) ||
-              eventBelongsToDriverAsSource(oldRec, driver.id, vehId))) ||
+            (eventBelongsToDriverAsTarget(oldRec, driver.id, vehId, authUserId) ||
+              eventBelongsToDriverAsSource(oldRec, driver.id, vehId, authUserId))) ||
           overflowEventsRef.current.some((ev) => String(ev.id) === String(newRec?.id ?? oldRec?.id));
         if (touchedThisDriver) {
-          void safeReload();
+          scheduleReload();
+        }
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, (payload) => {
+        const row = payload?.new;
+        if (!row) return;
+        const rowTargetAuth = normalizeNonEmptyId(row.user_auth_id ?? row.user_id);
+        const forThisDriver = rowTargetAuth != null && authUserId != null && rowTargetAuth === authUserId;
+        if (forThisDriver && (row.source_table === "overflow_events" || row.category === "assignment")) {
+          scheduleReload();
         }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "bins" }, () => {
-        if (routeIdsRef.current.size > 0) void safeReload();
+        if (routeIdsRef.current.size > 0) scheduleReload();
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          if (hadSubscribedOnce) {
+            scheduleReload(true);
+          }
+          hadSubscribedOnce = true;
+        }
+      });
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       appStateSub.remove();
       supabase.removeChannel(channel);
     };
-  }, [driver?.assigned_vehicle_id, driver?.id, executeQueuedMutation, loadFromSupabase]);
+  }, [authUserId, driver?.assigned_vehicle_id, driver?.id, executeQueuedMutation, loadFromSupabase]);
 
   const syncCompletedOverflowEvents = useCallback(
     async ({ routeId = null, markRouteAccepted = false, remainingPending = pendingPickupsRef.current } = {}) => {
       if (!driver?.id) return;
       try {
-        const { data: acceptedEvents, error } = await supabase
+        const filters = [`target_driver_id.eq.${String(driver.id)}`];
+        if (authUserId) filters.push(`target_driver_auth_user_id.eq.${authUserId}`);
+        if (routeId != null) filters.push(`target_route_id.eq.${String(routeId)}`);
+        let { data: acceptedEvents, error } = await supabase
           .from("overflow_events")
           .select("id, overflow_bins, target_route_id, reassignment_metadata")
-          .eq("target_driver_id", String(driver.id))
+          .or(filters.join(","))
           .eq("status", "accepted");
+        if (error && isMissingColumnSchemaError(error)) {
+          ({ data: acceptedEvents, error } = await supabase
+            .from("overflow_events")
+            .select("id, overflow_bins, target_route_id, reassignment_metadata")
+            .eq("target_driver_id", String(driver.id))
+            .eq("status", "accepted"));
+        }
         if (error || !acceptedEvents || acceptedEvents.length === 0) return;
 
         const remainingBinIds = new Set(remainingPending.map((p) => String(p.binId)));
@@ -643,7 +741,7 @@ export const PickupProvider = ({ children }) => {
         /* non-fatal: dispatcher can also complete manually */
       }
     },
-    [driver?.id],
+    [authUserId, driver?.id],
   );
 
   const persistUnloadState = useCallback(
@@ -707,10 +805,6 @@ export const PickupProvider = ({ children }) => {
           if (state.isConnected) {
             try {
               await executeQueuedMutation({ type: "COMPLETE_DELIVERY", deliveryId: targetDeliveryId, binId: targetBinId });
-              await syncCompletedOverflowEvents({
-                routeId: target?.routeId ?? null,
-                remainingPending: nextPending,
-              });
             } catch (error) {
               console.warn("Online completion failed, queueing offline mutation:", error?.message);
               await enqueueMutation({ type: "COMPLETE_DELIVERY", deliveryId: targetDeliveryId, binId: targetBinId });
@@ -724,7 +818,7 @@ export const PickupProvider = ({ children }) => {
         }
       }
     },
-    [assignedScheduleStops, executeQueuedMutation, persistCache, syncCompletedOverflowEvents],
+    [assignedScheduleStops, executeQueuedMutation, persistCache],
   );
 
   const acceptOverflowDispatch = useCallback(
@@ -755,7 +849,7 @@ export const PickupProvider = ({ children }) => {
         const latestStatus = normalizeRouteStatus(latestEvent.status);
         if (latestStatus === "accepted") {
           const existingRouteId = getEventTargetRouteId(latestEvent);
-          if (eventBelongsToDriverAsTarget(latestEvent, driver.id, targetVehicleId) && existingRouteId) {
+          if (eventBelongsToDriverAsTarget(latestEvent, driver.id, targetVehicleId, authUserId) && existingRouteId) {
             preferredActiveRouteIdRef.current = existingRouteId;
             await persistUnloadState(false);
             await loadFromSupabase();
@@ -798,19 +892,22 @@ export const PickupProvider = ({ children }) => {
         preferredActiveRouteIdRef.current = createdRouteId;
         await persistUnloadState(false);
 
-        try {
-          await insertNotificationWithFallback(supabase, {
-            role: "dispatcher",
-            title: "Overflow Accepted",
-            message: `${driver?.name || "Driver"} accepted overflow assistance (${latestEvent.bins_count || extractOverflowBinIds(latestEvent.overflow_bins).length} stops).`,
-            type: "success",
-            category: "truck",
-            source_table: "overflow_events",
-            read: false,
-            created_at: new Date().toISOString(),
-          });
-        } catch (notifErr) {
-          console.warn("Overflow accept notification note:", notifErr?.message);
+        if (rpcResult?.dispatcher_notified !== true) {
+          try {
+            await insertNotificationWithFallback(supabase, {
+              role: "dispatcher",
+              title: "Overflow Accepted",
+              message: `${driver?.name || "Driver"} accepted overflow assistance (${latestEvent.bins_count || extractOverflowBinIds(latestEvent.overflow_bins).length} stops).`,
+              type: "success",
+              category: "assignment",
+              source_table: "overflow_events",
+              source_id: String(eventId),
+              read: false,
+              created_at: new Date().toISOString(),
+            });
+          } catch (notifErr) {
+            console.warn("Overflow accept notification note:", notifErr?.message);
+          }
         }
 
         await loadFromSupabase();
@@ -819,12 +916,30 @@ export const PickupProvider = ({ children }) => {
         acceptingEventIdsRef.current.delete(eventId);
       }
     },
-    [driver?.assigned_vehicle_id, driver?.id, driver?.name, loadFromSupabase, persistUnloadState],
+    [authUserId, driver?.assigned_vehicle_id, driver?.id, driver?.name, loadFromSupabase, persistUnloadState],
   );
 
   const declineOverflowDispatch = useCallback(
     async (overflowEvent, driverNameOverride = null) => {
       if (!driver?.id || !overflowEvent?.id) return;
+
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("decline_overflow_event", {
+        p_event_id: overflowEvent.id,
+      });
+
+      if (!rpcError && rpcResult?.success === true) {
+        setDismissedOverflowEventIds((prev) => [...new Set([...prev, String(overflowEvent.id)])]);
+        await loadFromSupabase();
+        return;
+      }
+
+      if (rpcError && !isMissingRpcError(rpcError)) {
+        throw new Error(rpcError.message || "Unable to decline overflow dispatch.");
+      }
+      if (rpcResult && rpcResult.success === false) {
+        throw new Error(String(rpcResult.error || "Unable to decline overflow dispatch."));
+      }
+
       const { error } = await supabase
         .from("overflow_events")
         .update({ status: "declined" })
@@ -839,8 +954,9 @@ export const PickupProvider = ({ children }) => {
           title: "Overflow Declined",
           message: `${driverNameOverride || driver?.name || "Driver"} declined overflow assistance of ${overflowEvent.bins_count} stops. Dispatcher re-routing required.`,
           type: "warning",
-          category: "truck",
+          category: "assignment",
           source_table: "overflow_events",
+          source_id: String(overflowEvent.id),
           read: false,
           created_at: new Date().toISOString(),
         });
@@ -978,12 +1094,13 @@ export const PickupProvider = ({ children }) => {
       formatOverflowSyncState({
         driverId: driver?.id,
         vehicleId: resolvedVehicleId ?? driver?.assigned_vehicle_id,
+        authUserId,
         driverRoutes,
         overflowEvents,
         allPickups: assignedPickups,
         preferredRouteId: preferredActiveRouteIdRef.current,
       }),
-    [assignedPickups, driver?.assigned_vehicle_id, driver?.id, driverRoutes, overflowEvents, resolvedVehicleId],
+    [assignedPickups, authUserId, driver?.assigned_vehicle_id, driver?.id, driverRoutes, overflowEvents, resolvedVehicleId],
   );
 
   const incomingOverflowEvent = useMemo(() => {
@@ -1023,6 +1140,7 @@ export const PickupProvider = ({ children }) => {
     routePendingPickups: syncState.routePendingPickups,
     activeOverflowEvent: syncState.activeOverflowEvent,
     activeSourceOverflowEvent: syncState.activeSourceOverflowEvent,
+    pendingOverflowEvents: syncState.pendingOverflowEvents,
     incomingOverflowEvent,
     setIncomingOverflowEvent,
     isOverflowRouteActive: syncState.isOverflowRouteActive,
@@ -1041,6 +1159,7 @@ export const PickupProvider = ({ children }) => {
     getCompletedPickups,
     isLoading,
     loadError,
+    overflowLoadError,
     reloadPickups: loadFromSupabase,
   };
 

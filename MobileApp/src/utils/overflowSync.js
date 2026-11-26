@@ -60,26 +60,49 @@ export function extractOverflowBinIds(overflowBins) {
   return ids;
 }
 
-export function eventBelongsToDriverAsTarget(event, driverId, vehicleId = null) {
+export function eventBelongsToDriverAsTarget(event, driverId, vehicleId = null, authUserId = null) {
   const driverStr = normalizeNonEmptyId(driverId);
   const vehStr = normalizeNonEmptyId(vehicleId);
+  const authStr = normalizeNonEmptyId(authUserId);
   const targetDriverStr = normalizeNonEmptyId(event?.target_driver_id);
+  const targetAuthStr = normalizeNonEmptyId(event?.target_driver_auth_user_id);
   const targetVehStr = normalizeNonEmptyId(event?.target_vehicle_id);
 
+  if (targetAuthStr && authStr) {
+    if (targetAuthStr !== authStr) return false;
+    if (!targetDriverStr || !driverStr || targetDriverStr === driverStr) return true;
+  }
   if (targetDriverStr) {
-    return driverStr != null && targetDriverStr === driverStr;
+    return (
+      (driverStr != null && targetDriverStr === driverStr) ||
+      (authStr != null && targetDriverStr === authStr)
+    );
+  }
+  if (targetAuthStr) {
+    return authStr != null && targetAuthStr === authStr;
   }
   return vehStr != null && targetVehStr != null && targetVehStr === vehStr;
 }
 
-export function eventBelongsToDriverAsSource(event, driverId, vehicleId = null) {
+export function eventBelongsToDriverAsSource(event, driverId, vehicleId = null, authUserId = null) {
   const driverStr = normalizeNonEmptyId(driverId);
   const vehStr = normalizeNonEmptyId(vehicleId);
+  const authStr = normalizeNonEmptyId(authUserId);
   const sourceDriverStr = normalizeNonEmptyId(event?.source_driver_id);
+  const sourceAuthStr = normalizeNonEmptyId(event?.source_driver_auth_user_id);
   const sourceVehStr = normalizeNonEmptyId(event?.source_vehicle_id);
 
+  if (sourceAuthStr && authStr && sourceAuthStr === authStr) {
+    return true;
+  }
   if (sourceDriverStr) {
-    return driverStr != null && sourceDriverStr === driverStr;
+    return (
+      (driverStr != null && sourceDriverStr === driverStr) ||
+      (authStr != null && sourceDriverStr === authStr)
+    );
+  }
+  if (sourceAuthStr) {
+    return authStr != null && sourceAuthStr === authStr;
   }
   return vehStr != null && sourceVehStr != null && sourceVehStr === vehStr;
 }
@@ -242,6 +265,7 @@ export function deriveRouteState(route) {
 export function formatOverflowSyncState({
   driverId,
   vehicleId = null,
+  authUserId = null,
   driverRoutes = [],
   overflowEvents = [],
   allPickups = [],
@@ -255,7 +279,7 @@ export function formatOverflowSyncState({
     .filter(
       (ev) =>
         normalizeRouteStatus(ev?.status) === "dispatched" &&
-        eventBelongsToDriverAsTarget(ev, driverId, vehicleId),
+        eventBelongsToDriverAsTarget(ev, driverId, vehicleId, authUserId),
     )
     .sort((a, b) => getEventSortTime(b) - getEventSortTime(a));
 
@@ -265,7 +289,7 @@ export function formatOverflowSyncState({
     .filter(
       (ev) =>
         normalizeRouteStatus(ev?.status) === "accepted" &&
-        eventBelongsToDriverAsTarget(ev, driverId, vehicleId),
+        eventBelongsToDriverAsTarget(ev, driverId, vehicleId, authUserId),
     )
     .sort((a, b) => getEventSortTime(b) - getEventSortTime(a));
 
@@ -288,7 +312,7 @@ export function formatOverflowSyncState({
     .filter((ev) => {
       const st = normalizeRouteStatus(ev?.status);
       if (st !== "pending" && st !== "dispatched" && st !== "accepted") return false;
-      return eventBelongsToDriverAsSource(ev, driverId, vehicleId);
+      return eventBelongsToDriverAsSource(ev, driverId, vehicleId, authUserId);
     })
     .sort((a, b) => getEventSortTime(b) - getEventSortTime(a));
 
@@ -316,6 +340,7 @@ export function formatOverflowSyncState({
 
   return {
     incomingOverflowEvent,
+    pendingOverflowEvents: targetDispatched,
     activeOverflowEvents,
     activeOverflowEvent: linkedOverflowEvent ?? activeOverflowEvents[0] ?? null,
     activeSourceOverflowEvent: sourceActive[0] ?? null,
