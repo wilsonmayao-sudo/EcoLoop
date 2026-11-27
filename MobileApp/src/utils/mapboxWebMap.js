@@ -43,27 +43,32 @@ export function getMapboxNavigationHtml(accessToken) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <link href="${MAPBOX_GL}/mapbox-gl.css" rel="stylesheet" />
-  <style>html,body,#map{margin:0;padding:0;height:100%;width:100%;background:#eef2f7;}</style>
+  <style>html,body,#map-container{margin:0;padding:0;height:100%;width:100%;background:#eef2f7;}</style>
 </head>
 <body>
-  <div id="map"></div>
+  <div id="map-container"></div>
   <script>
     var STYLE_URL = 'mapbox://styles/mapbox/streets-v12';
     var MAX_SCRIPT_RETRIES = 3;
     var scriptAttempts = 0;
     var styleRecoveryTimer = null;
     var loadingScript = false;
+    var mapInstance = null;
+    var hadMapError = false;
 
     function postMsg(prefix, msg) {
+      var payload = msg ? (prefix + ':' + String(msg)) : prefix;
       try {
         if (window.ReactNativeWebView) {
-          window.ReactNativeWebView.postMessage(msg ? (prefix + ':' + String(msg)) : prefix);
+          window.ReactNativeWebView.postMessage(payload);
+        } else if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ __ecoloopMapMsg: payload }, '*');
         }
       } catch (x) {}
     }
     function safeResize() {
       try {
-        if (window.map && window.map.resize) window.map.resize();
+        if (mapInstance && mapInstance.resize) mapInstance.resize();
       } catch (e) {}
     }
     function reapplyLayers() {
@@ -74,33 +79,35 @@ export function getMapboxNavigationHtml(accessToken) {
       } catch (e) {}
     }
     function scheduleStyleRecovery() {
-      if (styleRecoveryTimer || !window.map) return;
+      if (styleRecoveryTimer || !mapInstance) return;
       styleRecoveryTimer = setTimeout(function () {
         styleRecoveryTimer = null;
         try {
-          if (window.map && typeof window.map.isStyleLoaded === 'function' && !window.map.isStyleLoaded()) {
-            window.map.setStyle(STYLE_URL);
+          if (mapInstance && typeof mapInstance.isStyleLoaded === 'function' && !mapInstance.isStyleLoaded()) {
+            mapInstance.setStyle(STYLE_URL);
           }
         } catch (e) {}
       }, 4000);
     }
     function initMap() {
-      if (window.map || !window.mapboxgl) return;
+      if (mapInstance || !window.mapboxgl) return;
       try {
         mapboxgl.accessToken = ${tokenJson};
-        window.map = new mapboxgl.Map({
-          container: 'map',
+        mapInstance = new mapboxgl.Map({
+          container: 'map-container',
           style: STYLE_URL,
           center: [${lng}, ${lat}],
           zoom: ${INITIAL_ZOOM},
           attributionControl: true,
           fadeDuration: 150
         });
-        window.map.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true }), 'top-left');
+        window.map = mapInstance;
+        mapInstance.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true }), 'top-left');
         window.addEventListener('resize', safeResize);
 
         function onReady() {
           if (styleRecoveryTimer) { clearTimeout(styleRecoveryTimer); styleRecoveryTimer = null; }
+          hadMapError = false;
           safeResize();
           setTimeout(safeResize, 100);
           setTimeout(safeResize, 400);
@@ -109,24 +116,27 @@ export function getMapboxNavigationHtml(accessToken) {
           postMsg('mapbox-recovered');
         }
 
-        window.map.on('load', onReady);
-        window.map.on('style.load', function () {
+        mapInstance.on('load', onReady);
+        mapInstance.on('style.load', function () {
           if (styleRecoveryTimer) { clearTimeout(styleRecoveryTimer); styleRecoveryTimer = null; }
+          hadMapError = false;
           reapplyLayers();
           safeResize();
           postMsg('mapbox-recovered');
         });
-        window.map.on('idle', function () {
-          if (window.map && typeof window.map.isStyleLoaded === 'function' && window.map.isStyleLoaded()) {
+        mapInstance.on('idle', function () {
+          if (hadMapError && mapInstance && typeof mapInstance.isStyleLoaded === 'function' && mapInstance.isStyleLoaded()) {
+            hadMapError = false;
             postMsg('mapbox-recovered');
           }
         });
-        window.map.on('error', function (e) {
+        mapInstance.on('error', function (e) {
           var err = e && e.error ? e.error : {};
           var m = err.message ? String(err.message) : '';
           var name = err.name ? String(err.name) : '';
           var status = typeof err.status === 'number' ? err.status : null;
           if (name === 'AbortError' || /\\b(abort|aborted|cancel|canceled|cancelled)\\b/i.test(m)) return;
+          hadMapError = true;
           if (status === 401 || status === 403 || /unauthorized|forbidden|access token/i.test(m)) {
             postMsg('mapbox-auth-error', (m || 'Mapbox token rejected') + (status ? ' (' + status + ')' : ''));
             return;
@@ -134,27 +144,30 @@ export function getMapboxNavigationHtml(accessToken) {
           if (m || status) {
             postMsg('mapbox-transient-error', m || ('Map tile delayed (' + status + ')'));
           }
-          if (window.map && typeof window.map.isStyleLoaded === 'function' && !window.map.isStyleLoaded()) {
+          if (mapInstance && typeof mapInstance.isStyleLoaded === 'function' && !mapInstance.isStyleLoaded()) {
             scheduleStyleRecovery();
           }
         });
 
         try {
-          var canvas = window.map.getCanvas && window.map.getCanvas();
+          var canvas = mapInstance.getCanvas && mapInstance.getCanvas();
           if (canvas) {
             canvas.addEventListener('webglcontextlost', function (ev) {
               if (ev && ev.preventDefault) ev.preventDefault();
+              hadMapError = true;
               postMsg('mapbox-transient-error', 'Restoring map display...');
             });
             canvas.addEventListener('webglcontextrestored', function () {
+              hadMapError = false;
               safeResize();
               reapplyLayers();
-              if (window.map && window.map.triggerRepaint) window.map.triggerRepaint();
+              if (mapInstance && mapInstance.triggerRepaint) mapInstance.triggerRepaint();
               postMsg('mapbox-recovered');
             });
           }
         } catch (ce) {}
       } catch (e) {
+        mapInstance = null;
         postMsg('mapbox-error', e && e.message ? e.message : 'init failed');
       }
     }
@@ -193,16 +206,16 @@ export function getMapboxNavigationHtml(accessToken) {
         loadMapboxScript();
         return;
       }
-      if (!window.map) {
+      if (!mapInstance) {
         initMap();
         return;
       }
       try {
-        if (typeof window.map.isStyleLoaded === 'function' && !window.map.isStyleLoaded()) {
-          window.map.setStyle(STYLE_URL);
+        if (typeof mapInstance.isStyleLoaded === 'function' && !mapInstance.isStyleLoaded()) {
+          mapInstance.setStyle(STYLE_URL);
         } else {
           safeResize();
-          if (window.map.triggerRepaint) window.map.triggerRepaint();
+          if (mapInstance.triggerRepaint) mapInstance.triggerRepaint();
           reapplyLayers();
         }
       } catch (e) {}
@@ -244,7 +257,7 @@ export function buildMapboxLayersScript({
   function apply() {
     try {
       var m = window.map;
-      if (!m) return;
+      if (!m || typeof m.isStyleLoaded !== 'function') return;
       if (!m.isStyleLoaded()) {
         if (!window._ecoloopStyleWaiter) {
           window._ecoloopStyleWaiter = true;

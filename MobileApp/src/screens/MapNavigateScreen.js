@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, AppState } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, AppState, Platform } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRoute, useFocusEffect, useNavigation } from "@react-navigation/native";
 import AppButton from "../components/ui/AppButton";
@@ -68,6 +68,78 @@ function remainingRoadDistanceMeters(origin, polylineLatLng, fallbackTarget) {
   return total;
 }
 
+const StableMapWebView = React.memo(function StableMapWebView({
+  source,
+  webViewRef,
+  onMessage,
+  onLoadEnd,
+  onRecover,
+  onWebViewError,
+}) {
+  const iframeRef = useRef(null);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return undefined;
+
+    webViewRef.current = {
+      injectJavaScript: (js) => {
+        try {
+          iframeRef.current?.contentWindow?.eval(js);
+        } catch {
+          // Ignore cross-frame/unready eval failures
+        }
+      },
+    };
+
+    const handleMessage = (ev) => {
+      const payload = ev?.data?.__ecoloopMapMsg;
+      if (typeof payload === "string") {
+        onMessage?.({ nativeEvent: { data: payload } });
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      webViewRef.current = null;
+    };
+  }, [onMessage, webViewRef]);
+
+  if (!source?.html) return null;
+
+  if (Platform.OS === "web") {
+    return (
+      <View style={StyleSheet.absoluteFillObject}>
+        <iframe
+          ref={iframeRef}
+          title="EcoLoop Navigation Map"
+          srcDoc={source.html}
+          style={{ width: "100%", height: "100%", border: 0 }}
+          onLoad={onLoadEnd}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <WebView
+      ref={webViewRef}
+      source={source}
+      originWhitelist={["*"]}
+      containerStyle={StyleSheet.absoluteFillObject}
+      style={styles.webViewFill}
+      javaScriptEnabled
+      domStorageEnabled
+      mixedContentMode="always"
+      onMessage={onMessage}
+      onLoadEnd={onLoadEnd}
+      onError={onWebViewError}
+      onHttpError={onWebViewError}
+      onRenderProcessGone={onRecover}
+      onContentProcessDidTerminate={onRecover}
+    />
+  );
+});
+
 export default function MapNavigateScreen() {
   const navRoute = useRoute();
   const navigation = useNavigation();
@@ -122,6 +194,7 @@ export default function MapNavigateScreen() {
     source: "",
   });
   const [fetchError, setFetchError] = useState("");
+  const [mapAuthError, setMapAuthError] = useState("");
   const [mapNotice, setMapNotice] = useState("");
   const [mapReady, setMapReady] = useState(false);
   const [webViewRecoveryKey, setWebViewRecoveryKey] = useState(0);
@@ -184,6 +257,10 @@ export default function MapNavigateScreen() {
     () => (mapUsesMapbox ? getMapboxNavigationHtml(mapboxToken) : ""),
     [mapUsesMapbox, mapboxToken],
   );
+  const webViewSource = useMemo(
+    () => (mapHTML ? { html: mapHTML, baseUrl: "https://localhost" } : null),
+    [mapHTML],
+  );
 
   const canCompleteCollections = routeState === "accepted" || routeState === "in_progress";
 
@@ -243,6 +320,15 @@ export default function MapNavigateScreen() {
       routeFetchStateRef.current = { destKey: "none", origin: null, originKind: null, fetchedAtMs: 0, polyline: [] };
       setRouteLineLatLng([]);
       setGuidanceSteps([]);
+      setRouteMeta((p) => ({ ...p, distanceM: 0, durationS: 0, source: "" }));
+      return;
+    }
+
+    if (isNavigatingToLandfill && !routeOrigin) {
+      routeFetchStateRef.current = { destKey: activeDestKey, origin: null, originKind: "depot", fetchedAtMs: 0, polyline: [] };
+      setRouteLineLatLng([]);
+      setGuidanceSteps([]);
+      setFetchError("");
       setRouteMeta((p) => ({ ...p, distanceM: 0, durationS: 0, source: "" }));
       return;
     }
@@ -553,10 +639,20 @@ export default function MapNavigateScreen() {
     // Mapbox signals readiness via onWebViewMessage ("mapbox-ready")
   }, []);
 
+  const handleWebViewRecover = useCallback(() => {
+    setMapReady(false);
+    setWebViewRecoveryKey((k) => k + 1);
+  }, []);
+
+  const handleWebViewError = useCallback((event) => {
+    const desc = event?.nativeEvent?.description || event?.nativeEvent?.statusCode;
+    setMapNotice(desc ? `Map view error (${desc}).` : "Unable to load map view.");
+  }, []);
+
   const onWebViewMessage = useCallback((event) => {
     const data = event?.nativeEvent?.data;
     if (data === "mapbox-ready" || data === "mapbox-recovered") {
-      setFetchError("");
+      setMapAuthError("");
       setMapNotice("");
       setMapReady(true);
       return;
@@ -568,7 +664,7 @@ export default function MapNavigateScreen() {
     }
     if (typeof data === "string" && data.startsWith("mapbox-auth-error:")) {
       const msg = data.replace(/^mapbox-auth-error:/, "").trim();
-      setFetchError(msg || "Mapbox token rejected.");
+      setMapAuthError(msg || "Mapbox token rejected.");
       return;
     }
     if (typeof data === "string" && data.startsWith("mapbox-error:")) {
@@ -750,26 +846,15 @@ export default function MapNavigateScreen() {
   return (
     <View style={[styles.root, { backgroundColor: colors.surface }]}>
       <View style={styles.mapLayer}>
-        {mapUsesMapbox ? (
-          <WebView
+        {mapUsesMapbox && webViewSource ? (
+          <StableMapWebView
             key={`mapbox-gl-${webViewRecoveryKey}`}
-            ref={webViewRef}
-            source={{ html: mapHTML }}
-            originWhitelist={["*"]}
-            style={StyleSheet.absoluteFillObject}
-            javaScriptEnabled
-            domStorageEnabled
-            mixedContentMode="always"
+            webViewRef={webViewRef}
+            source={webViewSource}
             onMessage={onWebViewMessage}
             onLoadEnd={handleWebViewLoad}
-            onRenderProcessGone={() => {
-              setMapReady(false);
-              setWebViewRecoveryKey((k) => k + 1);
-            }}
-            onContentProcessDidTerminate={() => {
-              setMapReady(false);
-              setWebViewRecoveryKey((k) => k + 1);
-            }}
+            onRecover={handleWebViewRecover}
+            onWebViewError={handleWebViewError}
           />
         ) : (
           <View style={[styles.mapLoading, StyleSheet.absoluteFillObject, { backgroundColor: colors.card }]}>
@@ -823,7 +908,7 @@ export default function MapNavigateScreen() {
               </TouchableOpacity>
             ) : null}
 
-            {(fetchError || mapNotice || (!locationPermission && Boolean(activeTarget))) && (
+            {(mapAuthError || fetchError || mapNotice || (!locationPermission && Boolean(activeTarget))) && (
               <TouchableOpacity
                 onPress={handleRetryDirections}
                 activeOpacity={0.85}
@@ -837,8 +922,8 @@ export default function MapNavigateScreen() {
                 ]}
               >
                 <Text style={[styles.errorBarText, { color: colors.textPrimary }]} numberOfLines={3}>
-                  {fetchError || mapNotice
-                    ? t("tap_to_retry", "{error} Tap to retry.", { error: fetchError || mapNotice })
+                  {mapAuthError || fetchError || mapNotice
+                    ? t("tap_to_retry", "{error} Tap to retry.", { error: mapAuthError || fetchError || mapNotice })
                     : t("gps_disabled_hint", "GPS disabled: enable location services for turn-by-turn directions from your truck.")}
                 </Text>
               </TouchableOpacity>
@@ -1097,6 +1182,7 @@ function LegendDot({ color, label, textColor }) {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   mapLayer: { flex: 1, position: "relative" },
+  webViewFill: { flex: 1, backgroundColor: "#eef2f7" },
   mapLoading: { flex: 1, alignItems: "center", justifyContent: "center" },
   safeTop: { paddingHorizontal: 10, paddingTop: 2 },
   errorBar: { marginBottom: 6, padding: 8, borderWidth: 1 },

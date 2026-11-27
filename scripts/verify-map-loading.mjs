@@ -180,6 +180,8 @@ try {
   assert.match(mobNavSrc, /onContentProcessDidTerminate/);
   assert.match(mobNavSrc, /mapbox-recovered/);
   assert.match(mobNavSrc, /__ecoloopRetryMap/);
+  assert.match(mobNavSrc, /baseUrl:\s*"https:\/\/localhost"/);
+  assert.match(mobNavSrc, /React\.memo\s*\(/);
   assert.doesNotMatch(mobNavSrc, /getLeafletMapHtml|buildLeafletLayersScript|leaflet-osm/);
 
   // 6. WebApp built bundle verification (Vite statically inlines VITE_MAPBOX_ACCESS_TOKEN)
@@ -228,7 +230,13 @@ try {
       },
     ],
   });
-  const { resolveMobileMapboxToken } = await import(pathToFileURL(mobWebMapOut).href);
+  const { resolveMobileMapboxToken, getMapboxNavigationHtml } = await import(pathToFileURL(mobWebMapOut).href);
+
+  const sampleNavHtml = getMapboxNavigationHtml("pk.test_token_1234567890");
+  assert.match(sampleNavHtml, /id="map-container"/, "Mapbox HTML must use id=\"map-container\" to avoid window.map DOM collision");
+  assert.match(sampleNavHtml, /container:\s*'map-container'/, "Mapbox GL must mount into container 'map-container'");
+  assert.doesNotMatch(sampleNavHtml, /id="map"/, "Mapbox HTML must not use id=\"map\" which shadows window.map");
+  assert.match(sampleNavHtml, /if\s*\(mapInstance\s*\|\|\s*!window\.mapboxgl\)\s*return;/, "initMap must guard on explicit mapInstance rather than window.map");
 
   assert.equal(
     resolveMobileMapboxToken({ expoConfig: { extra: {} } }, "  pk.env_token_123  "),
